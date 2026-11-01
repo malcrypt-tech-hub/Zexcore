@@ -5,6 +5,7 @@ import { ApiError, DEFAULT_SETTINGS, toApiError } from './core';
 import { availability, createBooking, refOf } from './bookings';
 import type { SlotSettings } from './slots';
 import { getCachedNgnRate } from '../fx';
+import { DEMO_SLUG, demoBook, demoProfile, demoSlots } from './demo';
 
 interface PublicPage {
   wid: string; name: string; phone: string | null; address: string | null; openMinutes: number; closeMinutes: number; slotMinutes: number;
@@ -25,7 +26,7 @@ async function page(slug: string): Promise<PublicPage> {
     openMinutes: d.openMinutes ?? DEFAULT_SETTINGS.openMinutes, closeMinutes: d.closeMinutes ?? DEFAULT_SETTINGS.closeMinutes, slotMinutes: d.slotMinutes ?? 30,
     daysOpen: [0, 1, 2, 3, 4, 5, 6].filter((x) => !closed.includes(x)), leadMinutes: d.leadMinutes ?? 60, maxDaysAhead: Math.min(d.maxDaysAhead ?? 60, 120),
     bookingCap: Math.max(1, Math.min(Number(d.bookingCap) || 30, 999_999)), bookingEnabled: true,
-    exchangeRate: Number(d.exchangeRate) > 0 && Number(d.exchangeRate) !== 1500 ? Number(d.exchangeRate) : getCachedNgnRate(),
+    exchangeRate: Number(d.exchangeRate) > 0 ? Number(d.exchangeRate) : getCachedNgnRate(),
     depositEnabled: d.depositEnabled === true && Number(d.depositMinor) > 0, depositMinor: d.depositEnabled === true ? Math.max(0, Number(d.depositMinor) || 0) : 0,
   };
   cache.set(slug, { at: Date.now(), page: p });
@@ -46,6 +47,7 @@ async function catalog(wid: string) {
 }
 
 export async function profile(slug: string): Promise<unknown> {
+  if (slug === DEMO_SLUG) return demoProfile();
   const p = await page(slug);
   let cat; try { cat = await catalog(p.wid); } catch (e) { throw toApiError(e); }
   return {
@@ -56,6 +58,7 @@ export async function profile(slug: string): Promise<unknown> {
 }
 
 export async function slots(slug: string, params: URLSearchParams): Promise<{ slots: { startsAt: string; available: boolean }[] }> {
+  if (slug === DEMO_SLUG) return demoSlots(params);
   const p = await page(slug);
   const date = params.get('date') ?? '', serviceId = params.get('serviceId') ?? '', staffId = params.get('staffId') ?? '';
   let cat; try { cat = await catalog(p.wid); } catch (e) { throw toApiError(e); }
@@ -66,6 +69,7 @@ export async function slots(slug: string, params: URLSearchParams): Promise<{ sl
 }
 
 export async function book(slug: string, b: Record<string, unknown>): Promise<unknown> {
+  if (slug === DEMO_SLUG) return demoBook(b);
   const p = await page(slug);
   const cat = await catalog(p.wid).catch((e) => { throw toApiError(e); });
   const service = cat.services.find((s) => s.id === b.serviceId);

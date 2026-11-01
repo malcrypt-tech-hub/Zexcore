@@ -66,7 +66,7 @@ service cloud.firestore {
         && !(slug in ['admin','api','app','www','signin','signup','login','pricing','security','contact','privacy','terms','docs',
                       'about','console','dashboard','platform','solutions','modules','architecture','resources','book','b','static',
                       'assets','zexcore','mail','support','help','status','product','home','multi-tenancy','automation',
-                      'forgot-password','reset-password','verify-email'])
+                      'forgot-password','reset-password','verify-email','demo'])
         && request.resource.data.wid is string
         && request.resource.data.ownerUid == request.auth.uid
         && getAfter(wsPath(request.resource.data.wid)).data.ownerUid == request.auth.uid

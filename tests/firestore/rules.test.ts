@@ -70,6 +70,7 @@ describe('workspace creation and plan fields', () => {
   });
   it('refuses reserved and already-taken slugs', async () => {
     await assertFails(createWorkspace(owner(), W, 'admin'));
+    await assertFails(createWorkspace(owner(), W, 'demo'));   // reserved for the sample booking page
     await assertSucceeds(createWorkspace(owner()));
     await assertFails(createWorkspace(env.authenticatedContext('owner1').firestore(), 'Ws2AbCdEfGhIjKlMnOpQ', SLUG));
     await assertFails(createWorkspace(owner(), 'short', 'another-slug'));
