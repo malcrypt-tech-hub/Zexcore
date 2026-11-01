@@ -304,8 +304,8 @@ service cloud.firestore {
         && d.status == 'pending' && d.source == 'public' && d.createdAt == request.time
         && d.customerName is string && d.customerName.size() >= 2 && d.customerName.size() <= 120
         && d.customerPhone is string && d.customerPhone.matches('^\\+[0-9]{8,15}$')
-        && (!('customerEmail' in d) || (d.customerEmail is string && d.customerEmail.size() <= 160))
-        && (!('notes' in d) || (d.notes is string && d.notes.size() <= 1000))
+        && (!('customerEmail' in d) || d.customerEmail == null || (d.customerEmail is string && d.customerEmail.size() <= 160))
+        && (!('notes' in d) || d.notes == null || (d.notes is string && d.notes.size() <= 1000))
         && d.startsAt is timestamp && d.endsAt is timestamp && d.startsAt > request.time
         && d.startsAt < request.time + duration.value(180, 'd')
         && svc.active == true
