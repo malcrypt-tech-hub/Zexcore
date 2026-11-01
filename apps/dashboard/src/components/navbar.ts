@@ -176,8 +176,8 @@ export function renderNavbar(activePage: string): string {
 
         <div class="header-actions">
           <a href="/signin" data-link class="btn btn-secondary btn-sm" id="btn-header-signin">Sign In</a>
-          <a href="/console" data-link class="btn btn-primary" id="btn-header-launch">
-            Launch Console &rarr;
+          <a href="/signup" data-link class="btn btn-primary" id="btn-header-launch">
+            Start free &rarr;
           </a>
           <button class="mobile-toggle" id="btn-mobile-menu" aria-label="Toggle navigation menu">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
