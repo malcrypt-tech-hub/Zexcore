@@ -427,6 +427,19 @@ describe('team access', () => {
     expect((await inviteReq('owner1', 'sade@example.com', 'editor')).status).toBe(402);
   });
 
+  it('viewer logins are Enterprise and Dedicated only, and cannot act', async () => {
+    expect((await inviteReq('owner1', 'sade@example.com', 'viewer')).status).toBe(402);   // growth plan
+    seedDoc(`workspaces/${WID_T}`, { name: 'Team Salon', plan: 'enterprise', planExpiresAt: new Date(NOW.getTime() + 20 * 86_400_000), ownerUid: 'owner1', slug: 'team-salon' });
+    const r = await inviteReq('owner1', 'sade@example.com', 'viewer');
+    expect(r.status).toBe(200);
+    expect((await inviteReq('adm1', 'adm@example.com', 'viewer', 'acct@example.com')).status).toBe(200);
+    seedDoc(`workspaces/${WID_T}/members/view1`, { role: 'viewer', email: 'view@example.com' });
+    const v = await asUser('view1', 'view@example.com');
+    expect((await call('/api/team/invite', { body: body({ email: 'x@example.com', role: 'editor' }), headers: v })).status).toBe(403);
+    expect((await call('/api/events', { body: JSON.stringify({ workspaceId: WID_T, event: 'booking.created', payload: {} }), headers: v })).status).toBe(403);
+    expect((await call('/api/audit', { body: JSON.stringify({ workspaceId: WID_T, action: 'x.y', entity: 'x' }), headers: v })).status).toBe(403);
+  });
+
   it('rejects duplicates of someone already on the team', async () => {
     expect((await inviteReq('owner1', 'sade@example.com', 'editor', 'ED@example.com')).status).toBe(409);
   });

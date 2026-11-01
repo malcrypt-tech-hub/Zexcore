@@ -9,7 +9,7 @@
  * entry breaks every hash after it, which /api/audit/verify detects.
  */
 import type { Ctx } from '../env';
-import { requireMember } from '../auth';
+import { DOERS, requireMember } from '../auth';
 import { FsConflict, fsCommit, fsGet, fsQuery } from '../fs';
 import { HttpError, json, readJson, sha256Hex } from '../util';
 
@@ -42,7 +42,7 @@ export async function appendAudit(c: Ctx, wid: string, actor: string, action: st
 /** POST /api/audit  { workspaceId, action, target?, detail? } */
 export async function audit(c: Ctx): Promise<Response> {
   const b = await readJson(c.req);
-  const { caller, wid } = await requireMember(c, b.workspaceId);
+  const { caller, wid } = await requireMember(c, b.workspaceId, DOERS);
   const action = String(b.action ?? ''); const target = String(b.target ?? '').slice(0, 120); const detail = String(b.detail ?? '').slice(0, 300);
   if (!ACTION_RE.test(action)) throw new HttpError(400, 'Invalid action');
   const r = await appendAudit(c, wid, caller.uid, action, target, detail);
@@ -51,7 +51,7 @@ export async function audit(c: Ctx): Promise<Response> {
 
 /** GET /api/audit/verify?workspaceId=...  (owner/admin) — recomputes the chain end to end. */
 export async function verifyAudit(c: Ctx): Promise<Response> {
-  const { wid } = await requireMember(c, c.url.searchParams.get('workspaceId'), ['owner', 'admin']);
+  const { wid } = await requireMember(c, c.url.searchParams.get('workspaceId'), ['owner', 'admin', 'viewer']);
   const head = await fsGet(c.env, c.d, `workspaces/${wid}/auditMeta/head`);
   const expected = Number(head?.data.seq ?? 0);
   let prev = GENESIS; let seq = 0; let after: string | undefined;
