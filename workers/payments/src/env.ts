@@ -10,8 +10,6 @@ export interface Env {
   /** Optional: alert e-mails and webhook-less notifications go out through Resend when this is set. */
   RESEND_API_KEY?: string;
   MAIL_FROM?: string;
-  /** Optional Cloudflare Workers AI binding, used to draft automation rules (a human still approves them). */
-  AI?: { run(model: string, input: unknown): Promise<unknown> };
   /** Set only by the test harness: talk to the Firestore emulator instead of production. Never set in wrangler.toml. */
   FIRESTORE_EMULATOR_HOST?: string;
   /** Flat platform fee, in kobo, kept by ZexCore on each booking deposit. Defaults to 0. */

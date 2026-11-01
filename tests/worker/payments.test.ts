@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { handle, paystackSignature, amountMinor, toFs, fromFs, resetTokenCache, resetJwksCache, type Env } from '../../workers/payments/src/index.js';
+import { handle, paystackSignature, amountMinor, planAfterPayment, throttled, toFs, fromFs, resetTokenCache, resetJwksCache, type Env } from '../../workers/payments/src/index.js';
 
 const PROJECT = 'zexcore-5d6c0';
 const SECRET = 'sk_test_worker_secret';
@@ -290,5 +290,44 @@ describe('deposits', () => {
     expect((await call('/api/deposit/link', { body, headers: await authed({ sub: 'stranger' }) })).status).toBe(403);
     const r = await call('/api/deposit/link', { body, headers: await authed({ sub: 'staff1' }) });
     expect(r.status).toBe(201);
+  });
+});
+
+describe('plan time is never lost', () => {
+  const day = 86_400_000;
+  it('starts a fresh period when nothing is active, and adds to the same plan', () => {
+    expect(planAfterPayment('free', null, 'growth', 'monthly', NOW)).toEqual({ plan: 'growth', expires: new Date(NOW.getTime() + 31 * day) });
+    const left = new Date(NOW.getTime() + 10 * day);
+    expect(planAfterPayment('growth', left, 'growth', 'monthly', NOW).expires.getTime()).toBe(NOW.getTime() + 41 * day);
+  });
+  it('converts what is left on a cheaper plan into time on the new one when upgrading', () => {
+    const left = new Date(NOW.getTime() + 49 * day);                 // 49 days of Starter ($19) = 19 days of Growth ($49)
+    const r = planAfterPayment('starter', left, 'growth', 'monthly', NOW);
+    expect(r.plan).toBe('growth');
+    expect(Math.round((r.expires.getTime() - NOW.getTime()) / day)).toBe(Math.round(49 * 19 / 49 + 31));
+  });
+  it('keeps the higher plan, and extends it, if a lower plan is paid for while it is active', () => {
+    const left = new Date(NOW.getTime() + 20 * day);
+    const r = planAfterPayment('growth', left, 'starter', 'monthly', NOW);
+    expect(r.plan).toBe('growth');
+    expect(r.expires.getTime()).toBeGreaterThan(left.getTime());
+  });
+  it('refuses to start a checkout for a lower plan while a higher one is active', async () => {
+    seedDoc(`workspaces/${WID}`, { name: 'Sade Salon', plan: 'agency', ownerUid: 'owner1', slug: 'sade-salon', planExpiresAt: new Date(NOW.getTime() + 20 * day) });
+    const r = await call('/api/checkout', { headers: await authed(), body: checkoutBody({ tier: 'starter' }) });
+    expect(r.status).toBe(409);
+    expect((await r.json() as any).code).toBe('downgrade_blocked');
+    const up = await call('/api/checkout', { headers: await authed(), body: checkoutBody({ tier: 'enterprise' }) });
+    expect(up.status).toBe(201);
+  });
+});
+
+describe('public route throttle', () => {
+  it('allows 20 calls a minute per visitor and route, then says to wait', () => {
+    const t = Date.now();
+    for (let i = 0; i < 20; i++) expect(throttled('1.2.3.4 POST /x', t + i)).toBe(false);
+    expect(throttled('1.2.3.4 POST /x', t + 21)).toBe(true);
+    expect(throttled('5.6.7.8 POST /x', t + 21)).toBe(false);
+    expect(throttled('1.2.3.4 POST /x', t + 61_000)).toBe(false);
   });
 });

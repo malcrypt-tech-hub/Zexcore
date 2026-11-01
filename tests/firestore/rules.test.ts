@@ -388,3 +388,14 @@ describe('deposits and payouts (written only by the payments Worker)', () => {
     await assertFails(updateDoc(doc(other(), 'slugs', SLUG), { depositEnabled: true }));
   });
 });
+
+describe('leads use numbered slots', () => {
+  it('refuses random ids and ids beyond the plan limit, accepts the next slot', async () => {
+    await createWorkspace(owner());
+    await assertFails(setDoc(doc(owner(), 'workspaces', W, 'leads', 'randomAutoId123'), { title: 'x' }));
+    await assertSucceeds(setDoc(doc(owner(), 'workspaces', W, 'leads', 'l_0'), { title: 'x', seq: 0 }));
+    await assertSucceeds(setDoc(doc(owner(), 'workspaces', W, 'leads', 'l_49'), { title: 'x', seq: 49 }));   // free: 50 records
+    await assertFails(setDoc(doc(owner(), 'workspaces', W, 'leads', 'l_50'), { title: 'x', seq: 50 }));
+    await assertFails(setDoc(doc(other(), 'workspaces', W, 'leads', 'l_1'), { title: 'x' }));
+  });
+});

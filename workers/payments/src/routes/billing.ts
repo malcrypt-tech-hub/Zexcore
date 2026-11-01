@@ -23,6 +23,29 @@ export function amountMinor(tier: Tier, cycle: Cycle, currency: Currency, ngnPer
   return Math.round((currency === 'NGN' ? usd * ngnPerUsd : usd) * 100);
 }
 
+const RANK: Record<Tier, number> = { starter: 0, growth: 1, agency: 2, enterprise: 3, dedicated: 4 };
+
+/**
+ * What a successful payment does to the workspace. Time is never lost:
+ *  - same plan: the new period is added to what is left;
+ *  - upgrade: what is left on the old plan is converted into time on the new one, at the ratio of their monthly prices;
+ *  - paying for a lower plan while a higher one is active (an old checkout left open): the higher plan stays and is extended
+ *    by the equivalent time.
+ */
+export function planAfterPayment(currentPlan: unknown, currentExpiry: Date | null, tier: Tier, cycle: Cycle, now: Date): { plan: Tier; expires: Date } {
+  const addMs = (cycle === 'annual' ? 365 : 31) * 86_400_000;
+  const active = isTier(currentPlan) && currentExpiry !== null && currentExpiry > now;
+  if (!active) return { plan: tier, expires: new Date(now.getTime() + addMs) };
+  const cur = currentPlan as Tier;
+  if (cur === tier) return { plan: tier, expires: new Date(currentExpiry!.getTime() + addMs) };
+  if (RANK[cur] < RANK[tier]) {
+    const carried = (currentExpiry!.getTime() - now.getTime()) * (PLANS[cur].monthlyUsd / PLANS[tier].monthlyUsd);
+    return { plan: tier, expires: new Date(now.getTime() + carried + addMs) };
+  }
+  const extra = addMs * (PLANS[tier].monthlyUsd / PLANS[cur].monthlyUsd);
+  return { plan: cur, expires: new Date(currentExpiry!.getTime() + extra) };
+}
+
 // ───────────── POST /api/checkout ─────────────
 export async function checkout(req: Request, env: Env, d: Deps, headers: Record<string, string>): Promise<Response> {
   const bearer = /^Bearer (.+)$/.exec(req.headers.get('authorization') ?? '')?.[1];
@@ -40,6 +63,11 @@ export async function checkout(req: Request, env: Env, d: Deps, headers: Record<
   const member = await fsGet(env, d, `workspaces/${workspaceId}/members/${caller.uid}`);
   if (!member || !['owner', 'admin'].includes(String(member.data.role))) return json({ error: 'Only a workspace owner or admin can change the plan.' }, 403, headers);
 
+  const wsDoc = await fsGet(env, d, `workspaces/${workspaceId}`);
+  const curPlan = wsDoc?.data.plan; const curExp = wsDoc?.data.planExpiresAt instanceof Date ? wsDoc.data.planExpiresAt : null;
+  if (isTier(curPlan) && curExp && curExp > d.now() && RANK[tier] < RANK[curPlan]) {
+    return json({ error: `You are on ${curPlan[0]!.toUpperCase() + curPlan.slice(1)} until ${curExp.toISOString().slice(0, 10)}. Pick a higher plan, or wait until it ends to move to a lower one.`, code: 'downgrade_blocked' }, 409, headers);
+  }
   const liveRate = await getLiveNgnRate(env, d);
   const amount = amountMinor(tier, cycle, currency, liveRate);
   const reference = randomRef(workspaceId);
@@ -90,16 +118,13 @@ export async function webhook(req: Request, env: Env, d: Deps): Promise<Response
   if (!isTier(tier)) return json({ ok: true, ignored: 'bad_tier' });
   const ws = await fsGet(env, d, `workspaces/${metaWid}`);
   if (!ws) return json({ ok: true, ignored: 'unknown_workspace' });
-  const days = cycle === 'annual' ? 365 : 31;
   const now = d.now();
-  const current = ws.data.planExpiresAt instanceof Date ? ws.data.planExpiresAt : null;
-  const base = ws.data.plan === tier && current && current > now ? current : now;     // renewing early keeps the remaining time
-  const expires = new Date(base.getTime() + days * 86400000);
+  const { plan: newPlan, expires } = planAfterPayment(ws.data.plan, ws.data.planExpiresAt instanceof Date ? ws.data.planExpiresAt : null, tier, cycle, now);
 
   await fsCommit(env, d, [
     { path, fields: { status: 'paid', paidMinor: vj.data.amount, paidAt: now }, mask: ['status', 'paidMinor', 'paidAt'], precondition: { updateTime: pay.updateTime } },
-    { path: `workspaces/${metaWid}`, fields: { plan: tier, planCycle: cycle, planExpiresAt: expires }, mask: ['plan', 'planCycle', 'planExpiresAt'], precondition: { exists: true } },
+    { path: `workspaces/${metaWid}`, fields: { plan: newPlan, planCycle: newPlan === tier ? cycle : (ws.data.planCycle ?? cycle), planExpiresAt: expires }, mask: ['plan', 'planCycle', 'planExpiresAt'], precondition: { exists: true } },
   ]);
-  return json({ ok: true, activated: tier, expiresAt: expires.toISOString() });
+  return json({ ok: true, activated: newPlan, expiresAt: expires.toISOString() });
 }
 

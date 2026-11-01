@@ -44,4 +44,5 @@ gcloud firestore fields ttls update expireAt --collection-group=automationRuns -
 ## Known limits
 - The inbox sends through WhatsApp links (`wa.me`); there is no inbound WhatsApp integration.
 - Automations are event-driven (booking created, lead created, device reading/alert); there is no time-based scheduling yet.
-- No rate limiting beyond Firestore rules and one reading per second per device; add Cloudflare rate-limit rules on the Worker route if abuse appears.
+- Public routes (`/api/public/*`) are throttled to 20 calls a minute per visitor inside the Worker. For a hard limit, add a Cloudflare rate-limiting rule (Security → WAF → Rate limiting rules): URI path starts with `/api/public/`, 30 requests per 10 seconds per IP, action Block.
+- Bot protection for the booking page (optional, recommended): Firebase console → App Check → register the web app with reCAPTCHA v3 and copy the site key, add it as a GitHub variable `VITE_APPCHECK_SITE_KEY`, redeploy, check the App Check metrics show verified traffic, then enforce App Check for Cloud Firestore. Do not enforce before the redeploy, or real visitors are blocked.
