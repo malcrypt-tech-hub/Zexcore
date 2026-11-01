@@ -45,3 +45,9 @@ gcloud firestore fields ttls update expireAt --collection-group=automationRuns -
 - The inbox sends through WhatsApp links (`wa.me`); there is no inbound WhatsApp integration.
 - Automations are event-driven (booking created, lead created, device reading/alert); there is no time-based scheduling yet.
 - No rate limiting beyond Firestore rules and one reading per second per device; add Cloudflare rate-limit rules on the Worker route if abuse appears.
+
+## Team access (admins and editors)
+- Owners and admins invite people from **More → Team access**. The Worker emails a 7-day link (needs `RESEND_API_KEY`/`MAIL_FROM`); without email set up the screen shows the link to share by hand.
+- Roles: **owner** (everything), **admin** (everything except changing admins or the owner), **editor** (bookings, customers, messages, services, staff calendars, website pages; no settings, billing or team changes).
+- Team logins per plan equal the plan's "team members" limit (Free 1 = owner only). The Worker's `SEATS` table is checked against the dashboard limits by a test.
+- The invitee must sign in with the invited email address and have it verified.

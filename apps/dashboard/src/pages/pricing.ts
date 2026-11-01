@@ -36,6 +36,7 @@ export function renderPricingPage(): string {
       [
         ['Bookings / month', ...tiers.map((t) => lim(LIMITS[t].bookingsPerMonth))],
         ['Bookable staff', ...tiers.map((t) => lim(LIMITS[t].staff))],
+        ['Team logins (owner, admins, editors)', ...tiers.map((t) => lim(LIMITS[t].staff))],
         ['Services', ...tiers.map((t) => lim(LIMITS[t].services))],
         ['Booking pages', ...tiers.map((t) => lim(LIMITS[t].cmsPages))],
         ['Contacts', ...tiers.map((t) => lim(LIMITS[t].crmContacts))],

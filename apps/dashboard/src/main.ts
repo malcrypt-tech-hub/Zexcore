@@ -21,7 +21,7 @@ setUnauthorizedHandler(() => navigate('/signin', true));
 
 const TITLES: Record<string, string> = {
   '/app': 'Home', '/app/bookings': 'Bookings', '/app/calendar': 'Calendar', '/app/messages': 'Messages', '/app/more': 'More',
-  '/app/customers': 'Customers', '/app/services': 'Services', '/app/team': 'Team', '/app/booking-page': 'Booking page',
+  '/app/customers': 'Customers', '/app/services': 'Services', '/app/team': 'Bookable staff', '/app/access': 'Team access', '/app/booking-page': 'Booking page',
   '/app/billing': 'Plan & billing', '/app/audit': 'Audit log', '/app/settings': 'Settings', '/app/security': 'Security',
   '/app/crm': 'CRM', '/app/devices': 'Devices', '/app/automations': 'Automations', '/app/content': 'Website pages', '/app/compliance': 'Data protection',
   '/docs': 'Documentation', '/documentation': 'Documentation',
@@ -37,6 +37,8 @@ setGuard(async (ctx) => {
     try { if (!(await loadMe())) return '/signin'; }
     catch { mount(document.getElementById('app')!, html`<div class="auth-wrap"><div class="auth-card">${errorState('We could not reach ZexCore. Check your connection and try again.')}</div></div>`); document.querySelector('[data-retry]')?.addEventListener('click', () => location.reload()); return ctx.path; }
   }
+  // Someone opened an invitation link before signing in: finish accepting it once they are.
+  if (inApp && ctx.path !== '/app/onboarding') { try { if (localStorage.getItem('zx.invite')) return '/accept-invite'; } catch { /* ignore */ } }
   if ((ctx.path === '/signin' || ctx.path === '/signup') && isSignedIn()) {
     // Only bother with the async Firebase call when we already have a local session token
     const me = await loadMe().catch(() => null);
@@ -55,7 +57,7 @@ function setMeta(path: string): void {
     canon.href = SITE + (path === '/' ? '/' : path);
   } else {
     canon?.remove();
-    if (['/signin', '/signup', '/forgot-password', '/reset-password', '/verify-email'].includes(path) || path.startsWith('/app')) {
+    if (['/signin', '/signup', '/forgot-password', '/reset-password', '/verify-email', '/accept-invite'].includes(path) || path.startsWith('/app')) {
       if (!robots) { robots = document.createElement('meta'); robots.name = 'robots'; head.appendChild(robots); }
       robots.content = 'noindex, nofollow';
     } else robots?.remove();
@@ -101,6 +103,7 @@ route('/signin', async () => { clearLegacySiteStyles(); leaveApp(); const { rend
 route('/signup', async () => { clearLegacySiteStyles(); leaveApp(); const { renderSignUp } = await import('./views/auth'); renderSignUp(); });
 route('/forgot-password', async () => { clearLegacySiteStyles(); leaveApp(); const { renderForgot } = await import('./views/auth'); renderForgot(); });
 route('/reset-password', async () => { clearLegacySiteStyles(); leaveApp(); const { renderReset } = await import('./views/auth'); renderReset(); });
+route('/accept-invite', async (ctx) => { clearLegacySiteStyles(); leaveApp(); const { renderAcceptInvite } = await import('./views/access'); void renderAcceptInvite(ctx.query); });
 route('/verify-email', async () => { clearLegacySiteStyles(); leaveApp(); const { renderVerify } = await import('./views/auth'); void renderVerify(); });
 
 const handleAuthAction = (ctx: { query: URLSearchParams }) => {
@@ -142,6 +145,7 @@ appRoute('/app/messages', () => import('./views/messages').then((m) => (v, c) =>
 appRoute('/app/more', () => import('./views/manage').then((m) => m.renderMore));
 appRoute('/app/customers', () => import('./views/customers').then((m) => m.renderCustomers));
 appRoute('/app/services', () => import('./views/manage').then((m) => m.renderServices));
+appRoute('/app/access', () => import('./views/access').then((m) => m.renderAccess));
 appRoute('/app/team', () => import('./views/manage').then((m) => m.renderTeam));
 appRoute('/app/booking-page', () => import('./views/manage').then((m) => m.renderBookingPage));
 appRoute('/app/billing', () => import('./views/account').then((m) => m.renderBilling));

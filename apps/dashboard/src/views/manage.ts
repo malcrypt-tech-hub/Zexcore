@@ -4,17 +4,18 @@ import { api, ApiError } from '../lib/api';
 import { money, initials, minutesToTime, timeToMinutes } from '../lib/format';
 import { toast, openModal, emptyState, errorState, skeletonRows, busy, copyText } from '../lib/ui';
 import { loadSettings, bookingUrl, clearStore, type Service, type Staff } from '../lib/store';
-import { canAdmin, current, logout } from '../lib/session';
+import { canAdmin, canEdit, current, loadMe, logout } from '../lib/session';
 import { navigate } from '../router';
 import { hasFeatureAccess } from '../lib/fb/plan';
 
-const ro = (): Raw => canAdmin() ? html`` : html`<div class="alert alert-info" style="margin-bottom:16px">${ic('info', 'ico-sm')} Only owners and admins can change these settings.</div>`;
+const ro = (edit = false): Raw => (edit ? canEdit() : canAdmin()) ? html`` : html`<div class="alert alert-info" style="margin-bottom:16px">${ic('info', 'ico-sm')} ${edit ? 'Only owners, admins and editors can change this.' : 'Only owners and admins can change these settings.'}</div>`;
 
 export function renderMore(view: HTMLElement): void {
   const items: { href: string; icon: IconName; t: string; s: string }[] = [
     { href: '/app/customers', icon: 'users', t: 'Customers', s: 'Everyone who has booked' },
     { href: '/app/services', icon: 'list-checks', t: 'Services', s: 'What you offer, how long, how much' },
-    { href: '/app/team', icon: 'id-card', t: 'Team', s: 'Doctors, stylists and staff' },
+    { href: '/app/team', icon: 'id-card', t: 'Bookable staff', s: 'Doctors, stylists and other calendars' },
+    { href: '/app/access', icon: 'users', t: 'Team access', s: 'Invite admins and editors to sign in' },
     { href: '/app/booking-page', icon: 'link', t: 'Booking page', s: 'Your public link to share' },
     { href: '/app/crm', icon: 'handshake', t: 'CRM', s: 'Leads, pipeline and contacts' },
     { href: '/app/devices', icon: 'cpu', t: 'Devices', s: 'Sensors, readings and alerts' },
@@ -31,11 +32,19 @@ export function renderMore(view: HTMLElement): void {
     <div class="card list">${items.map((i) => html`<a class="list-item hover" href="${i.href}" data-link><span class="icon-tile">${ic(i.icon)}</span><span class="grow"><b>${i.t}</b><br><span class="muted small">${i.s}</span></span>${ic('chevron-right')}</a>`)}</div>
     <button class="btn btn-secondary btn-block" style="margin-top:16px" data-out>${ic('log-out', 'ico-sm')} Sign out</button>`);
   $('[data-out]', view)!.addEventListener('click', () => { logout(); navigate('/signin'); });
+  void import('../lib/fb/team').then(async ({ myWorkspaces, switchWorkspace }) => {
+    const all = await myWorkspaces();
+    if (all.length < 2) return;
+    const box = document.createElement('div');
+    mount(box, html`<div class="card card-pad" style="margin-top:16px"><h3 style="margin-bottom:8px">Switch workspace</h3><div class="stack-sm">${all.map((w) => html`<button class="btn ${w.id === me.tenant.id ? 'btn-primary' : 'btn-secondary'} btn-block" data-ws="${w.id}" ${w.id === me.tenant.id ? 'disabled' : ''}>${w.name} <span class="small" style="opacity:.8">(${w.role})</span></button>`)}</div></div>`);
+    view.appendChild(box);
+    box.querySelectorAll<HTMLElement>('[data-ws]').forEach((b) => b.addEventListener('click', async () => { switchWorkspace(b.dataset.ws!); clearStore(); await loadMe(true); navigate('/app', true); }));
+  }).catch(() => undefined);
 }
 
 // ── Services ─────────────────────────────────────────────────────────────────
 export async function renderServices(view: HTMLElement): Promise<void> {
-  mount(view, html`<div class="page-head"><div><h1>Services</h1><p>What customers can book.</p></div>${canAdmin() ? html`<button class="btn btn-primary" data-add>${ic('plus', 'ico-sm')} Add service</button>` : ''}</div>${ro()}<div class="card" id="l"></div>`);
+  mount(view, html`<div class="page-head"><div><h1>Services</h1><p>What customers can book.</p></div>${canEdit() ? html`<button class="btn btn-primary" data-add>${ic('plus', 'ico-sm')} Add service</button>` : ''}</div>${ro(true)}<div class="card" id="l"></div>`);
   const host = $('#l', view)!;
   const load = async () => {
     mount(host, skeletonRows(3));
@@ -70,7 +79,7 @@ export async function renderServices(view: HTMLElement): Promise<void> {
 
 // ── Team ─────────────────────────────────────────────────────────────────────
 export async function renderTeam(view: HTMLElement): Promise<void> {
-  mount(view, html`<div class="page-head"><div><h1>Team</h1><p>People customers can book with. Leave empty if you take bookings yourself.</p></div>${canAdmin() ? html`<button class="btn btn-primary" data-add>${ic('plus', 'ico-sm')} Add person</button>` : ''}</div>${ro()}<div class="card" id="l"></div>`);
+  mount(view, html`<div class="page-head"><div><h1>Bookable staff</h1><p>People customers can book with. Leave empty if you take bookings yourself.</p></div>${canEdit() ? html`<button class="btn btn-primary" data-add>${ic('plus', 'ico-sm')} Add person</button>` : ''}</div>${ro(true)}<div class="card" id="l"></div>`);
   const host = $('#l', view)!;
   const load = async () => {
     mount(host, skeletonRows(2));

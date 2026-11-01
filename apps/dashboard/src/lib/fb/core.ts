@@ -24,7 +24,7 @@ export const DEFAULT_SETTINGS: WorkspaceSettings = {
   logoUrl: null, rules: [],
 };
 
-export type Role = 'owner' | 'admin' | 'staff';
+export type Role = 'owner' | 'admin' | 'editor' | 'staff';
 export interface Ctx {
   uid: string; email: string | null; name: string | null; emailVerified: boolean;
   wid: string; slug: string; wsName: string; plan: string; planCycle: string | null; planExpiresAt: string | null;
@@ -33,6 +33,11 @@ export interface Ctx {
 
 let cached: Ctx | null = null;
 export const clearCtx = (): void => { cached = null; };
+
+/** Which workspace to open when the account belongs to more than one (a teammate can be in several). Remembered on this device only. */
+const WS_KEY = 'zx.workspace';
+export const preferredWorkspace = (): string | null => { try { return localStorage.getItem(WS_KEY); } catch { return null; } };
+export const setPreferredWorkspace = (id: string): void => { try { localStorage.setItem(WS_KEY, id); } catch { /* ignore */ } cached = null; };
 
 export const iso = (v: unknown): string | null => (v instanceof Timestamp ? v.toDate().toISOString() : typeof v === 'string' ? v : null);
 
@@ -59,7 +64,8 @@ export async function loadCtx(force = false): Promise<Ctx> {
   if (force) await user.reload().catch(() => undefined);
   try {
     const u = await getDoc(doc(db, 'users', user.uid));
-    const wid = (u.data()?.workspaceIds as string[] | undefined)?.[0];
+    const ids = (u.data()?.workspaceIds as string[] | undefined) ?? [];
+    const wid = ids.includes(preferredWorkspace() ?? '') ? preferredWorkspace()! : ids[0];
     if (!wid) throw new ApiError(403, 'This account has no workspace.', 'no_workspace');
     const [ws, mem] = await Promise.all([getDoc(doc(db, 'workspaces', wid)), getDoc(doc(db, 'workspaces', wid, 'members', user.uid))]);
     if (!ws.exists() || !mem.exists()) throw new ApiError(403, 'This account has no access to its workspace.', 'no_workspace');
@@ -86,6 +92,9 @@ export const wsDoc = (c: Ctx, ...path: string[]) => doc(fb().db, 'workspaces', c
 export const wsCol = (c: Ctx, name: string) => collection(fb().db, 'workspaces', c.wid, name);
 
 export const canWrite = (c: Ctx): boolean => c.role === 'owner' || c.role === 'admin';
+export const canEditContent = (c: Ctx): boolean => c.role === 'owner' || c.role === 'admin' || c.role === 'editor';
+/** Services, staff calendars and website pages: owners, admins and editors. */
+export function requireEditor(c: Ctx): void { if (!canEditContent(c)) throw new ApiError(403, 'Your role cannot change this.', 'forbidden'); }
 export function requireAdmin(c: Ctx): void { if (!canWrite(c)) throw new ApiError(403, 'Only a workspace owner or admin can do that.', 'forbidden'); }
 
 const NOUN: Record<EnforcedKey, string> = { bookingsPerMonth: 'bookings a month', staff: 'team members', services: 'services', cmsPages: 'website pages', crmContacts: 'contacts', devices: 'devices', rules: 'automations' };

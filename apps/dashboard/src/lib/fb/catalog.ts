@@ -1,5 +1,5 @@
 import { doc, getDoc, getDocs, updateDoc, query, orderBy, type QueryDocumentSnapshot } from 'firebase/firestore';
-import { ApiError, DEFAULT_SETTINGS, audit, claimSlot, loadCtx, requireAdmin, wsCol, wsDoc, type Ctx, type WorkspaceSettings } from './core';
+import { ApiError, DEFAULT_SETTINGS, audit, claimSlot, loadCtx, requireEditor, wsCol, wsDoc, type Ctx, type WorkspaceSettings } from './core';
 import { fb } from './firebase';
 import { slotLimit } from './plan';
 
@@ -36,21 +36,21 @@ function checkService(b: Record<string, unknown>, partial: boolean): Record<stri
 }
 
 export async function createService(b: Record<string, unknown>): Promise<{ id: string }> {
-  const c = await loadCtx(); requireAdmin(c);
+  const c = await loadCtx(); requireEditor(c);
   const data = checkService(b, false);
   const id = await claimSlot(c, 'services', 's', 'services', { description: null, active: true, ...data });
   void audit(c, 'service.create', 'service', id);
   return { id };
 }
 export async function patchService(id: string, b: Record<string, unknown>): Promise<{ ok: true }> {
-  const c = await loadCtx(); requireAdmin(c);
+  const c = await loadCtx(); requireEditor(c);
   await updateDoc(wsDoc(c, 'services', id), checkService(b, true));
   void audit(c, 'service.update', 'service', id);
   return { ok: true };
 }
 
 export async function createStaff(b: Record<string, unknown>): Promise<{ id: string }> {
-  const c = await loadCtx(); requireAdmin(c);
+  const c = await loadCtx(); requireEditor(c);
   const name = String(b.name ?? '').trim();
   if (name.length < 1 || name.length > 120) throw new ApiError(400, 'Enter the person\'s name.');
   const title = String(b.title ?? '').trim().slice(0, 120) || null;
@@ -67,7 +67,7 @@ export async function createStaff(b: Record<string, unknown>): Promise<{ id: str
   return { id };
 }
 export async function patchStaff(id: string, b: Record<string, unknown>): Promise<{ ok: true }> {
-  const c = await loadCtx(); requireAdmin(c);
+  const c = await loadCtx(); requireEditor(c);
   const out: Record<string, unknown> = { auto: false };
   if (b.name !== undefined) { const n = String(b.name).trim(); if (n.length < 1 || n.length > 120) throw new ApiError(400, 'Enter the person\'s name.'); out.name = n; }
   if (b.title !== undefined) out.title = String(b.title ?? '').trim().slice(0, 120) || null;
