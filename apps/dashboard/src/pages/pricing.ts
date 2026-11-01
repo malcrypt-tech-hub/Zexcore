@@ -1,5 +1,5 @@
 /** Pricing: generated from the same constants the database rules and payments Worker use, so the page cannot drift from reality. */
-import { LIMITS, PRICES, type Tier } from '../lib/fb/plan';
+import { LIMITS, PRICES, hasFeatureAccess, type Tier } from '../lib/fb/plan';
 import { block, cta, intro, shell, table } from './ref';
 
 const usd = (amount: number): string => '$' + amount.toLocaleString('en-US');
@@ -29,7 +29,7 @@ export function renderPricingPage(): string {
       <a href="${t === 'enterprise' || t === 'dedicated' ? '/contact' : '/signup'}" data-link class="btn ${featured ? 'btn-primary' : 'btn-secondary'}" style="width:100%;justify-content:center">${t === 'enterprise' || t === 'dedicated' ? 'Talk to us' : t === 'free' ? 'Start free' : 'Choose ' + NAMES[t]}</a></div>`;
   };
   return shell('pricing',
-    intro('PRICING', 'One Platform, One Price. No Surprises.', 'Start free. Upgrade when you outgrow it. Prices are in USD and can be settled with international cards or local currency via Paystack.'),
+    intro('PRICING', 'Simple Plans. No Surprises.', 'Start free. Upgrade when you outgrow it. Prices are in USD and can be settled with international cards or local currency via Paystack.'),
     block('Choose a plan', 'Every plan includes online booking, customers and your public booking page.', `<div class="rp-grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr))">${tiers.map(plan).join('')}</div>`, true),
     block('Compare Plans', 'Every limit is enforced by the platform — not just the interface.', table(
       ['', ...tiers.map((t) => NAMES[t])],
@@ -39,6 +39,10 @@ export function renderPricingPage(): string {
         ['Services', ...tiers.map((t) => lim(LIMITS[t].services))],
         ['Booking pages', ...tiers.map((t) => lim(LIMITS[t].cmsPages))],
         ['Contacts', ...tiers.map((t) => lim(LIMITS[t].crmContacts))],
+        ['Your own logo', ...tiers.map((t) => (hasFeatureAccess(t, 'branding') ? 'Included' : '—'))],
+        ['Data protection tools', ...tiers.map((t) => (hasFeatureAccess(t, 'compliance') ? 'Included' : '—'))],
+        ['Devices', ...tiers.map((t) => (hasFeatureAccess(t, 'devices') ? lim(LIMITS[t].devices) : '—'))],
+        ['Automation rules', ...tiers.map((t) => (hasFeatureAccess(t, 'automations') ? lim(LIMITS[t].rules) : '—'))],
       ])),
     block('Questions', '', `<div class="rp-grid">
       <div class="rp-card"><h3>Do I need a card to start?</h3><p>No. Creating a workspace is free.</p></div>

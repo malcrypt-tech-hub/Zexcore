@@ -25,6 +25,9 @@ const TITLES: Record<string, string> = {
   '/app/billing': 'Plan & billing', '/app/audit': 'Audit log', '/app/settings': 'Settings', '/app/security': 'Security',
   '/app/crm': 'CRM', '/app/devices': 'Devices', '/app/automations': 'Automations', '/app/content': 'Website pages', '/app/compliance': 'Data protection',
   '/docs': 'Documentation', '/documentation': 'Documentation',
+  '/pricing': 'Pricing', '/product': 'Product', '/platform': 'Product', '/solutions': 'Solutions', '/modules': 'Modules', '/security': 'Security',
+  '/contact': 'Contact', '/about': 'About', '/architecture': 'Architecture', '/multi-tenancy': 'Multi-tenancy', '/automation': 'Automation',
+  '/privacy': 'Privacy', '/terms': 'Terms', '/signin': 'Sign in', '/signup': 'Create your workspace', '/forgot-password': 'Reset your password',
 };
 
 setGuard(async (ctx) => {
@@ -41,7 +44,7 @@ setGuard(async (ctx) => {
   }
 });
 const SITE = 'https://zexcore.com.ng';
-const SITE_PAGES = new Set(['/', '/product', '/pricing', '/security', '/contact', '/privacy', '/terms', '/docs', '/documentation']);
+const SITE_PAGES = new Set(['/', '/product', '/pricing', '/solutions', '/modules', '/about', '/architecture', '/multi-tenancy', '/automation', '/security', '/contact', '/privacy', '/terms', '/docs', '/documentation']);
 function setMeta(path: string): void {
   const head = document.head;
   let canon = head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
