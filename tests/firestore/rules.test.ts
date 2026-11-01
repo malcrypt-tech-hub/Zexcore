@@ -50,6 +50,17 @@ describe('workspace creation and plan fields', () => {
     await assertFails(updateDoc(doc(adm(), 'workspaces', W), { plan: 'enterprise' }));   // not even a member
     await assertFails(updateDoc(doc(owner(), 'workspaces', W), { plan: 'enterprise' }));
   });
+  it('accepts only a small image data URL as a logo, and only on Starter and above', async () => {
+    await assertSucceeds(createWorkspace(owner()));
+    const png = 'data:image/png;base64,iVBORw0KGgo=';
+    await assertFails(updateDoc(doc(owner(), 'workspaces', W), { settings: { logoUrl: png } }));   // free plan
+    await setPlan('starter');
+    await assertSucceeds(updateDoc(doc(owner(), 'workspaces', W), { settings: { logoUrl: png } }));
+    await assertFails(updateDoc(doc(owner(), 'workspaces', W), { settings: { logoUrl: 'javascript:alert(1)' } }));
+    await assertFails(updateDoc(doc(owner(), 'workspaces', W), { settings: { logoUrl: 'https://evil.example/x.png' } }));
+    await assertFails(updateDoc(doc(owner(), 'workspaces', W), { settings: { logoUrl: 'data:image/png;base64,' + 'A'.repeat(160000) } }));
+    await assertSucceeds(updateDoc(doc(owner(), 'workspaces', W), { settings: { logoUrl: null } }));
+  });
   it('refuses reserved and already-taken slugs', async () => {
     await assertFails(createWorkspace(owner(), W, 'admin'));
     await assertSucceeds(createWorkspace(owner()));
