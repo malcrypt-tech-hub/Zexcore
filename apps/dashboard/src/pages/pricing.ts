@@ -22,7 +22,7 @@ export function renderPricingPage(): string {
       <p>${BLURB[t]}</p>${annual}
       <ul style="padding:0;margin:14px 0;color:#475569;line-height:1.9;font-size:.93rem;list-style:none">
         <li style="display:flex;align-items:center;gap:8px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>${lim(LIMITS[t].bookingsPerMonth)} bookings a month</li>
-        <li style="display:flex;align-items:center;gap:8px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>${lim(LIMITS[t].staff)} team ${LIMITS[t].staff === 1 ? 'member' : 'members'}</li>
+        <li style="display:flex;align-items:center;gap:8px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>${lim(LIMITS[t].staff)} bookable ${LIMITS[t].staff === 1 ? 'staff member' : 'staff'}</li>
         <li style="display:flex;align-items:center;gap:8px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>${lim(LIMITS[t].services)} services</li>
         <li style="display:flex;align-items:center;gap:8px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>${lim(LIMITS[t].crmContacts)} contacts</li>
       </ul>
@@ -35,7 +35,7 @@ export function renderPricingPage(): string {
       ['', ...tiers.map((t) => NAMES[t])],
       [
         ['Bookings / month', ...tiers.map((t) => lim(LIMITS[t].bookingsPerMonth))],
-        ['Team members', ...tiers.map((t) => lim(LIMITS[t].staff))],
+        ['Bookable staff', ...tiers.map((t) => lim(LIMITS[t].staff))],
         ['Services', ...tiers.map((t) => lim(LIMITS[t].services))],
         ['Booking pages', ...tiers.map((t) => lim(LIMITS[t].cmsPages))],
         ['Contacts', ...tiers.map((t) => lim(LIMITS[t].crmContacts))],

@@ -52,13 +52,6 @@ export async function testRun(id: string, b: Record<string, unknown>): Promise<u
   return evaluate(def, sourceOf(def.trigger), b.payload ?? {});
 }
 
-/** Asks the Worker (Workers AI) for a draft, then saves it as an unapproved rule for a person to review. */
-export async function aiDraft(b: Record<string, unknown>): Promise<{ id: string }> {
-  const c = await loadCtx();
-  const r = await worker<{ draft: Record<string, unknown> }>('/api/rules/ai-draft', { body: { workspaceId: c.wid, intent: b.intent } });
-  return createRule({ ...r.draft, description: `AI draft: ${String(b.intent ?? '').slice(0, 200)}` });
-}
-
 export async function runs(): Promise<{ runs: unknown[] }> {
   const c = await loadCtx(); requireAdmin(c);
   const s = await getDocs(query(wsCol(c, 'automationRuns'), orderBy('at', 'desc'), qLimit(30)));

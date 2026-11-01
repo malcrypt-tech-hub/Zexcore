@@ -11,7 +11,7 @@ import { checkout, webhook } from './routes/billing';
 import { audit, verifyAudit } from './routes/audit';
 import { ingest } from './routes/iot';
 import { banks, depositLink, depositStatus, payoutSetup, publicDeposit } from './routes/deposits';
-import { aiDraft, memberEvent, publicBooked } from './routes/events';
+import { memberEvent, publicBooked } from './routes/events';
 
 export type { Env, Deps } from './env';
 export { amountMinor, isTier, PLANS } from './routes/billing';
@@ -41,10 +41,10 @@ const ROUTES: Record<string, Handler> = {
   'GET /api/public/deposit-status': depositStatus,
   'POST /api/events': memberEvent,
   'POST /api/public/booked': publicBooked,
-  'POST /api/rules/ai-draft': aiDraft,
 };
 
 /** Routes that take or confirm money. They stay off unless a live Paystack key is set (or the Worker is explicitly marked staging). */
+const PUBLIC_ROUTES = new Set(['POST /api/public/deposit', 'GET /api/public/deposit-status', 'POST /api/public/booked', 'GET /api/banks']);
 const MONEY_ROUTES = new Set(['POST /api/checkout', 'POST /api/paystack-webhook', 'GET /api/banks', 'POST /api/payout/setup', 'POST /api/public/deposit', 'POST /api/deposit/link', 'GET /api/public/deposit-status']);
 export function paymentsEnabled(env: Env): boolean {
   const k = (env.PAYSTACK_SECRET_KEY ?? '').trim();
@@ -60,6 +60,11 @@ export async function handle(req: Request, env: Env, d: Deps = realDeps()): Prom
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers });
     const h = ROUTES[`${req.method} ${url.pathname}`];
     if (!h) return json({ error: 'Not found' }, 404, headers);
+    if (env.PUBLIC_RL && PUBLIC_ROUTES.has(`${req.method} ${url.pathname}`)) {
+      const ip = req.headers.get('cf-connecting-ip') ?? 'unknown';
+      const { success } = await env.PUBLIC_RL.limit({ key: `${ip}:${url.pathname}` }).catch(() => ({ success: true }));
+      if (!success) return json({ error: 'Too many requests. Please wait a minute and try again.', code: 'rate_limited' }, 429, headers);
+    }
     if (MONEY_ROUTES.has(`${req.method} ${url.pathname}`) && !paymentsEnabled(env)) {
       // A webhook must not be retried forever; everything else tells the user plainly.
       if (url.pathname === '/api/paystack-webhook') return json({ ok: true, ignored: true }, 200, headers);

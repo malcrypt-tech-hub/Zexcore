@@ -66,10 +66,10 @@ export async function createLead(b: Record<string, unknown>): Promise<{ id: stri
   if (!title) throw new ApiError(400, 'Give the lead a title.');
   const value = b.value === undefined || b.value === null ? null : Number(b.value);
   if (value !== null && (!Number.isInteger(value) || value < 0)) throw new ApiError(400, 'Enter a valid value.');
-  const ref = await addDoc(wsCol(c, 'leads'), { title, contactId: String(b.contactId ?? ''), stageId: String(b.stageId ?? ''), value, currency: 'USD', closedAt: null, closeReason: null, createdAt: serverTimestamp() });
-  void audit(c, 'lead.create', 'lead', ref.id);
-  emit('crm.lead.created', c.wid, ref.id);
-  return { id: ref.id };
+  const id = await claimSlot(c, 'leads', 'l', 'crmContacts', { title, contactId: String(b.contactId ?? ''), stageId: String(b.stageId ?? ''), value, currency: 'USD', closedAt: null, closeReason: null });
+  void audit(c, 'lead.create', 'lead', id);
+  emit('crm.lead.created', c.wid, id);
+  return { id };
 }
 export async function moveLead(id: string, b: Record<string, unknown>): Promise<{ ok: true }> {
   const c = await loadCtx();

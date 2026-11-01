@@ -119,7 +119,6 @@ on('GET', '/api/iot/alert-events', () => iot.recentAlerts());
 on('GET', '/api/rules', () => rl.listRules());
 on('POST', '/api/rules', ({ body }) => rl.createRule(body));
 on('GET', '/api/rules/runs', () => rl.runs());
-on('POST', '/api/rules/ai-draft', ({ body }) => rl.aiDraft(body));
 on('POST', '/api/rules/:id/approve', ({ params }) => rl.approveRule(params[0]!));
 on('POST', '/api/rules/:id/disable', ({ params }) => rl.setEnabled(params[0]!, false));
 on('POST', '/api/rules/:id/enable', ({ params }) => rl.setEnabled(params[0]!, true));

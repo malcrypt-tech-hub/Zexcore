@@ -17,6 +17,18 @@ export const PLANS: Record<Tier, { monthlyUsd: number; annualUsd: number }> = {
   enterprise: { monthlyUsd: 499, annualUsd: 4990 },
   dedicated: { monthlyUsd: 1500, annualUsd: 15000 },
 };
+const RANK: Record<string, number> = { free: 0, starter: 1, growth: 2, agency: 3, enterprise: 4, dedicated: 5 };
+/** The plan a workspace is paying for right now (free once it has lapsed), and when it ends. */
+export function activePlan(ws: Record<string, unknown> | undefined, now: Date): { tier: string; expires: Date | null } {
+  const tier = String(ws?.plan ?? 'free');
+  const exp = ws?.planExpiresAt instanceof Date ? ws.planExpiresAt : null;
+  return tier !== 'free' && exp && exp > now ? { tier, expires: exp } : { tier: 'free', expires: null };
+}
+/** Days of the new plan that the unused time on the old one is worth (same daily value as its monthly price). */
+export function creditDays(oldTier: string, remainingMs: number, newTier: Tier): number {
+  const old = PLANS[oldTier as Tier]; if (!old || remainingMs <= 0) return 0;
+  return Math.floor((remainingMs / 86_400_000) * (old.monthlyUsd / PLANS[newTier].monthlyUsd));
+}
 export const isTier = (v: unknown): v is Tier => typeof v === 'string' && Object.prototype.hasOwnProperty.call(PLANS, v);
 export function amountMinor(tier: Tier, cycle: Cycle, currency: Currency, ngnPerUsd = DEFAULT_FALLBACK_RATE): number {
   const usd = cycle === 'annual' ? PLANS[tier].annualUsd : PLANS[tier].monthlyUsd;
@@ -39,6 +51,11 @@ export async function checkout(req: Request, env: Env, d: Deps, headers: Record<
 
   const member = await fsGet(env, d, `workspaces/${workspaceId}/members/${caller.uid}`);
   if (!member || !['owner', 'admin'].includes(String(member.data.role))) return json({ error: 'Only a workspace owner or admin can change the plan.' }, 403, headers);
+
+  // Buying a cheaper plan while a dearer one is still running would throw the paid time away. Ask them to wait or write to us.
+  const wsNow = await fsGet(env, d, `workspaces/${workspaceId}`);
+  const cur = activePlan(wsNow?.data, d.now());
+  if ((RANK[tier] ?? 0) < (RANK[cur.tier] ?? 0)) return json({ error: `You are on the ${cur.tier} plan until ${cur.expires?.toISOString().slice(0, 10)}. To move to a cheaper plan, wait until it ends or contact us.`, code: 'downgrade_blocked' }, 409, headers);
 
   const liveRate = await getLiveNgnRate(env, d);
   const amount = amountMinor(tier, cycle, currency, liveRate);
@@ -92,9 +109,11 @@ export async function webhook(req: Request, env: Env, d: Deps): Promise<Response
   if (!ws) return json({ ok: true, ignored: 'unknown_workspace' });
   const days = cycle === 'annual' ? 365 : 31;
   const now = d.now();
-  const current = ws.data.planExpiresAt instanceof Date ? ws.data.planExpiresAt : null;
-  const base = ws.data.plan === tier && current && current > now ? current : now;     // renewing early keeps the remaining time
-  const expires = new Date(base.getTime() + days * 86400000);
+  const cur = activePlan(ws.data, now);
+  // Renewing the same plan early keeps the remaining time. Moving up a plan turns the unused time into extra days on the new one.
+  const base = cur.tier === tier && cur.expires ? cur.expires : now;
+  const credit = cur.tier !== tier && cur.expires && (RANK[tier] ?? 0) > (RANK[cur.tier] ?? 0) ? creditDays(cur.tier, cur.expires.getTime() - now.getTime(), tier) : 0;
+  const expires = new Date(base.getTime() + (days + credit) * 86400000);
 
   await fsCommit(env, d, [
     { path, fields: { status: 'paid', paidMinor: vj.data.amount, paidAt: now }, mask: ['status', 'paidMinor', 'paidAt'], precondition: { updateTime: pay.updateTime } },

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { creditDays } from '../../workers/payments/src/routes/billing.js';
 import { handle, paystackSignature, amountMinor, toFs, fromFs, resetTokenCache, resetJwksCache, type Env } from '../../workers/payments/src/index.js';
 
 const PROJECT = 'zexcore-5d6c0';
@@ -79,6 +80,19 @@ beforeEach(() => {
   seedDoc(`workspaces/${WID}`, { name: 'Sade Salon', plan: 'free', ownerUid: 'owner1', slug: 'sade-salon' });
   seedDoc(`workspaces/${WID}/members/owner1`, { role: 'owner' });
   seedDoc(`workspaces/${WID}/members/staff1`, { role: 'staff' });
+});
+
+describe('public route rate limit', () => {
+  it('returns 429 when the optional limiter says no, and ignores it when absent', async () => {
+    const limited = { ...env, PUBLIC_RL: { limit: async () => ({ success: false }) } } as Env;
+    const r = await handle(new Request('https://pay.example.workers.dev/api/public/deposit', { method: 'POST', body: '{}' }), limited, { fetch: mockFetch(), now: () => NOW });
+    expect(r.status).toBe(429);
+    const open = { ...env, PUBLIC_RL: { limit: async () => ({ success: true }) } } as Env;
+    const r2 = await handle(new Request('https://pay.example.workers.dev/api/public/deposit', { method: 'POST', body: '{}' }), open, { fetch: mockFetch(), now: () => NOW });
+    expect(r2.status).not.toBe(429);
+    const r3 = await handle(new Request('https://pay.example.workers.dev/api/public/deposit', { method: 'POST', body: '{}' }), env, { fetch: mockFetch(), now: () => NOW });
+    expect(r3.status).not.toBe(429);
+  });
 });
 
 describe('test-key guard', () => {
@@ -204,12 +218,39 @@ describe('POST /api/paystack-webhook', () => {
     expect((await (await send(JSON.stringify({ event: 'charge.failed', data: { reference: REF } }))).json()).ignored).toBe(true);
     expect(plan()).toBe('free');
   });
+  it('moving up a plan credits the unused time of the old one', async () => {
+    seedDoc(`workspaces/${WID}`, { plan: 'starter', ownerUid: 'owner1', planExpiresAt: new Date(NOW.getTime() + 30 * 86400000) });
+    pending(); ok();
+    await send(event());
+    expect(plan()).toBe('growth');
+    const exp = fromFs(store.get(`workspaces/${WID}`)!.fields.planExpiresAt) as Date;
+    expect(exp.getTime()).toBe(NOW.getTime() + (31 + Math.floor(30 * 19 / 49)) * 86400000);
+  });
   it('renewing early keeps the time already paid for', async () => {
     seedDoc(`workspaces/${WID}`, { plan: 'growth', ownerUid: 'owner1', planExpiresAt: new Date(NOW.getTime() + 10 * 86400000) });
     pending(); ok();
     await send(event());
     const exp = fromFs(store.get(`workspaces/${WID}`)!.fields.planExpiresAt) as Date;
     expect(exp.getTime()).toBe(NOW.getTime() + 41 * 86400000);
+  });
+});
+
+describe('plan changes while a plan is running', () => {
+  it('refuses a cheaper plan while a dearer one is still paid for', async () => {
+    seedDoc(`workspaces/${WID}`, { plan: 'growth', ownerUid: 'owner1', planExpiresAt: new Date(NOW.getTime() + 10 * 86400000) });
+    const r = await call('/api/checkout', { headers: await authed(), body: checkoutBody({ tier: 'starter' }) });
+    expect(r.status).toBe(409);
+    expect((await r.json() as any).code).toBe('downgrade_blocked');
+  });
+  it('allows the same plan or a dearer one', async () => {
+    seedDoc(`workspaces/${WID}`, { plan: 'starter', ownerUid: 'owner1', planExpiresAt: new Date(NOW.getTime() + 10 * 86400000) });
+    expect((await call('/api/checkout', { headers: await authed(), body: checkoutBody({ tier: 'starter' }) })).status).toBe(201);
+    expect((await call('/api/checkout', { headers: await authed(), body: checkoutBody({ tier: 'growth' }) })).status).toBe(201);
+  });
+  it('turns unused time on the old plan into extra days when moving up', () => {
+    expect(creditDays('starter', 30 * 86_400_000, 'growth')).toBe(Math.floor(30 * 19 / 49));
+    expect(creditDays('starter', 0, 'growth')).toBe(0);
+    expect(creditDays('free', 30 * 86_400_000, 'growth')).toBe(0);
   });
 });
 

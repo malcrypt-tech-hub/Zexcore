@@ -211,7 +211,7 @@ export async function patchBooking(id: string, b: Record<string, unknown>): Prom
     const status = String(b.status);
     if (![...LIVE, 'cancelled'].includes(status)) throw new ApiError(400, 'Unknown booking status.');
     const batch = writeBatch(db);
-    batch.update(ref, { status });
+    batch.update(ref, status === 'cancelled' && cur.depositStatus === 'paid' ? { status, refundDue: true } : { status });
     if (status === 'cancelled') for (const n of (cur.cells ?? []) as number[]) batch.delete(doc(db, 'workspaces', c.wid, 'locks', `${cur.staffId}_${n}`)); // frees the time
     await batch.commit().catch((e) => { throw toApiError(e); });
     void audit(c, `booking.${status}`, 'booking', id);
