@@ -291,3 +291,9 @@ ul.checklist { padding: 0; }
   .auth-card { border-radius: 12px; width: 100%; }
   .auth-logo img { height: 38px; width: auto; }
 }
+
+/* Booking page header: the business name may wrap, the ZexCore badge must never be clipped. */
+.public-head .row.between { gap: 12px; flex-wrap: nowrap; }
+.public-head .row.between > .row { min-width: 0; flex: 1 1 auto; }
+.public-head .badge { flex: none; width: auto; max-width: none; overflow: visible; padding: 4px 8px; }
+.public-head .badge img { max-width: none; height: 24px !important; width: auto; }

@@ -8,7 +8,7 @@ import { ApiError, DEFAULT_SETTINGS, clearCtx, loadCtx, toApiError, claimSlot, t
 import { syncBookingCap } from './catalog';
 
 const RESERVED = new Set(['admin', 'api', 'app', 'www', 'signin', 'signup', 'login', 'pricing', 'security', 'contact', 'privacy', 'terms', 'docs', 'about', 'console', 'dashboard',
-  'platform', 'solutions', 'modules', 'architecture', 'resources', 'book', 'b', 'static', 'assets', 'zexcore', 'mail', 'support', 'help', 'status', 'product', 'home', 'forgot-password', 'reset-password', 'verify-email', 'multi-tenancy', 'automation']);
+  'platform', 'solutions', 'modules', 'architecture', 'resources', 'book', 'b', 'static', 'assets', 'zexcore', 'demo', 'mail', 'support', 'help', 'status', 'product', 'home', 'forgot-password', 'reset-password', 'verify-email', 'multi-tenancy', 'automation']);
 const SLUG_RE = /^[a-z0-9]([a-z0-9-]{1,38})[a-z0-9]$/;
 
 /** Returns the canonical app origin — uses the real domain in production, localhost in development. */

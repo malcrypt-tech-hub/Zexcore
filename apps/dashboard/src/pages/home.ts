@@ -11,7 +11,7 @@ export function renderHomePage(): string {
     <p class="rp-hero-desc" style="font-weight:600">A booking page, customer records and a WhatsApp inbox in one place, for salons, clinics, studios and workshops. Customers can pay a deposit by card through Paystack, straight to your bank account.</p>
     <div class="rp-hero-actions">
       <a href="/signup" data-link class="btn btn-primary btn-lg" id="btn-hero-primary">Start free</a>
-      <a href="/pricing" data-link class="btn btn-secondary btn-lg" id="btn-hero-secondary">See pricing</a>
+      <a href="/demo" data-link class="btn btn-secondary btn-lg" id="btn-hero-secondary">Try a demo booking page</a>
     </div>
     <div class="rp-hero-strip">
       <div class="rp-hero-strip-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Free to start, no card</div>
