@@ -1,4 +1,5 @@
 import { initializeApp, type FirebaseApp } from 'firebase/app';
+import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import { getAuth, connectAuthEmulator, type Auth } from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator, type Firestore } from 'firebase/firestore';
 
@@ -34,7 +35,15 @@ let db: Firestore | null = null;
 /** Lazily initialised so the marketing pages load even when the Firebase settings are missing. */
 export function fb(): { app: FirebaseApp; auth: Auth; db: Firestore } {
   if (!isConfigured()) throw new Error('not-configured');
-  app ??= initializeApp(cfg);
+  if (!app) {
+    app = initializeApp(cfg);
+    // Bot protection: when a reCAPTCHA v3 site key is configured, every Firestore call carries an App Check token, and the
+    // Firebase console can then be set to reject calls without one (stops scripts from filling booking slots).
+    const siteKey = env.VITE_APPCHECK_SITE_KEY;
+    if (siteKey && typeof window !== 'undefined') {
+      try { initializeAppCheck(app, { provider: new ReCaptchaV3Provider(siteKey), isTokenAutoRefreshEnabled: true }); } catch { /* app check unavailable: carry on without it */ }
+    }
+  }
   auth ??= getAuth(app);
   db ??= getFirestore(app);
   return { app, auth, db };

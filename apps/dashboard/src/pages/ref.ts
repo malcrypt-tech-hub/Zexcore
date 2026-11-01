@@ -27,6 +27,7 @@ const CSS = `<style>
 .rp-note{border-left:3px solid #E50920;background:#FDF2F2;border-radius:0 10px 10px 0;padding:14px 16px;color:#475569;font-size:.92rem;line-height:1.6;margin-top:18px}
 .rp-h{margin:0 0 10px;font-size:1.8rem;letter-spacing:-.02em;color:#0f172a}
 .rp-lead{margin:0 0 28px;color:#475569;max-width:720px;line-height:1.65}
+.page-wrapper .page-intro-section .site-container{justify-content:flex-start}
 .page-intro-header.page-hero-content-col{margin:0;max-width:820px}
 .rp-hero{padding:88px 0 72px;background:linear-gradient(180deg,#fff,#FDF2F2);border-bottom:1px solid #f1e3e5}
 .rp-hero-copy{max-width:800px;margin:0 auto;text-align:center}

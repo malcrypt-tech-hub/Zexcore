@@ -13,8 +13,12 @@ NGN_PER_USD = "auto"
 #   PAYSTACK_SECRET_KEY        Paystack secret key. Money routes only work with sk_live_...; an sk_test_ key needs ALLOW_TEST_PAYMENTS="true" (staging only).
 #   FIREBASE_SERVICE_ACCOUNT   service-account JSON with the "Cloud Datastore User" role only
 
-# Workers AI (free tier) drafts automation rules; a person always reviews and approves them.
-[ai]
-binding = "AI"
-
 # Optional secrets: RESEND_API_KEY and MAIL_FROM turn on e-mail alerts to the workspace owner.
+
+# Optional: rate limit the public (signed-out) routes per visitor. Uncomment after enabling Rate Limiting for your account,
+# then redeploy. Without it the Worker still works; add a Cloudflare dashboard rate-limit rule instead.
+# [[unsafe.bindings]]
+# name = "PUBLIC_RL"
+# type = "ratelimit"
+# namespace_id = "1001"
+# simple = { limit = 30, period = 60 }

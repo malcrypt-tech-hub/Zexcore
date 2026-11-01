@@ -15,6 +15,7 @@ export const statusBadge = (s: Booking['status']): Raw => ({
 }[s]);
 
 export const depositBadge = (b: Booking): Raw => {
+  if (b.depositStatus === 'paid' && b.status === 'cancelled') return html`<span class="badge badge-warning">${ic('triangle-alert', 'ico-sm')}Cancelled — ${money(b.depositMinor, b.currency)} deposit to refund</span>`;
   if (b.depositStatus === 'paid') return html`<span class="badge badge-success">${ic('circle-check', 'ico-sm')}Deposit ${money(b.depositMinor, b.currency)} paid</span>`;
   if (b.depositStatus === 'unpaid') return html`<span class="badge badge-primary">${ic('triangle-alert', 'ico-sm')}Deposit ${money(b.depositMinor, b.currency)} unpaid</span>`;
   if (b.depositStatus === 'mismatch') return html`<span class="badge badge-warning">Payment amount mismatch</span>`;
@@ -97,7 +98,7 @@ function openActions(b: Booking, reload: () => void): void {
       if (k === 'paid' && await patch(b.id, { markDepositPaid: true }, 'Deposit recorded')) reload();
       if (k === 'link') await sendPaymentLink(b, null, reload);
       if (k === 'resched') openReschedule(b, reload);
-      if (k === 'cancel' && await confirmDialog({ title: 'Cancel this booking?', message: `${b.customerName}'s slot will be released. This cannot be undone.`, confirmLabel: 'Cancel booking', danger: true }) && await patch(b.id, { status: 'cancelled' }, 'Booking cancelled')) reload();
+      if (k === 'cancel' && await confirmDialog({ title: 'Cancel this booking?', message: b.depositStatus === 'paid' ? `${b.customerName}'s slot will be released. They paid a ${money(b.depositMinor, b.currency)} deposit online. It is NOT refunded automatically: refund it from your Paystack dashboard (Transactions) and let them know.` : `${b.customerName}'s slot will be released. This cannot be undone.`, confirmLabel: 'Cancel booking', danger: true }) && await patch(b.id, { status: 'cancelled' }, 'Booking cancelled')) reload();
     })),
   });
 }

@@ -148,8 +148,14 @@ service cloud.firestore {
         allow update, delete: if isMember(wid);
       }
       match /stages/{id} { allow read, write: if isAdmin(wid); allow read: if isMember(wid); }
-      match /leads/{id}  { allow read, write: if isMember(wid); }
-      match /customers/{id} { allow read, write: if isMember(wid); }
+      // Leads use numbered slots like contacts, so the plan's contact limit also bounds them.
+      match /leads/{id} {
+        allow read: if isMember(wid);
+        allow create: if isMember(wid) && slotId(wid, 'l', 'crmContacts', id);
+        allow update, delete: if isMember(wid);
+      }
+      // Customers are derived from bookings; nothing writes this collection.
+      match /customers/{id} { allow read: if isMember(wid); allow write: if false; }
 
       // Website pages: published pages are public
       match /pages/{id} {

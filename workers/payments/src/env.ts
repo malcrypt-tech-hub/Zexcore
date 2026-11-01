@@ -1,5 +1,7 @@
 export interface Env {
   PAYSTACK_SECRET_KEY: string;
+  /** Optional Cloudflare Rate Limiting binding for the public routes (see wrangler.toml). Without it those routes are not rate limited here. */
+  PUBLIC_RL?: { limit(opts: { key: string }): Promise<{ success: boolean }> };
   /** Set to 'true' only on a staging Worker. Otherwise a Paystack TEST key (sk_test_…) switches money routes off so test cards can never unlock plans or deposits. */
   ALLOW_TEST_PAYMENTS?: string;
   FIREBASE_SERVICE_ACCOUNT: string;
@@ -10,8 +12,6 @@ export interface Env {
   /** Optional: alert e-mails and webhook-less notifications go out through Resend when this is set. */
   RESEND_API_KEY?: string;
   MAIL_FROM?: string;
-  /** Optional Cloudflare Workers AI binding, used to draft automation rules (a human still approves them). */
-  AI?: { run(model: string, input: unknown): Promise<unknown> };
   /** Set only by the test harness: talk to the Firestore emulator instead of production. Never set in wrangler.toml. */
   FIRESTORE_EMULATOR_HOST?: string;
   /** Flat platform fee, in kobo, kept by ZexCore on each booking deposit. Defaults to 0. */

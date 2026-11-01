@@ -13,6 +13,8 @@
 import { requireMember } from '../auth';
 import type { Ctx, Deps, Env } from '../env';
 import { FsConflict, fsCommit, fsGet } from '../fs';
+import { sendMail } from '../mail';
+import { ownerEmail } from '../automation';
 import { HttpError, ID_RE, json, randomRef, readJson } from '../util';
 import { getLiveNgnRate } from '../rates';
 
@@ -53,6 +55,12 @@ export async function payoutSetup(c: Ctx): Promise<Response> {
   const code = sj.data?.subaccount_code ?? (existing?.data.subaccountCode as string | undefined);
   if (!sub.ok || !sj.status || !code) throw new HttpError(502, 'Paystack could not set up your payout account. Try again shortly.');
   await fsCommit(c.env, c.d, [{ path: `workspaces/${wid}/payout/main`, fields: { subaccountCode: code, bankCode, bankName: String(b.bankName ?? '').slice(0, 80), accountName, last4: accountNumber.slice(-4), updatedAt: c.d.now(), updatedBy: caller.uid } }]);
+  // Tell the owner every time the place deposits are paid is set or changed, so a hijacked session cannot redirect money silently.
+  const changed = Boolean(existing?.data.last4) && (existing?.data.bankCode !== bankCode || existing?.data.last4 !== accountNumber.slice(-4));
+  const note = `${changed ? 'The bank account for your ZexCore deposits was changed.' : 'A bank account was set for your ZexCore deposits.'}\n\nAccount name: ${accountName}\nBank: ${String(b.bankName ?? '').slice(0, 80) || bankCode}\nAccount ending: ${accountNumber.slice(-4)}\n\nIf this was not you, sign in, change your password straight away and contact support.`;
+  const owner = await ownerEmail(c, wid);
+  await sendMail(c.env, c.d, owner, changed ? 'ZexCore: your payout account was changed' : 'ZexCore: payout account set', note);
+  if (caller.email && caller.email.toLowerCase() !== owner.toLowerCase()) await sendMail(c.env, c.d, caller.email, changed ? 'ZexCore: your payout account was changed' : 'ZexCore: payout account set', note);
   return json({ ok: true, accountName, last4: accountNumber.slice(-4) }, 200, c.headers);
 }
 

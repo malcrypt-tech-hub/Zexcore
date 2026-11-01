@@ -18,7 +18,7 @@ Workers & Pages → `zexcore-payments` → Settings → Variables and Secrets:
 - `FIREBASE_SERVICE_ACCOUNT`: a **new** service account JSON with only *Cloud Datastore User*
 - optional `RESEND_API_KEY` and `MAIL_FROM` (an address on a Resend-verified domain) for e-mail alerts
 - optional `DEPOSIT_FEE_MINOR`: flat fee in kobo kept per deposit
-The `[ai]` binding in `wrangler.toml` enables the automation "draft with AI" button (Workers AI); without it that button reports it is unavailable.
+Optional: automation "draft with AI" uses the customer's own Gemini or OpenAI key, entered in the browser. No Worker setup is needed.
 
 ## 4. Paystack (you)
 Settings → API Keys & Webhooks → webhook URL `https://<worker-url>/api/paystack-webhook`. It carries both plan payments and customer deposits.
