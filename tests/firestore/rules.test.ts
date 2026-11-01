@@ -204,6 +204,35 @@ describe('tenant isolation', () => {
 
 });
 
+describe('team roles', () => {
+  const asRole = (uid: string) => env.authenticatedContext(uid, { email: `${uid}@example.com`, email_verified: true }).firestore();
+  beforeEach(async () => {
+    await createWorkspace(owner());
+    await seed(async (db) => {
+      await setDoc(doc(db, 'workspaces', W, 'members', 'admin1'), { role: 'admin', name: 'A', email: 'a@example.com' });
+      await setDoc(doc(db, 'workspaces', W, 'members', 'editor1'), { role: 'editor', name: 'E', email: 'e@example.com' });
+    });
+  });
+  it('an editor looks after services, staff and pages, but not settings, team or automations approval', async () => {
+    const ed = asRole('editor1');
+    await assertSucceeds(setDoc(doc(ed, 'workspaces', W, 'services', 's_0'), svc()));
+    await assertSucceeds(updateDoc(doc(ed, 'workspaces', W, 'services', 's_0'), { name: 'Updated' }));
+    await assertSucceeds(setDoc(doc(ed, 'workspaces', W, 'staff', 'p_0'), { name: 'Tolu' }));
+    await assertSucceeds(setDoc(doc(ed, 'workspaces', W, 'pages', 'g_0'), { title: 'About', published: false }));
+    await assertFails(updateDoc(doc(ed, 'workspaces', W), { name: 'Hijack' }));
+    await assertFails(setDoc(doc(ed, 'workspaces', W, 'members', 'editor1'), { role: 'owner' }));
+    await assertFails(getDoc(doc(ed, 'workspaces', W, 'invites', 'x')));
+  });
+  it('an admin runs the workspace; a stranger and invites are closed to clients', async () => {
+    const ad = asRole('admin1');
+    await assertSucceeds(updateDoc(doc(ad, 'workspaces', W), { name: 'Renamed' }));
+    await assertSucceeds(getDoc(doc(ad, 'workspaces', W, 'invites', 'x')));
+    await assertFails(setDoc(doc(ad, 'workspaces', W, 'invites', 'x'), { email: 'x@example.com' }));
+    await assertFails(setDoc(doc(ad, 'workspaces', W, 'members', 'newbie'), { role: 'admin' }));
+    await assertFails(setDoc(doc(other(), 'workspaces', W, 'services', 's_0'), svc()));
+  });
+});
+
 describe('plan limits (enforced by numbered slots)', () => {
   beforeEach(async () => { await createWorkspace(owner()); });
   const put = (db: any, kind: string, n: number, body: object) => setDoc(doc(db, 'workspaces', W, kind === 's' ? 'services' : kind === 'p' ? 'staff' : kind === 'c' ? 'contacts' : 'pages', `${kind}_${n}`), body);

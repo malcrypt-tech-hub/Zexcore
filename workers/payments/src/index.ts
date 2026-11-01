@@ -12,6 +12,7 @@ import { audit, verifyAudit } from './routes/audit';
 import { ingest } from './routes/iot';
 import { banks, depositLink, depositStatus, payoutSetup, publicDeposit } from './routes/deposits';
 import { memberEvent, publicBooked } from './routes/events';
+import { accept, invite, inviteInfo, remove, revoke, setRole } from './routes/team';
 
 export type { Env, Deps } from './env';
 export { amountMinor, isTier, PLANS } from './routes/billing';
@@ -41,10 +42,16 @@ const ROUTES: Record<string, Handler> = {
   'GET /api/public/deposit-status': depositStatus,
   'POST /api/events': memberEvent,
   'POST /api/public/booked': publicBooked,
+  'POST /api/team/invite': invite,
+  'GET /api/team/invite-info': inviteInfo,
+  'POST /api/team/accept': accept,
+  'POST /api/team/revoke': revoke,
+  'POST /api/team/role': setRole,
+  'POST /api/team/remove': remove,
 };
 
 /** Routes that take or confirm money. They stay off unless a live Paystack key is set (or the Worker is explicitly marked staging). */
-const PUBLIC_ROUTES = new Set(['POST /api/public/deposit', 'GET /api/public/deposit-status', 'POST /api/public/booked', 'GET /api/banks']);
+const PUBLIC_ROUTES = new Set(['POST /api/public/deposit', 'GET /api/public/deposit-status', 'POST /api/public/booked', 'GET /api/banks', 'GET /api/team/invite-info']);
 const MONEY_ROUTES = new Set(['POST /api/checkout', 'POST /api/paystack-webhook', 'GET /api/banks', 'POST /api/payout/setup', 'POST /api/public/deposit', 'POST /api/deposit/link', 'GET /api/public/deposit-status']);
 export function paymentsEnabled(env: Env): boolean {
   const k = (env.PAYSTACK_SECRET_KEY ?? '').trim();

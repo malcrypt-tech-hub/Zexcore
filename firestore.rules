@@ -27,6 +27,9 @@ service cloud.firestore {
     function isMember(wid) { return signedIn() && exists(memberPath(wid, request.auth.uid)); }
     function memberRole(wid) { return get(memberPath(wid, request.auth.uid)).data.role; }
     function isAdmin(wid) { return isMember(wid) && memberRole(wid) in ['owner', 'admin']; }
+    // Roles: owner and admin run the workspace; editor looks after services, staff and website pages plus the day-to-day
+    // work every member can do (bookings, contacts, leads, inbox). 'staff' is the old name for the day-to-day role.
+    function isEditor(wid) { return isMember(wid) && memberRole(wid) in ['owner', 'admin', 'editor']; }
     function onlyChanges(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
     function noExtraKeys(allowed) { return request.resource.data.keys().hasOnly(allowed); }
 
@@ -119,6 +122,9 @@ service cloud.firestore {
                 && request.resource.data.settings.logoUrl.size() < 150000)));
       allow delete: if false;
 
+      // Invitations to join. Only the payments Worker writes them (it also creates the member row when one is accepted).
+      match /invites/{id} { allow read: if isAdmin(wid); allow write: if false; }
+
       match /members/{uid} {
         allow read: if isMember(wid);
         // only the founding owner row, written in the same batch as the workspace
@@ -133,13 +139,13 @@ service cloud.firestore {
       // Visible to the public booking page (names, durations, prices); admins manage them
       match /services/{id} {
         allow get, list: if true;
-        allow create: if isAdmin(wid) && slotId(wid, 's', 'services', id);
-        allow update, delete: if isAdmin(wid);
+        allow create: if isEditor(wid) && slotId(wid, 's', 'services', id);
+        allow update, delete: if isEditor(wid);
       }
       match /staff/{id} {
         allow get, list: if true;
-        allow create: if isAdmin(wid) && slotId(wid, 'p', 'staff', id);
-        allow update, delete: if isAdmin(wid);
+        allow create: if isEditor(wid) && slotId(wid, 'p', 'staff', id);
+        allow update, delete: if isEditor(wid);
       }
 
       match /contacts/{id} {
@@ -160,8 +166,8 @@ service cloud.firestore {
       // Website pages: published pages are public
       match /pages/{id} {
         allow get, list: if resource.data.published == true || isMember(wid);
-        allow create: if isAdmin(wid) && slotId(wid, 'g', 'cmsPages', id);
-        allow update, delete: if isAdmin(wid);
+        allow create: if isEditor(wid) && slotId(wid, 'g', 'cmsPages', id);
+        allow update, delete: if isEditor(wid);
       }
 
       // Bookings: staff manage freely; the public may only CREATE, never read or change

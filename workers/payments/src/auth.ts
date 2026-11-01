@@ -30,7 +30,7 @@ export async function verifyFirebaseIdToken(env: Env, d: Deps, token: string): P
   return { uid: claims.sub, email: claims.email ?? null, emailVerified: claims.email_verified === true };
 }
 
-export type Role = 'owner' | 'admin' | 'staff';
+export type Role = 'owner' | 'admin' | 'editor' | 'staff';
 /** Verifies the bearer token and that the caller belongs to the workspace (optionally with one of `roles`). */
 export async function requireMember(c: Ctx, wid: unknown, roles?: Role[]): Promise<{ caller: Caller; role: Role; wid: string }> {
   const bearer = /^Bearer (.+)$/.exec(c.req.headers.get('authorization') ?? '')?.[1];

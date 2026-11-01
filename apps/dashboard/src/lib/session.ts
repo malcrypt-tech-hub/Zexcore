@@ -3,7 +3,7 @@ import { api, getToken, setToken, ApiError } from './api';
 export interface Me {
   user: { id: string; email: string | null; name: string | null; emailVerified?: boolean };
   tenant: { id: string; slug: string; name: string; tier: string; plan_cycle: string | null; plan_expires_at: string | null };
-  role: 'owner' | 'admin' | 'member' | 'viewer' | null;
+  role: 'owner' | 'admin' | 'editor' | 'member' | 'viewer' | null;
   isPlatformAdmin: boolean;
 }
 
@@ -17,7 +17,9 @@ let me: Me | null = getToken() ? ssRead() : null;
 
 export const current = (): Me | null => me;
 export const isSignedIn = (): boolean => !!getToken();
-export const canManage = (): boolean => !!me && (me.role === 'owner' || me.role === 'admin' || me.role === 'member' || me.isPlatformAdmin);
+export const canManage = (): boolean => !!me && (me.role === 'owner' || me.role === 'admin' || me.role === 'editor' || me.role === 'member' || me.isPlatformAdmin);
+/** Services, staff calendars and website pages. */
+export const canEdit = (): boolean => !!me && (me.role === 'owner' || me.role === 'admin' || me.role === 'editor' || me.isPlatformAdmin);
 export const canAdmin = (): boolean => !!me && (me.role === 'owner' || me.role === 'admin' || me.isPlatformAdmin);
 
 // Tracks whether we've revalidated against Firebase in this page session.

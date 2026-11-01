@@ -1,5 +1,5 @@
 import { addDoc, getDocs, getDoc, updateDoc, query, orderBy, limit as qLimit, serverTimestamp, type QueryDocumentSnapshot } from 'firebase/firestore';
-import { ApiError, audit, claimSlot, iso, loadCtx, requireAdmin, wsCol, wsDoc } from './core';
+import { ApiError, audit, claimSlot, iso, loadCtx, requireAdmin, requireEditor, wsCol, wsDoc } from './core';
 import { emit } from './rules';
 
 const str = (v: unknown, max: number): string | null => { const s = String(v ?? '').trim().slice(0, max); return s || null; };
@@ -94,7 +94,7 @@ export async function listPages(): Promise<{ pages: unknown[] }> {
   return { pages: s.docs.map(page) };
 }
 export async function createPage(b: Record<string, unknown>): Promise<{ id: string }> {
-  const c = await loadCtx(); requireAdmin(c);
+  const c = await loadCtx(); requireEditor(c);
   const title = str(b.title, 200), slug = str(b.slug, 120);
   if (!title || !slug || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) throw new ApiError(400, 'Give the page a title and an address (lowercase letters, numbers and dashes).');
   const existing = await getDocs(wsCol(c, 'pages'));
@@ -105,7 +105,7 @@ export async function createPage(b: Record<string, unknown>): Promise<{ id: stri
   return { id };
 }
 export async function publishPage(id: string): Promise<{ ok: true }> {
-  const c = await loadCtx(); requireAdmin(c);
+  const c = await loadCtx(); requireEditor(c);
   if (!(await getDoc(wsDoc(c, 'pages', id))).exists()) throw new ApiError(404, 'That page no longer exists.');
   await updateDoc(wsDoc(c, 'pages', id), { published: true, publishedAt: serverTimestamp() });
   void audit(c, 'page.publish', 'page', id);

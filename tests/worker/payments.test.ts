@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { creditDays } from '../../workers/payments/src/routes/billing.js';
+import { SEATS } from '../../workers/payments/src/routes/team.js';
+import { LIMITS } from '../../apps/dashboard/src/lib/fb/plan';
 import { handle, paystackSignature, amountMinor, toFs, fromFs, resetTokenCache, resetJwksCache, type Env } from '../../workers/payments/src/index.js';
 
 const PROJECT = 'zexcore-5d6c0';
@@ -36,18 +38,26 @@ function mockFetch(): typeof fetch {
     if (url.endsWith(':commit')) {
       const writes = JSON.parse(init.body).writes as any[];
       for (const w of writes) {   // validate every precondition first = atomic
-        const p = fsPath(w.update.name); const cur = store.get(p);
+        const p = fsPath((w.update ?? { name: w.delete }).name); const cur = store.get(p);
         if (w.currentDocument?.exists === false && cur) return new Response('{}', { status: 409 });
         if (w.currentDocument?.exists === true && !cur) return new Response('{}', { status: 404 });
         if (w.currentDocument?.updateTime && String(cur?.v) !== w.currentDocument.updateTime) return new Response('{}', { status: 409 });
       }
       for (const w of writes) {
+        if (w.delete) { store.delete(fsPath(w.delete)); continue; }
         const p = fsPath(w.update.name); const cur = store.get(p);
         const next = w.updateMask ? { ...(cur?.fields ?? {}), ...Object.fromEntries(w.updateMask.fieldPaths.map((k: string) => [k, w.update.fields[k]])) } : w.update.fields;
         store.set(p, { fields: next, v: (cur?.v ?? 0) + 1 });
       }
       commits.push(writes);
       return Response.json({});
+    }
+    if (url.endsWith(':runQuery')) {   // lists a collection under a parent; filters are not evaluated (tests seed only what they need)
+      const parent = decodeURIComponent(url.split('/documents')[1]!.replace(/:runQuery$/, '')).replace(/^\//, '');
+      const col = JSON.parse(init.body).structuredQuery.from[0].collectionId;
+      const prefix = `${parent ? parent + '/' : ''}${col}/`;
+      return Response.json([...store.entries()].filter(([k]) => k.startsWith(prefix) && !k.slice(prefix.length).includes('/'))
+        .map(([k, d]) => ({ document: { name: `projects/${PROJECT}/databases/(default)/documents/${k}`, fields: d.fields, updateTime: String(d.v) } })));
     }
     if (url.includes('firestore.googleapis.com')) {
       const d = store.get(fsPath(url));
@@ -331,5 +341,93 @@ describe('deposits', () => {
     expect((await call('/api/deposit/link', { body, headers: await authed({ sub: 'stranger' }) })).status).toBe(403);
     const r = await call('/api/deposit/link', { body, headers: await authed({ sub: 'staff1' }) });
     expect(r.status).toBe(201);
+  });
+});
+
+describe('team access', () => {
+  const body = (o: object) => JSON.stringify({ wid: WID_T, ...o });
+  const WID_T = 'abcdefghij0123456789';
+  const asUser = (sub: string, email: string, verified = true) => authed({ sub, email, email_verified: verified });
+  const inviteReq = async (sub: string, email: string, role: string, to = 'new@example.com') =>
+    call('/api/team/invite', { body: body({ email: to, role }), headers: await asUser(sub, email) });
+  const tokenOf = (link: string) => new URL(link).searchParams.get('t')!;
+  beforeEach(() => {
+    seedDoc(`workspaces/${WID_T}`, { name: 'Team Salon', plan: 'growth', planExpiresAt: new Date(NOW.getTime() + 20 * 86_400_000), ownerUid: 'owner1', slug: 'team-salon' });
+    seedDoc(`workspaces/${WID_T}/members/owner1`, { role: 'owner', email: 'sade@example.com' });
+    seedDoc(`workspaces/${WID_T}/members/adm1`, { role: 'admin', email: 'adm@example.com' });
+    seedDoc(`workspaces/${WID_T}/members/ed1`, { role: 'editor', email: 'ed@example.com' });
+  });
+
+  it('seat limits per plan match the pricing page limits', () => {
+    for (const t of Object.keys(LIMITS) as (keyof typeof LIMITS)[]) {
+      const n = LIMITS[t].staff;
+      expect(SEATS[t]).toBe(n === null || n > 1000 ? 1000 : n);
+    }
+  });
+
+  it('owner invites an editor, the invitee accepts once, and becomes a member of that workspace', async () => {
+    const r = await inviteReq('owner1', 'sade@example.com', 'editor');
+    expect(r.status).toBe(200);
+    const { link } = (await r.json()) as { link: string };
+    const token = tokenOf(link);
+    const info = await call(`/api/team/invite-info?w=${WID_T}&t=${token}`, { method: 'GET', headers: { origin: 'https://zexcore.com.ng' } });
+    expect(await info.json()).toMatchObject({ workspace: 'Team Salon', role: 'editor', email: 'new@example.com' });
+    const acc = await call('/api/team/accept', { body: body({ token }), headers: await asUser('new1', 'New@Example.com') });
+    expect(acc.status).toBe(200);
+    expect(fromFs(store.get(`workspaces/${WID_T}/members/new1`)!.fields.role)).toBe('editor');
+    expect(fromFs(store.get('users/new1')!.fields.workspaceIds)).toEqual([WID_T]);
+    expect([...store.keys()].some((k) => k.startsWith(`workspaces/${WID_T}/invites/`))).toBe(false);
+    expect((await call('/api/team/accept', { body: body({ token }), headers: await asUser('new1', 'new@example.com') })).status).toBe(410);
+  });
+
+  it('only the invited, verified email can accept', async () => {
+    const { link } = (await (await inviteReq('owner1', 'sade@example.com', 'editor')).json()) as { link: string };
+    const token = tokenOf(link);
+    expect((await call('/api/team/accept', { body: body({ token }), headers: await asUser('x1', 'other@example.com') })).status).toBe(403);
+    expect((await call('/api/team/accept', { body: body({ token }), headers: await asUser('new1', 'new@example.com', false) })).status).toBe(403);
+    expect((await call('/api/team/accept', { body: body({ token }), headers: { 'content-type': 'application/json' } })).status).toBe(401);
+    expect((await call('/api/team/accept', { body: body({ token: 'f'.repeat(48) }), headers: await asUser('new1', 'new@example.com') })).status).toBe(410);
+    expect(store.has(`workspaces/${WID_T}/members/new1`)).toBe(false);
+  });
+
+  it('expired invitations stop working', async () => {
+    const { link } = (await (await inviteReq('owner1', 'sade@example.com', 'editor')).json()) as { link: string };
+    const key = [...store.keys()].find((k) => k.startsWith(`workspaces/${WID_T}/invites/`))!;
+    store.get(key)!.fields.expiresAt = toFs(new Date(NOW.getTime() - 1000));
+    const r = await call('/api/team/accept', { body: body({ token: tokenOf(link) }), headers: await asUser('new1', 'new@example.com') });
+    expect(r.status).toBe(410);
+  });
+
+  it('enforces who may invite or remove whom', async () => {
+    expect((await inviteReq('ed1', 'ed@example.com', 'editor')).status).toBe(403);
+    expect((await inviteReq('adm1', 'adm@example.com', 'admin')).status).toBe(403);
+    expect((await inviteReq('adm1', 'adm@example.com', 'editor')).status).toBe(200);
+    expect((await inviteReq('owner1', 'sade@example.com', 'owner')).status).toBe(400);
+    const remove = async (sub: string, email: string, uid: string) => call('/api/team/remove', { body: body({ uid }), headers: await asUser(sub, email) });
+    expect((await remove('adm1', 'adm@example.com', 'owner1')).status).toBe(403);
+    expect((await remove('ed1', 'ed@example.com', 'adm1')).status).toBe(403);
+    expect((await remove('adm1', 'adm@example.com', 'ed1')).status).toBe(200);
+    expect(store.has(`workspaces/${WID_T}/members/ed1`)).toBe(false);
+  });
+
+  it('only the owner changes roles, and never the owner', async () => {
+    const setRole = async (sub: string, email: string, uid: string, role: string) => call('/api/team/role', { body: body({ uid, role }), headers: await asUser(sub, email) });
+    expect((await setRole('adm1', 'adm@example.com', 'ed1', 'admin')).status).toBe(403);
+    expect((await setRole('owner1', 'sade@example.com', 'owner1', 'editor')).status).toBe(403);
+    expect((await setRole('owner1', 'sade@example.com', 'ed1', 'admin')).status).toBe(200);
+    expect(fromFs(store.get(`workspaces/${WID_T}/members/ed1`)!.fields.role)).toBe('admin');
+  });
+
+  it('refuses invitations beyond the plan\'s team logins', async () => {
+    seedDoc(`workspaces/${WID_T}`, { name: 'Team Salon', plan: 'starter', planExpiresAt: new Date(NOW.getTime() + 20 * 86_400_000), ownerUid: 'owner1', slug: 'team-salon' });
+    const r = await inviteReq('owner1', 'sade@example.com', 'editor');    // starter = 3 logins, already 3 members
+    expect(r.status).toBe(402);
+    expect(((await r.json()) as any).code).toBe('seat_limit');
+    seedDoc(`workspaces/${WID_T}`, { name: 'Team Salon', plan: 'free', ownerUid: 'owner1', slug: 'team-salon' });
+    expect((await inviteReq('owner1', 'sade@example.com', 'editor')).status).toBe(402);
+  });
+
+  it('rejects duplicates of someone already on the team', async () => {
+    expect((await inviteReq('owner1', 'sade@example.com', 'editor', 'ED@example.com')).status).toBe(409);
   });
 });
