@@ -132,7 +132,7 @@ export async function googleSignIn(): Promise<{ hasWorkspace: boolean; email: st
     throw authMessage(e);
   }
   clearCtx();
-  await ensureUserWorkspace(user).catch(() => undefined);
+  // No workspace is created here: a new Google user is asked for their business name first (googleCreateWorkspace).
   const u = await getDoc(doc(db, 'users', user.uid));
   const has = Array.isArray(u.data()?.workspaceIds) && (u.data()!.workspaceIds as unknown[]).length > 0;
   return { hasWorkspace: has, email: user.email ?? '', name: user.displayName ?? (user.email ?? '').split('@')[0] ?? 'there' };
@@ -153,7 +153,8 @@ export async function login(email: string, password: string): Promise<void> {
   let cred;
   try { cred = await signInWithEmailAndPassword(auth, cleanEmail, password); } catch (e) { throw authMessage(e); }
   clearCtx();
-  await ensureUserWorkspace(cred.user).catch(() => undefined);
+  // An older account with no workspace gets one now; if that fails, say so instead of landing on a broken page.
+  await ensureUserWorkspace(cred.user).catch((e) => { throw e instanceof ApiError ? e : new ApiError(500, 'We could not set up your workspace. Please try again.', 'workspace_failed'); });
 }
 
 export async function logout(): Promise<void> {
