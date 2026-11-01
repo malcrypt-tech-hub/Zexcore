@@ -24,9 +24,10 @@ const summary = (r: Rule): string => {
   return `When ${t.source.replace(/^event:/, '')} → ${what}${a.length > 1 ? ` (+${a.length - 1} more)` : ''}`;
 };
 
+const GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-2.5-flash'];
+
 async function callAiProvider(provider: 'gemini' | 'openai', apiKey: string, intent: string): Promise<Record<string, unknown>> {
   if (provider === 'gemini') {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey.trim())}`;
     const systemPrompt = `You are an automation rule generator for ZexCore business platform. Convert this intent into a valid rule JSON.
 Intent: "${intent}"
 
@@ -53,14 +54,17 @@ Return ONLY valid JSON without markdown code fences:
   "actions": [{ "type": "notify", "message": "High value lead received" }]
 }`;
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: systemPrompt }] }],
-        generationConfig: { responseMimeType: 'application/json' },
-      }),
-    });
+    // gemini-2.0-flash was shut down on 1 June 2026. Try the current model first, then an older one if it is not available to this key.
+    let res: Response | null = null;
+    for (const model of GEMINI_MODELS) {
+      res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey.trim())}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: systemPrompt }] }], generationConfig: { responseMimeType: 'application/json' } }),
+      });
+      if (res.status !== 404) break;
+    }
+    if (!res) throw new ApiError(502, 'Gemini could not be reached.');
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new ApiError(res.status, err.error?.message || 'Gemini API call failed. Verify your API key.');

@@ -166,7 +166,8 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
         <div class="field"><label for="ld">Minimum notice (hours)</label><input class="input" id="ld" type="number" min="0" max="168" value="${s.leadMinutes / 60}" ${dis}></div></div></section>
       <section class="card card-pad form-grid" id="payout"><h3>Where deposits are paid</h3><p class="muted small">Loading…</p></section>
       <section class="card card-pad form-grid"><div class="row between"><div><h3>Upfront deposit</h3><p class="muted small">Customers pay this by card through Paystack to secure their slot. The money goes straight to your bank account below.</p></div><label class="switch"><input type="checkbox" id="dep" ${s.depositEnabled ? 'checked' : ''} ${dis} aria-label="Require deposit"><span></span></label></div>
-        <div class="field ${s.depositEnabled ? '' : 'hidden'}" id="depf"><label for="depn">Deposit per booking ($)</label><input class="input" id="depn" type="number" min="0" value="${s.depositMinor / 100}" ${dis}></div></section>
+        <div class="field ${s.depositEnabled ? '' : 'hidden'}" id="depf"><label for="depn">Deposit per booking ($)</label><input class="input" id="depn" type="number" min="0" value="${s.depositMinor / 100}" ${dis}></div>
+        <div class="field"><label for="fx">Exchange rate (₦ per $1)</label><input class="input" id="fx" type="number" min="100" max="100000" step="0.01" value="${s.exchangeRate || ''}" ${dis}><p class="muted small">Prices and deposits are in dollars. Customers pay deposits in naira at this rate. It applies only to payments for your own business, never to ZexCore's plan prices.</p></div></section>
       ${canAdmin() ? html`<div><button class="btn btn-primary btn-lg" type="submit">Save changes</button></div>` : ''}
     </form>
     <section class="card card-pad stack-sm" style="margin-top:20px">
@@ -215,6 +216,7 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
       const file = logoFile.files?.[0];
       if (!file) return;
       if (file.size > 2 * 1024 * 1024) { toast('Logo image should be under 2MB', 'error'); return; }
+      if (file.type === 'image/svg+xml' && file.size > 100 * 1024) { toast('SVG logos should be under 100KB. Use a PNG or a smaller SVG.', 'error'); return; }
 
       if (file.type === 'image/svg+xml') {
         const reader = new FileReader();
@@ -264,7 +266,7 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
           publicName: ($('#pn') as HTMLInputElement).value.trim(), phone: ($('#ph') as HTMLInputElement).value.trim(), address: ($('#ad') as HTMLInputElement).value.trim(),
           openMinutes: timeToMinutes(($('#op') as HTMLInputElement).value), closeMinutes: timeToMinutes(($('#cl') as HTMLInputElement).value), daysOpen: days,
           slotMinutes: Number(($('#sl') as HTMLSelectElement).value), leadMinutes: Math.round(Number(($('#ld') as HTMLInputElement).value) * 60),
-          exchangeRate: s.exchangeRate || 1350,
+          exchangeRate: Number(($('#fx') as HTMLInputElement).value) || s.exchangeRate || 1350,
           depositEnabled: depChecked,
           depositMinor: depMinor,
           logoUrl: currentLogo,

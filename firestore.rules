@@ -114,7 +114,9 @@ service cloud.firestore {
             || !('logoUrl' in request.resource.data.settings)
             || request.resource.data.settings.logoUrl == null
             || request.resource.data.settings.logoUrl == ''
-            || hasStarter(wid)));
+            || (hasStarter(wid) && request.resource.data.settings.logoUrl is string
+                && request.resource.data.settings.logoUrl.matches('^data:image/(png|jpeg|svg\\+xml|webp);base64,.*')
+                && request.resource.data.settings.logoUrl.size() < 150000)));
       allow delete: if false;
 
       match /members/{uid} {
