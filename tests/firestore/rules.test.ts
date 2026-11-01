@@ -294,6 +294,12 @@ describe('public booking', () => {
     await assertFails(book(anon(), 0, { serviceId: 's_9' }));
     await assertFails(book(anon(), 0, { paymentStatus: 'paid' }));
   });
+  it('refuses oversized or non-text email and notes from the public form', async () => {
+    await assertFails(book(anon(), 0, { customerEmail: 'a'.repeat(200) + '@example.com' }));
+    await assertFails(book(anon(), 0, { notes: 'x'.repeat(1001) }));
+    await assertFails(book(anon(), 0, { notes: 42 }));
+    await assertSucceeds(book(anon(), 0, { notes: 'Please call first.' }));
+  });
   it('refuses a wrong duration or mismatched cells', async () => {
     const s = start();
     await assertFails(book(anon(), 0, { endsAt: Timestamp.fromMillis(s.getTime() + 600000) }));
