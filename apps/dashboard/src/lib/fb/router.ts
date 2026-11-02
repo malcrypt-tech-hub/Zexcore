@@ -56,6 +56,7 @@ on('GET', '/api/bookings', ({ query }) => bk.listBookings(query));
 on('POST', '/api/bookings', ({ body }) => bk.staffCreate(body));
 on('PATCH', '/api/bookings/:id', ({ params, body }) => bk.patchBooking(params[0]!, body));
 on('POST', '/api/bookings/:id/payment-link', ({ params, body }) => bk.paymentLink(params[0]!, body));
+on('POST', '/api/bookings/:id/refund', ({ params }) => bk.refundDeposit(params[0]!));
 on('GET', '/api/payout', () => payout.getPayout());
 on('GET', '/api/payout/banks', () => payout.listBanks());
 on('POST', '/api/payout', ({ body }) => payout.savePayout(body));

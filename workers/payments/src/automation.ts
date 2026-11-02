@@ -2,8 +2,8 @@
 import { evaluate, render, safeWebhookUrl, sourceOf, type RuleDef } from '../../../shared/rules-engine';
 import type { Ctx } from './env';
 import { fsCommit, fsGet, fsQuery } from './fs';
-import { sendMail } from './mail';
-import { randomHex } from './util';
+import { sendFormal } from './mail';
+import { firstName, randomHex } from './util';
 
 const DAY = 86_400_000;
 
@@ -12,6 +12,15 @@ export async function ownerEmail(c: Ctx, wid: string): Promise<string> {
   const uid = ws?.data.ownerUid as string | undefined;
   const m = uid ? await fsGet(c.env, c.d, `workspaces/${wid}/members/${uid}`) : null;
   return String(m?.data.email ?? '');
+}
+
+export async function ownerContact(c: Ctx, wid: string): Promise<{ email: string; name: string }> {
+  const ws = await fsGet(c.env, c.d, `workspaces/${wid}`);
+  const uid = ws?.data.ownerUid as string | undefined;
+  const m = uid ? await fsGet(c.env, c.d, `workspaces/${wid}/members/${uid}`) : null;
+  const u = uid ? await fsGet(c.env, c.d, `users/${uid}`) : null;
+  const email = String(m?.data.email ?? '');
+  return { email, name: firstName(u?.data.name ?? m?.data.name, email) };
 }
 
 export async function fireEvent(c: Ctx, wid: string, event: string, payload: Record<string, unknown>): Promise<number> {
@@ -29,8 +38,11 @@ export async function fireEvent(c: Ctx, wid: string, event: string, payload: Rec
         if (a.type === 'notify') {
           const text = render(a.message, payload);
           notes.push(`Notified: ${text}`);
-          const to = await ownerEmail(c, wid);
-          await sendMail(c.env, c.d, to, `ZexCore: ${String(r.data.name ?? 'Automation')}`, text);
+          const owner = await ownerContact(c, wid);
+          await sendFormal(c.env, c.d, owner.email, `ZexCore: ${String(r.data.name ?? 'Automation')}`, {
+            heading: String(r.data.name ?? 'Automation'), greeting: `Hello ${owner.name},`, paragraphs: [text],
+            details: [['Triggered by', event], ['Time', c.d.now().toISOString().replace('T', ' ').slice(0, 16) + ' UTC']],
+            button: { text: 'Open dashboard', url: `${c.env.APP_URL.replace(/\/$/, '')}/app/automations` }, note: 'You are receiving this because an automation in your workspace is set to notify you.' });
         } else if (a.type === 'webhook') {
           if (!safeWebhookUrl(a.url)) { failed += 1; notes.push('Webhook skipped: address not allowed'); continue; }
           const res = await c.d.fetch(a.url, { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(5000), headers: { 'content-type': 'application/json', 'user-agent': 'ZexCore-Automations/1' },

@@ -4,7 +4,7 @@ import { api, ApiError } from '../lib/api';
 import { money, whenLabel, timeOf, initials, ymd } from '../lib/format';
 import { toast, openModal, confirmDialog, emptyState, errorState, skeletonRows, busy, copyText } from '../lib/ui';
 import { type Booking, type Service, type Staff, offset, loadSettings, tenantSlug, bookingUrl } from '../lib/store';
-import { canManage } from '../lib/session';
+import { canAdmin, canManage } from '../lib/session';
 
 export const statusBadge = (s: Booking['status']): Raw => ({
   pending: html`<span class="badge badge-warning"><span class="dot dot-warning"></span>Pending</span>`,
@@ -18,6 +18,7 @@ export const depositBadge = (b: Booking): Raw => {
   if (b.depositStatus === 'paid' && b.status === 'cancelled') return html`<span class="badge badge-warning">${ic('triangle-alert', 'ico-sm')}Cancelled — ${money(b.depositMinor, b.currency)} deposit to refund</span>`;
   if (b.depositStatus === 'paid') return html`<span class="badge badge-success">${ic('circle-check', 'ico-sm')}Deposit ${money(b.depositMinor, b.currency)} paid</span>`;
   if (b.depositStatus === 'unpaid') return html`<span class="badge badge-primary">${ic('triangle-alert', 'ico-sm')}Deposit ${money(b.depositMinor, b.currency)} unpaid</span>`;
+  if (b.depositStatus === 'refunded') return html`<span class="badge">Deposit ${money(b.depositMinor, b.currency)} refunded</span>`;
   if (b.depositStatus === 'mismatch') return html`<span class="badge badge-warning">Payment amount mismatch</span>`;
   return '' as unknown as Raw;
 };
@@ -81,6 +82,7 @@ function openActions(b: Booking, reload: () => void): void {
     { key: 'confirm', label: 'Confirm booking', icon: 'circle-check', show: b.status === 'pending' },
     { key: 'link', label: 'Send payment link', icon: 'send', show: b.depositStatus === 'unpaid' || (b.depositStatus === 'none' && b.status !== 'cancelled' && b.status !== 'completed') },
     { key: 'paid', label: 'Record deposit as received', icon: 'banknote', show: b.depositStatus === 'unpaid' || b.depositStatus === 'mismatch' },
+    { key: 'refund', label: 'Refund deposit', icon: 'banknote', show: b.depositStatus === 'paid' && !!b.paymentReference && b.paymentReference !== 'recorded-by-staff' && canAdmin(), danger: true },
     { key: 'resched', label: 'Reschedule', icon: 'calendar-days', show: b.status === 'pending' || b.status === 'confirmed' },
     { key: 'complete', label: 'Mark completed', icon: 'check-check', show: b.status === 'confirmed' || b.status === 'pending' },
     { key: 'noshow', label: 'Mark no-show', icon: 'x', show: b.status === 'confirmed' },
@@ -97,6 +99,9 @@ function openActions(b: Booking, reload: () => void): void {
       if (k === 'noshow' && await patch(b.id, { status: 'no_show' }, 'Marked as no-show')) reload();
       if (k === 'paid' && await patch(b.id, { markDepositPaid: true }, 'Deposit recorded')) reload();
       if (k === 'link') await sendPaymentLink(b, null, reload);
+      if (k === 'refund' && await confirmDialog({ title: 'Refund this deposit?', message: `${money(b.depositMinor, b.currency)} goes back to ${b.customerName} through Paystack. This cannot be undone.`, confirmLabel: 'Refund deposit', danger: true })) {
+        try { await api(`/api/bookings/${b.id}/refund`, { method: 'POST' }); toast('Deposit refunded', 'success'); reload(); } catch (e) { toast(e instanceof ApiError ? e.message : 'Could not refund', 'error'); }
+      }
       if (k === 'resched') openReschedule(b, reload);
       if (k === 'cancel' && await confirmDialog({ title: 'Cancel this booking?', message: b.depositStatus === 'paid' ? `${b.customerName}'s slot will be released. They paid a ${money(b.depositMinor, b.currency)} deposit online. It is NOT refunded automatically: refund it from your Paystack dashboard (Transactions) and let them know.` : `${b.customerName}'s slot will be released. This cannot be undone.`, confirmLabel: 'Cancel booking', danger: true }) && await patch(b.id, { status: 'cancelled' }, 'Booking cancelled')) reload();
     })),

@@ -1,6 +1,6 @@
 import { doc, getDoc, updateDoc, getDocs, query, where, orderBy, limit as qLimit, documentId, serverTimestamp, Timestamp, writeBatch, type QueryDocumentSnapshot } from 'firebase/firestore';
 import { fb } from './firebase';
-import { ApiError, audit, iso, limitError, loadCtx, monthPrefix, toApiError, wsCol, wsDoc, type Ctx } from './core';
+import { ApiError, audit, iso, limitError, loadCtx, monthPrefix, requireAdmin, toApiError, wsCol, wsDoc, type Ctx } from './core';
 import { listServices, listStaff, type ServiceDto, type StaffDto } from './catalog';
 import { CELL_MS, cellsFor, generateSlotStarts, localDateOf, localMidnightUtc, normalizePhone, weekdayOf, type SlotSettings } from './slots';
 import { slotLimit } from './plan';
@@ -10,7 +10,7 @@ import { emit } from './rules';
 export interface BookingDto {
   id: string; ref: string; status: string; serviceId: string; serviceName: string; durationMin: number; staffId: string | null; staffName: string | null;
   customerName: string; customerPhone: string; customerEmail: string | null; startsAt: string; endsAt: string; currency: string; priceMinor: number;
-  depositMinor: number; depositStatus: 'none' | 'unpaid' | 'paid'; paymentReference: string | null; notes: string | null; source: string; createdAt: string | null;
+  depositMinor: number; depositStatus: 'none' | 'unpaid' | 'paid' | 'refunded'; paymentReference: string | null; notes: string | null; source: string; createdAt: string | null;
 }
 
 export const refOf = (id: string): string => `ZX-${id.replace('_', '-')}`;
@@ -18,7 +18,8 @@ export const refOf = (id: string): string => `ZX-${id.replace('_', '-')}`;
 const depOf = (c: Ctx): Dep => ({ enabled: c.settings.depositEnabled, minor: c.settings.depositMinor });
 interface Dep { enabled: boolean; minor: number }
 /** A public booking made while deposits are on is "unpaid" until the Worker (or staff) records the payment. */
-function deposit(x: Record<string, any>, price: number, dep: Dep): { depositMinor: number; depositStatus: 'none' | 'unpaid' | 'paid'; paymentReference: string | null } {
+function deposit(x: Record<string, any>, price: number, dep: Dep): { depositMinor: number; depositStatus: 'none' | 'unpaid' | 'paid' | 'refunded'; paymentReference: string | null } {
+  if (x.depositStatus === 'refunded') return { depositMinor: Number(x.depositMinor) || 0, depositStatus: 'refunded', paymentReference: x.paymentReference ?? null };
   if (x.depositStatus === 'paid') return { depositMinor: Number(x.depositMinor) || 0, depositStatus: 'paid', paymentReference: x.paymentReference ?? null };
   const owed = x.source === 'public' && dep.enabled && dep.minor > 0 && x.status !== 'cancelled';
   return owed ? { depositMinor: price > 0 ? Math.min(dep.minor, price) : dep.minor, depositStatus: 'unpaid', paymentReference: null } : { depositMinor: 0, depositStatus: 'none', paymentReference: null };
@@ -259,7 +260,7 @@ export async function summary(): Promise<unknown> {
   }
   return {
     businessName: s.publicName ?? c.wsName, currency: 'USD', today, utcOffsetMinutes: off,
-    setup: { onboarded: s.onboarded, services: svcs.length, staff: staff.length, depositEnabled: s.depositEnabled },
+    setup: { onboarded: s.onboarded, services: svcs.length, staff: staff.length, depositEnabled: s.depositEnabled, hasPhone: !!(s.phone ?? '').trim(), hasName: !!(s.publicName ?? '').trim() },
     todayBookings: rows.filter((b) => { const t = new Date(b.startsAt).getTime(); return t >= dayStart && t < dayStart + 86_400_000; }),
     week: { total: rows.length, depositsMinor: rows.reduce((n, b) => n + (b.depositStatus === 'paid' ? b.depositMinor : 0), 0), noShows: rows.filter((b) => b.status === 'no_show').length, perDay },
     attention: { pending: pend.size, unpaidCount: unpaid.length, unpaidMinor: unpaid.reduce((n, b) => n + b.depositMinor, 0), waitingReplies: 0 },
@@ -277,4 +278,12 @@ export async function paymentLink(id: string, b: Record<string, unknown>): Promi
   void audit(c, 'booking.deposit.link', 'booking', id);
   return { url: r.authorizationUrl, reference: r.reference, amountMinor: r.amountMinor, phone: String(x.customerPhone ?? ''),
     message: `Hello ${x.customerName}, here is the link to pay your deposit for booking ${refOf(id)}: ${r.authorizationUrl}` };
+}
+
+/** Refunds a deposit that was paid through Paystack. Owners and admins only; the Worker does the refund and records it. */
+export async function refundDeposit(id: string): Promise<{ ok: true }> {
+  const c = await loadCtx(); requireAdmin(c);
+  await worker('/api/deposit/refund', { method: 'POST', body: { workspaceId: c.wid, bookingId: id } });
+  void audit(c, 'booking.deposit.refunded', 'booking', id);
+  return { ok: true };
 }

@@ -3,7 +3,7 @@ import { creditDays } from '../../workers/payments/src/routes/billing.js';
 import { SEATS } from '../../workers/payments/src/routes/team.js';
 import { KEEP, backupId, gunzip, open as openBackup, scheduledBackups } from '../../workers/payments/src/routes/backups.js';
 import { LIMITS } from '../../apps/dashboard/src/lib/fb/plan';
-import { handle, paystackSignature, amountMinor, toFs, fromFs, resetTokenCache, resetJwksCache, type Env } from '../../workers/payments/src/index.js';
+import { handle, paystackSignature, amountMinor, planAfterPayment, throttled, toFs, fromFs, resetTokenCache, resetJwksCache, type Env } from '../../workers/payments/src/index.js';
 
 const PROJECT = 'zexcore-5d6c0';
 const SECRET = 'sk_test_worker_secret';
@@ -29,6 +29,7 @@ async function idToken(over: Record<string, unknown> = {}, key = idKey.privateKe
 
 // ── in-memory Firestore + Google + Paystack ──
 type Doc = { fields: Record<string, any>; v: number };
+let emails: any[] = [];
 let store: Map<string, Doc>; let commits: any[]; let paystackInit: any[]; let paystackVerify: Record<string, any>; let paystackSub: any[];
 const fsPath = (u: string) => decodeURIComponent(u.split('/documents/')[1]!.split('?')[0]!);
 function mockFetch(): typeof fetch {
@@ -53,6 +54,7 @@ function mockFetch(): typeof fetch {
       commits.push(writes);
       return Response.json({});
     }
+    if (url === 'https://api.resend.com/emails') { emails.push(JSON.parse(init.body)); return Response.json({ id: 'e1' }); }
     if (url.endsWith(':runQuery')) {   // lists a collection under a parent; filters are not evaluated (tests seed only what they need)
       const parent = decodeURIComponent(url.split('/documents')[1]!.replace(/:runQuery$/, '')).replace(/^\//, '');
       const col = JSON.parse(init.body).structuredQuery.from[0].collectionId;
@@ -85,7 +87,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   resetTokenCache(); resetJwksCache();
-  store = new Map(); commits = []; paystackInit = []; paystackVerify = {}; paystackSub = [];
+  emails = []; store = new Map(); commits = []; paystackInit = []; paystackVerify = {}; paystackSub = [];
   env = { PAYSTACK_SECRET_KEY: SECRET, ALLOW_TEST_PAYMENTS: 'true', FIREBASE_PROJECT_ID: PROJECT, APP_URL: 'https://zexcore.com.ng', ALLOWED_ORIGINS: 'https://zexcore.com.ng,https://zexcore-5d6c0.web.app', NGN_PER_USD: '1500',
     FIREBASE_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'w@x.iam.gserviceaccount.com', private_key: saPem }) };
   seedDoc(`workspaces/${WID}`, { name: 'Sade Salon', plan: 'free', ownerUid: 'owner1', slug: 'sade-salon' });
@@ -345,6 +347,45 @@ describe('deposits', () => {
   });
 });
 
+describe('plan time is never lost', () => {
+  const day = 86_400_000;
+  it('starts a fresh period when nothing is active, and adds to the same plan', () => {
+    expect(planAfterPayment('free', null, 'growth', 'monthly', NOW)).toEqual({ plan: 'growth', expires: new Date(NOW.getTime() + 31 * day) });
+    const left = new Date(NOW.getTime() + 10 * day);
+    expect(planAfterPayment('growth', left, 'growth', 'monthly', NOW).expires.getTime()).toBe(NOW.getTime() + 41 * day);
+  });
+  it('converts what is left on a cheaper plan into time on the new one when upgrading', () => {
+    const left = new Date(NOW.getTime() + 49 * day);                 // 49 days of Starter ($19) = 19 days of Growth ($49)
+    const r = planAfterPayment('starter', left, 'growth', 'monthly', NOW);
+    expect(r.plan).toBe('growth');
+    expect(Math.round((r.expires.getTime() - NOW.getTime()) / day)).toBe(Math.round(49 * 19 / 49 + 31));
+  });
+  it('keeps the higher plan, and extends it, if a lower plan is paid for while it is active', () => {
+    const left = new Date(NOW.getTime() + 20 * day);
+    const r = planAfterPayment('growth', left, 'starter', 'monthly', NOW);
+    expect(r.plan).toBe('growth');
+    expect(r.expires.getTime()).toBeGreaterThan(left.getTime());
+  });
+  it('refuses to start a checkout for a lower plan while a higher one is active', async () => {
+    seedDoc(`workspaces/${WID}`, { name: 'Sade Salon', plan: 'agency', ownerUid: 'owner1', slug: 'sade-salon', planExpiresAt: new Date(NOW.getTime() + 20 * day) });
+    const r = await call('/api/checkout', { headers: await authed(), body: checkoutBody({ tier: 'starter' }) });
+    expect(r.status).toBe(409);
+    expect((await r.json() as any).code).toBe('downgrade_blocked');
+    const up = await call('/api/checkout', { headers: await authed(), body: checkoutBody({ tier: 'enterprise' }) });
+    expect(up.status).toBe(201);
+  });
+});
+
+describe('public route throttle', () => {
+  it('allows 20 calls a minute per visitor and route, then says to wait', () => {
+    const t = Date.now();
+    for (let i = 0; i < 20; i++) expect(throttled('1.2.3.4 POST /x', t + i)).toBe(false);
+    expect(throttled('1.2.3.4 POST /x', t + 21)).toBe(true);
+    expect(throttled('5.6.7.8 POST /x', t + 21)).toBe(false);
+    expect(throttled('1.2.3.4 POST /x', t + 61_000)).toBe(false);
+  });
+});
+
 describe('team access', () => {
   const body = (o: object) => JSON.stringify({ wid: WID_T, ...o });
   const WID_T = 'abcdefghij0123456789';
@@ -522,4 +563,39 @@ describe('encrypted backups', () => {
   });
 
   it('keeps only the newest backups', () => { expect(KEEP).toBe(30); });
+});
+
+describe('formal e-mails', () => {
+  beforeEach(() => { env = { ...env, RESEND_API_KEY: 're_test' }; seedDoc('users/owner1', { name: 'Sade Bello', email: 'sade@example.com', workspaceIds: [WID] }); });
+  const welcomeReq = async (over?: Record<string, unknown>) => call('/api/welcome', { body: '{}', headers: await authed(over) });
+
+  it('welcomes a verified new user once, by name, with an Open dashboard button', async () => {
+    const r = await welcomeReq();
+    expect(await r.json()).toMatchObject({ ok: true, sent: true });
+    expect(emails).toHaveLength(1);
+    const m = emails[0];
+    expect(m.to).toEqual(['sade@example.com']); expect(m.subject).toBe('Welcome to ZexCore, Sade');
+    expect(m.html).toContain('Open dashboard'); expect(m.html).toContain('href="https://zexcore.com.ng/app"'); expect(m.html).toContain('Sade Salon');
+    expect(m.text).toContain('Open dashboard: https://zexcore.com.ng/app'); expect(m.reply_to).toBe('hello@zexcore.com.ng');
+    expect(await (await welcomeReq()).json()).toMatchObject({ sent: false });      // never twice
+    expect(emails).toHaveLength(1);
+  });
+  it('does not mail an address that has not been verified, and does not use up the welcome', async () => {
+    expect(await (await welcomeReq({ email_verified: false })).json()).toMatchObject({ sent: false, reason: 'unverified' });
+    expect(emails).toHaveLength(0);
+    expect(await (await welcomeReq()).json()).toMatchObject({ sent: true });
+  });
+  it('booking requests carry the details and escape anything a customer typed', async () => {
+    seedDoc(`slugs/sade-salon`, { wid: WID });
+    seedDoc(`workspaces/${WID}`, { name: 'Sade Salon', plan: 'free', ownerUid: 'owner1', slug: 'sade-salon', settings: { utcOffsetMinutes: 60 } });
+    seedDoc(`workspaces/${WID}/members/owner1`, { role: 'owner', email: 'sade@example.com', name: 'Sade Bello' });
+    seedDoc(`workspaces/${WID}/services/s_0`, { name: 'Braids', priceMinor: 5000 });
+    const id = `${NOW.toISOString().slice(0, 7).replace('-', '')}_1`;
+    seedDoc(`workspaces/${WID}/bookings/${id}`, { customerName: '<img src=x onerror=alert(1)>', customerPhone: '+2348031234567', serviceId: 's_0', status: 'pending', source: 'public', startsAt: new Date('2026-11-07T15:00:00Z'), createdAt: new Date(NOW.getTime() - 60_000) });
+    const r = await call('/api/public/booked', { body: JSON.stringify({ slug: 'sade-salon', bookingId: id }), headers: { 'content-type': 'application/json', origin: 'https://zexcore.com.ng' } });
+    expect(r.status).toBe(200);
+    const m = emails.find((x) => String(x.subject).startsWith('New booking request'))!;
+    expect(m.html).not.toContain('<img src=x'); expect(m.html).toContain('&lt;img');
+    expect(m.html).toContain('Sat, 7 Nov 2026 at 4:00 PM'); expect(m.html).toContain('Open dashboard'); expect(m.html).toContain('Hello Sade');
+  });
 });

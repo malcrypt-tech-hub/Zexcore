@@ -12,7 +12,7 @@ export interface Booking {
   id: string; ref: string; status: 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'no_show';
   serviceId: string; serviceName?: string; durationMin?: number; staffId: string | null; staffName: string | null;
   customerName: string; customerPhone: string; customerEmail: string | null; startsAt: string; endsAt: string;
-  currency: string; priceMinor: number; depositMinor: number; depositStatus: 'none' | 'unpaid' | 'paid' | 'mismatch';
+  currency: string; priceMinor: number; depositMinor: number; depositStatus: 'none' | 'unpaid' | 'paid' | 'refunded' | 'mismatch';
   paymentReference: string | null; notes: string | null; source: string;
 }
 
