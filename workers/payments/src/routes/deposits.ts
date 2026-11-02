@@ -13,9 +13,9 @@
 import { DOERS, requireMember } from '../auth';
 import type { Ctx, Deps, Env } from '../env';
 import { FsConflict, fsCommit, fsGet } from '../fs';
-import { sendMail } from '../mail';
-import { ownerEmail } from '../automation';
-import { HttpError, ID_RE, json, randomRef, readJson } from '../util';
+import { sendFormal } from '../mail';
+import { ownerContact } from '../automation';
+import { HttpError, ID_RE, firstName, json, randomRef, readJson } from '../util';
 import { getLiveNgnRate } from '../rates';
 
 const PAYSTACK = 'https://api.paystack.co';
@@ -57,10 +57,16 @@ export async function payoutSetup(c: Ctx): Promise<Response> {
   await fsCommit(c.env, c.d, [{ path: `workspaces/${wid}/payout/main`, fields: { subaccountCode: code, bankCode, bankName: String(b.bankName ?? '').slice(0, 80), accountName, last4: accountNumber.slice(-4), updatedAt: c.d.now(), updatedBy: caller.uid } }]);
   // Tell the owner every time the place deposits are paid is set or changed, so a hijacked session cannot redirect money silently.
   const changed = Boolean(existing?.data.last4) && (existing?.data.bankCode !== bankCode || existing?.data.last4 !== accountNumber.slice(-4));
-  const note = `${changed ? 'The bank account for your ZexCore deposits was changed.' : 'A bank account was set for your ZexCore deposits.'}\n\nAccount name: ${accountName}\nBank: ${String(b.bankName ?? '').slice(0, 80) || bankCode}\nAccount ending: ${accountNumber.slice(-4)}\n\nIf this was not you, sign in, change your password straight away and contact support.`;
-  const owner = await ownerEmail(c, wid);
-  await sendMail(c.env, c.d, owner, changed ? 'ZexCore: your payout account was changed' : 'ZexCore: payout account set', note);
-  if (caller.email && caller.email.toLowerCase() !== owner.toLowerCase()) await sendMail(c.env, c.d, caller.email, changed ? 'ZexCore: your payout account was changed' : 'ZexCore: payout account set', note);
+  const subject = changed ? 'ZexCore: your payout account was changed' : 'ZexCore: payout account set';
+  const spec = (hello: string) => ({
+    heading: changed ? 'Your payout account was changed' : 'Your payout account is set', greeting: `Hello ${hello},`,
+    paragraphs: [changed ? 'The bank account that receives your ZexCore booking deposits was changed.' : 'A bank account was set to receive your ZexCore booking deposits.', 'If this was not you, sign in, change your password straight away and contact us.'],
+    details: [['Account name', accountName], ['Bank', String(b.bankName ?? '').slice(0, 80) || bankCode], ['Account ending', accountNumber.slice(-4)], ['Time', `${c.d.now().toISOString().replace('T', ' ').slice(0, 16)} UTC`]] as [string, string][],
+    button: { text: 'Open dashboard', url: `${c.env.APP_URL.replace(/\/$/, '')}/app/settings` }, note: 'We email you every time the payout account changes so nobody can redirect your money unnoticed.',
+  });
+  const owner = await ownerContact(c, wid);
+  await sendFormal(c.env, c.d, owner.email, subject, spec(owner.name));
+  if (caller.email && caller.email.toLowerCase() !== owner.email.toLowerCase()) await sendFormal(c.env, c.d, caller.email, subject, spec(firstName('', caller.email)));
   return json({ ok: true, accountName, last4: accountNumber.slice(-4) }, 200, c.headers);
 }
 

@@ -50,3 +50,17 @@ export async function readJson(req: Request, maxBytes = 16_384): Promise<Record<
   try { const v = JSON.parse(text || '{}'); if (v && typeof v === 'object' && !Array.isArray(v)) return v; } catch { /* fall through */ }
   throw new HttpError(400, 'Invalid request');
 }
+
+/** "Sat, 7 Nov 2026 at 4:00 PM" in the business's own time zone (a fixed UTC offset in minutes, e.g. 60 for Lagos). */
+export function localWhen(iso: string, offsetMin: number): string {
+  const d = new Date(new Date(iso).getTime() + offsetMin * 60_000);
+  if (Number.isNaN(d.getTime())) return iso;
+  const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()]!;
+  const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()]!;
+  const h = d.getUTCHours(), m = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${day}, ${d.getUTCDate()} ${mon} ${d.getUTCFullYear()} at ${((h + 11) % 12) + 1}:${m} ${h < 12 ? 'AM' : 'PM'}`;
+}
+export const firstName = (name: unknown, email = ''): string => {
+  const n = String(name ?? '').trim().split(/\s+/)[0] ?? '';
+  return n || (email.split('@')[0] ?? '').replace(/[^A-Za-z]/g, ' ').trim().split(' ')[0]?.replace(/^./, (c) => c.toUpperCase()) || 'there';
+};

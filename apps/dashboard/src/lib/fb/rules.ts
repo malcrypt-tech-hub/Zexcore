@@ -1,6 +1,6 @@
 import { deleteDoc, getDocs, limit as qLimit, orderBy, query, updateDoc } from 'firebase/firestore';
 import { cleanRule, evaluate, sourceOf, type RuleDef } from '../../../../../shared/rules-engine';
-import { ApiError, audit, claimSlot, iso, loadCtx, requireAdmin, wsCol, wsDoc } from './core';
+import { ApiError, audit, claimSlot, iso, loadCtx, requireAdmin, requireFeature, wsCol, wsDoc } from './core';
 import { worker } from './worker';
 
 const dto = (id: string, x: Record<string, any>) => ({
@@ -25,13 +25,13 @@ export async function createRule(b: Record<string, unknown>): Promise<{ id: stri
 }
 
 export async function approveRule(id: string): Promise<{ ok: true }> {
-  const c = await loadCtx(); requireAdmin(c);
+  const c = await loadCtx(); requireAdmin(c); requireFeature(c, 'automations');
   await updateDoc(wsDoc(c, 'rules', id), { approved: true, enabled: true, approvedBy: c.uid });
   void audit(c, 'rule.approve', 'rule', id);
   return { ok: true };
 }
 export async function setEnabled(id: string, enabled: boolean): Promise<{ ok: true }> {
-  const c = await loadCtx(); requireAdmin(c);
+  const c = await loadCtx(); requireAdmin(c); requireFeature(c, 'automations');
   await updateDoc(wsDoc(c, 'rules', id), { enabled });
   void audit(c, enabled ? 'rule.enable' : 'rule.disable', 'rule', id);
   return { ok: true };
@@ -53,7 +53,7 @@ export async function testRun(id: string, b: Record<string, unknown>): Promise<u
 }
 
 export async function runs(): Promise<{ runs: unknown[] }> {
-  const c = await loadCtx(); requireAdmin(c);
+  const c = await loadCtx(); requireAdmin(c); requireFeature(c, 'automations');
   const s = await getDocs(query(wsCol(c, 'automationRuns'), orderBy('at', 'desc'), qLimit(30)));
   return { runs: s.docs.map((d) => ({ id: d.id, rule: d.data().ruleName, event: d.data().event, outcome: d.data().outcome, detail: d.data().detail, at: iso(d.data().at) })) };
 }

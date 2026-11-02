@@ -9,14 +9,14 @@ import { current, loadMe, canAdmin } from '../lib/session';
 interface PlanList { currencyRates: { NGN_PER_USD: number }; paystackPublicKey: string | null; plans: { tier: string; monthlyUsd: number; annualUsd: number; limits: Limits | null }[]; freeLimits: Limits; limitLabels: Labels }
 interface Usage { tier: string; effectiveTier: string; usage: Record<LimitKey, { used: number; limit: number | null }>; labels: Labels }
 interface Payment { reference: string; tier: string; cycle: string; currency: string; amount_minor: string | number; paid_minor: string | number | null; status: string; gateway: string | null; created_at: string; paid_at: string | null }
-const BLURB: Record<string, string> = { starter: 'For a single location getting started.', growth: 'For growing businesses with a busy calendar.', agency: 'For operators running several locations.', enterprise: 'For large organisations with advanced needs.', dedicated: 'Dedicated infrastructure and a named support contact.' };
+const BLURB: Record<string, string> = { starter: 'For a single location getting started.', growth: 'For growing businesses with a busy calendar.', agency: 'For operators running several locations.', enterprise: 'For large organisations with advanced needs.', dedicated: 'A dedicated setup, built with our team.' };
 
 const EXTRA_FEATURES: Record<string, string[]> = {
   starter: ['Custom logo branding', 'Data protection & compliance'],
   growth: ['Automations & AI rule drafting', 'IoT device monitoring', 'Custom logo branding', 'Data protection'],
-  agency: ['All Growth features', 'Priority processing', 'Extended audit log'],
-  enterprise: ['All features unlocked', 'Dedicated account manager'],
-  dedicated: ['Dedicated infrastructure', 'Named support engineer'],
+  agency: ['All Growth features', 'Higher limits on every resource'],
+  enterprise: ['All features unlocked', 'Increased priority on support issues'],
+  dedicated: ['Everything in Enterprise', 'Highest priority on support issues'],
 };
 
 export async function renderBilling(view: HTMLElement): Promise<void> {

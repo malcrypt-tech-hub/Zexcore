@@ -41,6 +41,7 @@ export async function loadMe(force = false): Promise<Me | null> {
     me = await api<Me>('/api/auth/me');
     _validated = true;
     ssWrite(me);
+    greetOnce();
   } catch (e) {
     if (e instanceof ApiError && (e.status === 401 || e.status === 400 || e.status === 403)) {
       setToken(null); me = null; ssWrite(null); return null;
@@ -72,4 +73,11 @@ export function logout(): void {
   // Revoke the session on the server first (best effort), so a copied token stops working immediately.
   if (getToken()) void api('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
   setToken(null); me = null; _validated = false; ssWrite(null);
+}
+
+/** Asks the Worker to send the one-time welcome e-mail. It decides whether this person is due one; failures are ignored. */
+function greetOnce(): void {
+  try { if (sessionStorage.getItem('zx.greeted')) return; } catch { /* still try once */ }
+  void import('./fb/worker').then(({ worker }) => worker<{ reason?: string }>('/api/welcome', { method: 'POST', body: {} }))
+    .then((r) => { if (r.reason !== 'unverified') { try { sessionStorage.setItem('zx.greeted', '1'); } catch { /* ignore */ } } }).catch(() => undefined);
 }

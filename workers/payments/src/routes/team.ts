@@ -10,7 +10,7 @@
 import type { Ctx } from '../env';
 import { requireMember, verifyFirebaseIdToken } from '../auth';
 import { FsConflict, fsCommit, fsGet, fsQuery } from '../fs';
-import { sendMail } from '../mail';
+import { sendFormal } from '../mail';
 import { RANK, activePlan } from './billing';
 import { HttpError, ID_RE, WID_RE, json, randomHex, readJson, sha256Hex } from '../util';
 
@@ -73,8 +73,13 @@ export async function invite(c: Ctx): Promise<Response> {
   } }]);
   const ws = await fsGet(c.env, c.d, `workspaces/${wid}`);
   const link = `${c.env.APP_URL.replace(/\/$/, '')}/accept-invite?w=${wid}&t=${token}`;
-  const sent = await sendMail(c.env, c.d, email, `You're invited to ${String(ws?.data.name ?? 'a workspace')} on ZexCore`,
-    `${caller.email ?? 'A teammate'} invited you to join ${String(ws?.data.name ?? 'their workspace')} on ZexCore as ${role === 'admin' ? 'an admin' : role === 'viewer' ? 'a read-only viewer' : 'an editor'}.\n\nAccept the invitation (sign in or create an account with ${email}):\n${link}\n\nThe link works for ${INVITE_DAYS} days. If you weren't expecting this, you can ignore this email.`);
+  const wsName = String(ws?.data.name ?? 'a workspace');
+  const roleText = role === 'admin' ? 'an admin' : role === 'viewer' ? 'a read-only viewer' : 'an editor';
+  const sent = await sendFormal(c.env, c.d, email, `You're invited to ${wsName} on ZexCore`, {
+    heading: `Join ${wsName} on ZexCore`, preheader: `${caller.email ?? 'A teammate'} invited you as ${roleText}`, greeting: 'Hello,',
+    paragraphs: [`${caller.email ?? 'A teammate'} has invited you to join ${wsName} on ZexCore as ${roleText}.`, `To accept, sign in or create a ZexCore account using this email address (${email}).`],
+    details: [['Workspace', wsName], ['Your role', role === 'admin' ? 'Admin' : role === 'viewer' ? 'Viewer (read-only)' : 'Editor'], ['Invited by', caller.email ?? 'A teammate'], ['Valid for', `${INVITE_DAYS} days`]],
+    button: { text: 'Accept invitation', url: link }, note: "If you weren't expecting this invitation you can safely ignore this email." });
   return json({ ok: true, id, link, emailed: sent, expiresInDays: INVITE_DAYS }, 200, c.headers);
 }
 
