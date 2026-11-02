@@ -293,9 +293,33 @@ service cloud.firestore {
 
       // Tamper-evident audit trail. Written ONLY by the Worker (service account), which chains each entry to the
       // previous one and takes the actor from the verified ID token. Admins can read it; nobody can write it here.
+      // The owner's own calendar. Ids are <YYYYMMDD>_<0-14>, so a day can hold at most 15 appointments (repeats are counted by the app).
+      match /appointments/{id} {
+        allow read: if isMember(wid);
+        allow create: if isWorker(wid) && apptOk() && id.matches('^[0-9]{8}_([0-9]|1[0-4])$') && id.split('_')[0] == request.resource.data.date.replace('-', '');
+        allow update: if isWorker(wid) && apptOk() && request.resource.data.date == resource.data.date;
+        allow delete: if isWorker(wid);
+      }
+
       match /auditChain/{id} { allow read: if canSeeMoney(wid); allow write: if false; }
       match /auditMeta/{id}  { allow read: if canSeeMoney(wid); allow write: if false; }
       match /audit/{id}      { allow read: if canSeeMoney(wid); allow write: if false; }   // legacy entries
+    }
+
+    function apptOk() {
+      let d = request.resource.data;
+      return noExtraKeys(['title', 'date', 'startMin', 'durationMin', 'notes', 'priority', 'pinned', 'reminderMin', 'recur', 'recurring', 'done', 'createdAt', 'createdBy'])
+        && d.title is string && d.title.size() >= 1 && d.title.size() <= 120
+        && d.date is string && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') && d.date >= '1990-01-01' && d.date <= '2100-12-31'
+        && d.startMin is int && d.startMin >= 0 && d.startMin <= 1439
+        && d.durationMin is int && d.durationMin >= 5 && d.durationMin <= 1440
+        && (d.notes == null || (d.notes is string && d.notes.size() <= 1000))
+        && d.priority in ['low', 'normal', 'high']
+        && d.pinned is bool && d.done is bool && d.recurring is bool
+        && (d.reminderMin == null || (d.reminderMin is int && d.reminderMin >= 0 && d.reminderMin <= 10080))
+        && d.recur.freq in ['none', 'daily', 'weekly', 'monthly', 'yearly']
+        && d.recur.interval is int && d.recur.interval >= 1 && d.recur.interval <= 52
+        && d.recurring == (d.recur.freq != 'none');
     }
 
     // Public booking validation ------------------------------------------------------------------------------
