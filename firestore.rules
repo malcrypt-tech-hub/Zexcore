@@ -293,6 +293,8 @@ service cloud.firestore {
 
       // Tamper-evident audit trail. Written ONLY by the Worker (service account), which chains each entry to the
       // previous one and takes the actor from the verified ID token. Admins can read it; nobody can write it here.
+      // Encrypted backup records (the files live in R2). Written only by the Worker.
+      match /backups/{id} { allow read: if isAdmin(wid); allow write: if false; }
       match /auditChain/{id} { allow read: if canSeeMoney(wid); allow write: if false; }
       match /auditMeta/{id}  { allow read: if canSeeMoney(wid); allow write: if false; }
       match /audit/{id}      { allow read: if canSeeMoney(wid); allow write: if false; }   // legacy entries

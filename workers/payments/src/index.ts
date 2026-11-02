@@ -12,9 +12,11 @@ import { audit, verifyAudit } from './routes/audit';
 import { ingest } from './routes/iot';
 import { banks, depositLink, depositStatus, payoutSetup, publicDeposit } from './routes/deposits';
 import { memberEvent, publicBooked } from './routes/events';
+import { certificate, download, runNow, scheduledBackups } from './routes/backups';
 import { accept, invite, inviteInfo, remove, revoke, setRole } from './routes/team';
 
 export type { Env, Deps } from './env';
+export { scheduledBackups } from './routes/backups';
 export { amountMinor, isTier, PLANS } from './routes/billing';
 export { paystackSignature } from './util';
 export { toFs, fromFs } from './fs';
@@ -42,6 +44,9 @@ const ROUTES: Record<string, Handler> = {
   'GET /api/public/deposit-status': depositStatus,
   'POST /api/events': memberEvent,
   'POST /api/public/booked': publicBooked,
+  'POST /api/backups/run': runNow,
+  'GET /api/backups/download': download,
+  'GET /api/backups/certificate': certificate,
   'POST /api/team/invite': invite,
   'GET /api/team/invite-info': inviteInfo,
   'POST /api/team/accept': accept,
@@ -85,4 +90,8 @@ export async function handle(req: Request, env: Env, d: Deps = realDeps()): Prom
   }
 }
 
-export default { fetch: (req: Request, env: Env) => handle(req, env) };
+export default {
+  fetch: (req: Request, env: Env) => handle(req, env),
+  /** Cron Trigger: hourly tick. Backs up the Enterprise/Dedicated workspaces that are due (see routes/backups.ts). */
+  scheduled: (_event: unknown, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) => { ctx.waitUntil(scheduledBackups(env, realDeps()).catch((e) => console.error('scheduled backups', e instanceof Error ? e.message : e))); },
+};

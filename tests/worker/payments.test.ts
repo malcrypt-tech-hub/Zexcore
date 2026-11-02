@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { creditDays } from '../../workers/payments/src/routes/billing.js';
 import { SEATS } from '../../workers/payments/src/routes/team.js';
+import { KEEP, backupId, gunzip, open as openBackup, scheduledBackups } from '../../workers/payments/src/routes/backups.js';
 import { LIMITS } from '../../apps/dashboard/src/lib/fb/plan';
 import { handle, paystackSignature, amountMinor, toFs, fromFs, resetTokenCache, resetJwksCache, type Env } from '../../workers/payments/src/index.js';
 
@@ -443,4 +444,82 @@ describe('team access', () => {
   it('rejects duplicates of someone already on the team', async () => {
     expect((await inviteReq('owner1', 'sade@example.com', 'editor', 'ED@example.com')).status).toBe(409);
   });
+});
+
+describe('encrypted backups', () => {
+  const BW = 'bkpworkspace01234567';
+  const store2 = () => new Map<string, Uint8Array>();
+  let r2data: Map<string, Uint8Array>;
+  const r2 = () => ({
+    put: async (k: string, v: Uint8Array) => { r2data.set(k, v); },
+    get: async (k: string) => (r2data.has(k) ? { arrayBuffer: async () => { const v = r2data.get(k)!; return v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength) as ArrayBuffer; } } : null),
+    list: async ({ prefix }: { prefix: string }) => ({ objects: [...r2data.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key })), truncated: false }),
+    delete: async (keys: string | string[]) => { for (const k of [].concat(keys as never)) r2data.delete(k); },
+  });
+  const KEY = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64');
+  const run = async (sub = 'owner1', email = 'sade@example.com') => call('/api/backups/run', { body: JSON.stringify({ workspaceId: BW }), headers: await authed({ sub, email }) });
+  const get = async (path: string, sub = 'owner1') => call(path, { method: 'GET', headers: await authed({ sub, email: 'sade@example.com' }) });
+  beforeEach(() => {
+    r2data = store2();
+    env = { ...env, BACKUPS: r2() as never, BACKUP_KEY: KEY };
+    seedDoc(`workspaces/${BW}`, { name: 'Ade & Sons (Ltd)', slug: 'ade', plan: 'enterprise', planExpiresAt: new Date(NOW.getTime() + 20 * 86_400_000), ownerUid: 'owner1' });
+    seedDoc(`workspaces/${BW}/members/owner1`, { role: 'owner', email: 'sade@example.com' });
+    seedDoc(`workspaces/${BW}/members/view1`, { role: 'viewer', email: 'v@example.com' });
+    seedDoc(`workspaces/${BW}/bookings/202611_0`, { customerName: 'Ada Obi', customerPhone: '+2348031234567', status: 'confirmed' });
+    seedDoc(`workspaces/${BW}/devices/d_0`, { name: 'Cold room', tokenHash: 'SECRETHASH' });
+  });
+
+  it('makes an encrypted, verified backup that holds the data but not device secrets', async () => {
+    const r = await run();
+    expect(r.status).toBe(201);
+    const j = (await r.json()) as { id: string; verified: boolean; records: number; complete: boolean };
+    expect(j).toMatchObject({ verified: true, complete: true });
+    expect(j.id).toBe(backupId(NOW));
+    const raw = r2data.get(`backups/${BW}/${j.id}.zxb`)!;
+    expect(Buffer.from(raw).includes(Buffer.from('Ada Obi'))).toBe(false);            // not readable at rest
+    const text = new TextDecoder().decode(await gunzip(await openBackup(env, BW, j.id, raw)));
+    expect(text).toContain('Ada Obi'); expect(text).not.toContain('SECRETHASH');
+    const meta = store.get(`workspaces/${BW}/backups/${j.id}`)!.fields;
+    expect(fromFs(meta.verified)).toBe(true); expect(fromFs(meta.sha256)).toHaveLength(64);
+  });
+
+  it('a backup cannot be opened as a different workspace or backup id', async () => {
+    const j = (await (await run()).json()) as { id: string };
+    const raw = r2data.get(`backups/${BW}/${j.id}.zxb`)!;
+    await expect(openBackup(env, 'otherworkspace012345', j.id, raw)).rejects.toBeTruthy();
+    await expect(openBackup(env, BW, 'b_20200101_000000', raw)).rejects.toBeTruthy();
+  });
+
+  it('downloads a decrypted copy and a PDF certificate for owners, not viewers; Enterprise only', async () => {
+    const j = (await (await run()).json()) as { id: string };
+    const dl = await get(`/api/backups/download?workspaceId=${BW}&id=${j.id}`);
+    expect(dl.status).toBe(200);
+    expect(JSON.parse(await dl.text()).collections.bookings[0].customerName).toBe('Ada Obi');
+    const cert = await get(`/api/backups/certificate?workspaceId=${BW}&id=${j.id}`);
+    expect(cert.headers.get('content-type')).toBe('application/pdf');
+    const pdf = Buffer.from(await cert.arrayBuffer()).toString('latin1');
+    expect(pdf.startsWith('%PDF-1.4')).toBe(true); expect(pdf).toContain('Backup Certificate'); expect(pdf).toContain('Ade & Sons \\(Ltd\\)'); expect(pdf).toContain('Verified: Yes');
+    expect((await get(`/api/backups/download?workspaceId=${BW}&id=${j.id}`, 'view1')).status).toBe(403);
+    seedDoc(`workspaces/${BW}`, { name: 'x', plan: 'growth', planExpiresAt: new Date(NOW.getTime() + 86_400_000), ownerUid: 'owner1', slug: 'ade' });
+    expect((await run()).status).toBe(402);
+  });
+
+  it('is off without the bucket or key, and throttles repeat runs', async () => {
+    const first = await run(); expect(first.status).toBe(201);
+    expect((await run()).status).toBe(429);
+    env = { ...env, BACKUPS: undefined };
+    r2data.clear();
+    expect((await run()).status).toBe(503);
+  });
+
+  it('the scheduler backs up only paid workspaces that are due, then leaves them alone', async () => {
+    const dep = { fetch: mockFetch(), now: () => NOW };
+    const first = await scheduledBackups(env, dep);
+    expect(first.done).toEqual([BW]);                 // the free workspaces are skipped
+    expect((await scheduledBackups(env, dep)).done).toEqual([]);
+    const later = { fetch: mockFetch(), now: () => new Date(NOW.getTime() + 24 * 3_600_000) };
+    expect((await scheduledBackups(env, later)).done).toEqual([BW]);
+  });
+
+  it('keeps only the newest backups', () => { expect(KEEP).toBe(30); });
 });
