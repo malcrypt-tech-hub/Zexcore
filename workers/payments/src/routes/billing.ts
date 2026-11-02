@@ -27,7 +27,7 @@ export function activePlan(ws: Record<string, unknown> | undefined, now: Date): 
 /** Days of the new plan that the unused time on the old one is worth (same daily value as its monthly price). */
 export function creditDays(oldTier: string, remainingMs: number, newTier: Tier): number {
   const old = PLANS[oldTier as Tier]; if (!old || remainingMs <= 0) return 0;
-  return Math.floor((remainingMs / 86_400_000) * (old.monthlyUsd / PLANS[newTier].monthlyUsd));
+  return Math.floor((remainingMs / 86_400_000) * old.monthlyUsd / PLANS[newTier].monthlyUsd);
 }
 export const isTier = (v: unknown): v is Tier => typeof v === 'string' && Object.prototype.hasOwnProperty.call(PLANS, v);
 export function amountMinor(tier: Tier, cycle: Cycle, currency: Currency, ngnPerUsd = DEFAULT_FALLBACK_RATE): number {
@@ -51,8 +51,8 @@ export function planAfterPayment(currentPlan: unknown, currentExpiry: Date | nul
   const cur = currentPlan as Tier;
   if (cur === tier) return { plan: tier, expires: new Date(currentExpiry!.getTime() + addMs) };
   if (PAID_RANK[cur] < PAID_RANK[tier]) {
-    const carried = (currentExpiry!.getTime() - now.getTime()) * (PLANS[cur].monthlyUsd / PLANS[tier].monthlyUsd);
-    return { plan: tier, expires: new Date(now.getTime() + carried + addMs) };
+    const carriedDays = creditDays(cur, currentExpiry!.getTime() - now.getTime(), tier);   // whole days, same rule as everywhere else
+    return { plan: tier, expires: new Date(now.getTime() + carriedDays * 86_400_000 + addMs) };
   }
   const extra = addMs * (PLANS[tier].monthlyUsd / PLANS[cur].monthlyUsd);
   return { plan: cur, expires: new Date(currentExpiry!.getTime() + extra) };
