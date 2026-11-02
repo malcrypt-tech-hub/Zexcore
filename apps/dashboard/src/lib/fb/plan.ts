@@ -50,7 +50,7 @@ export function effectiveTier(plan: string | undefined, expiresAtMs: number | nu
 export type EnforcedKey = keyof (typeof LIMITS)['free'];
 export const slotLimit = (tier: Tier, key: EnforcedKey): number => LIMITS[tier][key] ?? UNLIMITED_SLOTS;
 
-export type FeatureKey = 'branding' | 'compliance' | 'automations' | 'devices' | 'export';
+export type FeatureKey = 'branding' | 'compliance' | 'automations' | 'devices' | 'export' | 'backups';
 
 export const FEATURE_TIERS: Record<FeatureKey, Tier> = {
   branding: 'starter',
@@ -58,6 +58,7 @@ export const FEATURE_TIERS: Record<FeatureKey, Tier> = {
   automations: 'growth',
   devices: 'growth',
   export: 'enterprise',
+  backups: 'enterprise',
 };
 
 const TIER_ORDER: Record<Tier, number> = {

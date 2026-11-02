@@ -293,6 +293,9 @@ service cloud.firestore {
 
       // Tamper-evident audit trail. Written ONLY by the Worker (service account), which chains each entry to the
       // previous one and takes the actor from the verified ID token. Admins can read it; nobody can write it here.
+      // Encrypted backup records (the files live in R2). Written only by the Worker.
+      match /backups/{id} { allow read: if isAdmin(wid); allow write: if false; }
+
       // The owner's own calendar. Ids are <YYYYMMDD>_<0-14>, so a day can hold at most 15 appointments (repeats are counted by the app).
       match /appointments/{id} {
         allow read: if isMember(wid);

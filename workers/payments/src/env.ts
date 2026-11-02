@@ -1,3 +1,10 @@
+/** The few R2 methods we use (keeps the Worker free of the Cloudflare types package). */
+export interface R2Like {
+  put(key: string, value: Uint8Array): Promise<unknown>;
+  get(key: string): Promise<{ arrayBuffer(): Promise<ArrayBuffer> } | null>;
+  list(opts: { prefix: string; cursor?: string }): Promise<{ objects: { key: string }[]; truncated: boolean; cursor?: string }>;
+  delete(keys: string | string[]): Promise<void>;
+}
 export interface Env {
   PAYSTACK_SECRET_KEY: string;
   /** Optional Cloudflare Rate Limiting binding for the public routes (see wrangler.toml). Without it those routes are not rate limited here. */
@@ -12,6 +19,10 @@ export interface Env {
   /** Optional: alert e-mails and webhook-less notifications go out through Resend when this is set. */
   RESEND_API_KEY?: string;
   MAIL_FROM?: string;
+  /** Optional R2 bucket for encrypted workspace backups (see wrangler.toml). Without it, backups stay off. */
+  BACKUPS?: R2Like;
+  /** Secret: 32 random bytes, base64. Encrypts every backup. Losing it makes old backups unreadable, so keep a copy somewhere safe. */
+  BACKUP_KEY?: string;
   /** Set only by the test harness: talk to the Firestore emulator instead of production. Never set in wrangler.toml. */
   FIRESTORE_EMULATOR_HOST?: string;
   /** Flat platform fee, in kobo, kept by ZexCore on each booking deposit. Defaults to 0. */

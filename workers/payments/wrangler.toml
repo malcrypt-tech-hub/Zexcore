@@ -9,6 +9,16 @@ APP_URL = "https://zexcore.com.ng"
 ALLOWED_ORIGINS = "https://zexcore.com.ng,https://www.zexcore.com.ng,https://zexcore-5d6c0.web.app,https://zexcore-5d6c0.firebaseapp.com"
 NGN_PER_USD = "auto"
 
+# Daily encrypted backups (Enterprise and Dedicated). Needs R2 turned on and a Workers Paid plan (backups make many database calls).
+# 1) Create the bucket:  Cloudflare dashboard > R2 > Create bucket "zexcore-backups"
+# 2) Uncomment the two blocks below and redeploy.
+# 3) Add a Secret BACKUP_KEY = 32 random bytes in base64 (generate: openssl rand -base64 32). Keep a copy somewhere safe: without it old backups cannot be read.
+# [[r2_buckets]]
+# binding = "BACKUPS"
+# bucket_name = "zexcore-backups"
+# [triggers]
+# crons = ["7 * * * *"]
+
 # Secrets (set in the Cloudflare dashboard, never in this file):
 #   PAYSTACK_SECRET_KEY        Paystack secret key. Money routes only work with sk_live_...; an sk_test_ key needs ALLOW_TEST_PAYMENTS="true" (staging only).
 #   FIREBASE_SERVICE_ACCOUNT   service-account JSON with the "Cloud Datastore User" role only
