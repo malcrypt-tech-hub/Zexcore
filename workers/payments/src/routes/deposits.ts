@@ -10,7 +10,7 @@
  *   GET  /api/public/deposit-status         booking page: did the payment go through? (also verifies with Paystack)
  * The webhook (routes/billing.ts) settles deposits too, so closing the tab never loses a payment.
  */
-import { requireMember } from '../auth';
+import { DOERS, requireMember } from '../auth';
 import type { Ctx, Deps, Env } from '../env';
 import { FsConflict, fsCommit, fsGet } from '../fs';
 import { sendMail } from '../mail';
@@ -118,7 +118,7 @@ export async function publicDeposit(c: Ctx): Promise<Response> {
 
 export async function depositLink(c: Ctx): Promise<Response> {
   const b = await readJson(c.req, 2048);
-  const { wid, caller } = await requireMember(c, b.workspaceId);
+  const { wid, caller } = await requireMember(c, b.workspaceId, DOERS);
   const slug = String((await fsGet(c.env, c.d, `workspaces/${wid}`))?.data.slug ?? '');
   const plan = await planDeposit(c, wid, slug, String(b.bookingId ?? ''), b.email, { requireFresh: false });
   return json(await startPayment(c, plan, caller.uid), 201, c.headers);

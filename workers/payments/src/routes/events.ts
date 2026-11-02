@@ -1,4 +1,4 @@
-import { requireMember } from '../auth';
+import { DOERS, requireMember } from '../auth';
 import { fireEvent, ownerEmail } from '../automation';
 import type { Ctx } from '../env';
 import { FsConflict, fsCommit, fsGet } from '../fs';
@@ -21,7 +21,7 @@ async function bookingPayload(c: Ctx, wid: string, id: string): Promise<{ payloa
 /** POST /api/events { workspaceId, event, id }  — a signed-in member reports something they just did. The Worker re-reads the record. */
 export async function memberEvent(c: Ctx): Promise<Response> {
   const b = await readJson(c.req);
-  const { wid } = await requireMember(c, b.workspaceId);
+  const { wid } = await requireMember(c, b.workspaceId, DOERS);
   const id = String(b.id ?? ''); const event = String(b.event ?? '');
   if (!ID_RE.test(id)) throw new HttpError(400, 'Invalid record');
   if (event === 'bookings.booking.created') {

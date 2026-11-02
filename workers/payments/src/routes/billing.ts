@@ -17,7 +17,7 @@ export const PLANS: Record<Tier, { monthlyUsd: number; annualUsd: number }> = {
   enterprise: { monthlyUsd: 499, annualUsd: 4990 },
   dedicated: { monthlyUsd: 1500, annualUsd: 15000 },
 };
-const RANK: Record<string, number> = { free: 0, starter: 1, growth: 2, agency: 3, enterprise: 4, dedicated: 5 };
+export const RANK: Record<string, number> = { free: 0, starter: 1, growth: 2, agency: 3, enterprise: 4, dedicated: 5 };
 /** The plan a workspace is paying for right now (free once it has lapsed), and when it ends. */
 export function activePlan(ws: Record<string, unknown> | undefined, now: Date): { tier: string; expires: Date | null } {
   const tier = String(ws?.plan ?? 'free');
