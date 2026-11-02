@@ -3,11 +3,8 @@ import { doc, getDoc, getDocs, collection, query, orderBy, limit as qLimit, runT
 import { fb, isConfigured } from './firebase';
 import { effectiveTier, hasFeatureAccess, slotLimit, FEATURE_TIERS, UNLIMITED_SLOTS, type EnforcedKey, type FeatureKey, type Tier } from './plan';
 
-export class ApiError extends Error {
-  status: number;
-  code?: string;
-  constructor(status: number, message: string, code?: string) { super(message); this.status = status; this.code = code; }
-}
+import { ApiError } from '../errors';
+export { ApiError };
 export const unavailable = (what: string): ApiError => new ApiError(501, `${what} is not part of this release yet.`, 'unavailable');
 
 export interface WorkspaceSettings {
@@ -61,13 +58,22 @@ export async function loadCtx(force = false): Promise<Ctx> {
   await auth.authStateReady();
   const user = auth.currentUser;
   if (!user) throw new ApiError(401, 'Please sign in.', 'unauthenticated');
-  if (force) await user.reload().catch(() => undefined);
+  // A verified account never changes state on reload, so only an unverified one is refreshed, and without making the page wait.
+  if (force && !user.emailVerified) void user.reload().catch(() => undefined);
   try {
-    const u = await getDoc(doc(db, 'users', user.uid));
+    // One round trip when we remember the workspace from last time: the user record and the workspace are read together.
+    const want = preferredWorkspace();
+    const [u, wsGuess, memGuess] = await Promise.all([
+      getDoc(doc(db, 'users', user.uid)),
+      want ? getDoc(doc(db, 'workspaces', want)).catch(() => null) : Promise.resolve(null),
+      want ? getDoc(doc(db, 'workspaces', want, 'members', user.uid)).catch(() => null) : Promise.resolve(null),
+    ]);
     const ids = (u.data()?.workspaceIds as string[] | undefined) ?? [];
-    const wid = ids.includes(preferredWorkspace() ?? '') ? preferredWorkspace()! : ids[0];
+    const wid = want && ids.includes(want) ? want : ids[0];
     if (!wid) throw new ApiError(403, 'This account has no workspace.', 'no_workspace');
-    const [ws, mem] = await Promise.all([getDoc(doc(db, 'workspaces', wid)), getDoc(doc(db, 'workspaces', wid, 'members', user.uid))]);
+    const [ws, mem] = wid === want && wsGuess && memGuess ? [wsGuess, memGuess]
+      : await Promise.all([getDoc(doc(db, 'workspaces', wid)), getDoc(doc(db, 'workspaces', wid, 'members', user.uid))]);
+    try { localStorage.setItem(WS_KEY, wid); } catch { /* remembered on this device only */ }
     if (!ws.exists() || !mem.exists()) throw new ApiError(403, 'This account has no access to its workspace.', 'no_workspace');
     const w = ws.data();
     const exp = w.planExpiresAt instanceof Timestamp ? w.planExpiresAt.toMillis() : null;

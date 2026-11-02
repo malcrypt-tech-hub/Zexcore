@@ -1,7 +1,6 @@
 // The dashboard talks to Firebase (Auth + Firestore) through this one function. The route table in ./fb/router.ts keeps the
 // original endpoint names so every view stays unchanged; there is no application server behind it.
-import { ApiError } from './fb/core';
-import { dispatch } from './fb/router';
+import { ApiError } from './errors';
 
 export { ApiError };
 const KEY = 'zx.session';
@@ -16,12 +15,17 @@ export function setToken(t: string | null): void {
   try { token ? localStorage.setItem(KEY, token) : localStorage.removeItem(KEY); } catch { /* ignore */ }
 }
 
+/** The data layer (and Firebase with it) loads the first time the app needs it, not on every marketing page. */
+let routerP: Promise<typeof import('./fb/router')> | null = null;
+export const loadRouter = (): Promise<typeof import('./fb/router')> => (routerP ??= import('./fb/router'));
+
 let onUnauthorized: () => void = () => {};
 export const setUnauthorizedHandler = (fn: () => void): void => { onUnauthorized = fn; };
 
 export async function api<T = any>(path: string, opts: { method?: string; body?: unknown; auth?: boolean } = {}): Promise<T> {
   const { method = 'GET', body, auth = true } = opts;
   try {
+    const { dispatch } = await loadRouter();
     return (await dispatch(path, method, body)) as T;
   } catch (e) {
     if (e instanceof ApiError && e.status === 402 && (e.code === 'plan_limit' || e.code === 'plan_feature' || e.code === 'seat_limit')) void showUpgrade(e.message);
