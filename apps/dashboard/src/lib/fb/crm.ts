@@ -66,6 +66,7 @@ export async function createLead(b: Record<string, unknown>): Promise<{ id: stri
   if (!title) throw new ApiError(400, 'Give the lead a title.');
   const value = b.value === undefined || b.value === null ? null : Number(b.value);
   if (value !== null && (!Number.isInteger(value) || value < 0)) throw new ApiError(400, 'Enter a valid value.');
+  // Numbered slots (like contacts), so the plan limit is enforced by the database rules and not only by this screen.
   const id = await claimSlot(c, 'leads', 'l', 'crmContacts', { title, contactId: String(b.contactId ?? ''), stageId: String(b.stageId ?? ''), value, currency: 'USD', closedAt: null, closeReason: null });
   void audit(c, 'lead.create', 'lead', id);
   emit('crm.lead.created', c.wid, id);

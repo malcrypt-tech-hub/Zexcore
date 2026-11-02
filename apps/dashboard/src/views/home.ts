@@ -9,7 +9,7 @@ import { statusBadge, depositBadge, openNewBooking } from './bookings';
 
 interface Summary {
   businessName: string | null; currency: string; today: string; utcOffsetMinutes: number;
-  setup: { onboarded: boolean; services: number; staff: number; depositEnabled: boolean };
+  setup: { onboarded: boolean; services: number; staff: number; depositEnabled: boolean; hasPhone: boolean; hasName: boolean };
   todayBookings: Booking[];
   week: { total: number; depositsMinor: number; noShows: number; perDay: number[] };
   attention: { pending: number; unpaidCount: number; unpaidMinor: number; waitingReplies: number };
@@ -27,7 +27,13 @@ export async function renderHome(view: HTMLElement): Promise<void> {
   const first = (me.user.name || '').split(' ')[0] || 'there';
   const off = s.utcOffsetMinutes, cur = s.currency;
   const dow = new Date(s.today + 'T00:00:00Z').getUTCDay();
-  const needsSetup = !s.setup.onboarded || s.setup.services === 0;
+  const steps = [
+    { done: s.setup.hasName, t: 'Business name', s: 'Shown on your booking page', href: '/app/settings' },
+    { done: s.setup.hasPhone, t: 'Business phone or WhatsApp', s: 'So customers can reach you', href: '/app/settings' },
+    { done: s.setup.services > 0, t: 'At least one service', s: 'What customers can book', href: '/app/services' },
+    { done: s.setup.onboarded, t: 'Opening hours confirmed', s: 'Sets the times people can book', href: '/app/onboarding' },
+  ];
+  const needsSetup = steps.some((x) => !x.done);
   const a = s.attention;
   const attention = a.pending + (a.unpaidCount ? 1 : 0) + a.waitingReplies;
   const max = Math.max(1, ...s.week.perDay);
@@ -50,9 +56,10 @@ export async function renderHome(view: HTMLElement): Promise<void> {
 
     ${needsSetup ? html`
     <div class="card card-pad" style="margin-bottom:20px;border-color:var(--primary-border)">
-      <div class="row between wrap"><div class="row"><span class="icon-tile" style="background:var(--primary-tint);color:var(--primary)">${ic('rocket')}</span>
-        <div><h3>Finish setting up</h3><p class="muted small">Add your services and hours so customers can start booking.</p></div></div>
+      <div class="row between wrap" style="margin-bottom:12px"><div class="row"><span class="icon-tile" style="background:var(--primary-tint);color:var(--primary)">${ic('rocket')}</span>
+        <div><h3>Complete your setup</h3><p class="muted small">${steps.filter((x) => x.done).length} of ${steps.length} done. Customers can only book you once this is finished.</p></div></div>
         <a class="btn btn-primary" href="/app/onboarding" data-link>Continue setup ${ic('arrow-right', 'ico-sm')}</a></div>
+      <div class="stack-sm">${steps.map((x) => html`<a class="attn-item" href="${x.href}" data-link style="text-decoration:none;color:inherit"><span class="dot ${x.done ? 'dot-success' : 'dot-warning'}"></span><div class="grow"><div class="t">${x.t}${x.done ? ' (done)' : ''}</div><div class="s">${x.s}</div></div>${x.done ? ic('circle-check', 'ico-sm') : ic('chevron-right', 'ico-sm')}</a>`)}</div>
     </div>` : ''}
 
     <div class="home-grid">

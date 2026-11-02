@@ -8,14 +8,15 @@
  *   POST /api/public/deposit                booking page: start a deposit payment for a booking the visitor just made
  *   POST /api/deposit/link                  team: payment link for an existing booking
  *   GET  /api/public/deposit-status         booking page: did the payment go through? (also verifies with Paystack)
+ *   POST /api/deposit/refund                owner/admin: refund a paid deposit through Paystack
  * The webhook (routes/billing.ts) settles deposits too, so closing the tab never loses a payment.
  */
-import { requireMember } from '../auth';
+import { DOERS, requireMember } from '../auth';
 import type { Ctx, Deps, Env } from '../env';
-import { FsConflict, fsCommit, fsGet } from '../fs';
-import { sendMail } from '../mail';
-import { ownerEmail } from '../automation';
-import { HttpError, ID_RE, json, randomRef, readJson } from '../util';
+import { FsConflict, fsCommit, fsGet, fsQuery } from '../fs';
+import { ownerContact } from '../automation';
+import { sendFormal } from '../mail';
+import { HttpError, ID_RE, firstName, json, randomRef, readJson } from '../util';
 import { getLiveNgnRate } from '../rates';
 
 const PAYSTACK = 'https://api.paystack.co';
@@ -57,10 +58,16 @@ export async function payoutSetup(c: Ctx): Promise<Response> {
   await fsCommit(c.env, c.d, [{ path: `workspaces/${wid}/payout/main`, fields: { subaccountCode: code, bankCode, bankName: String(b.bankName ?? '').slice(0, 80), accountName, last4: accountNumber.slice(-4), updatedAt: c.d.now(), updatedBy: caller.uid } }]);
   // Tell the owner every time the place deposits are paid is set or changed, so a hijacked session cannot redirect money silently.
   const changed = Boolean(existing?.data.last4) && (existing?.data.bankCode !== bankCode || existing?.data.last4 !== accountNumber.slice(-4));
-  const note = `${changed ? 'The bank account for your ZexCore deposits was changed.' : 'A bank account was set for your ZexCore deposits.'}\n\nAccount name: ${accountName}\nBank: ${String(b.bankName ?? '').slice(0, 80) || bankCode}\nAccount ending: ${accountNumber.slice(-4)}\n\nIf this was not you, sign in, change your password straight away and contact support.`;
-  const owner = await ownerEmail(c, wid);
-  await sendMail(c.env, c.d, owner, changed ? 'ZexCore: your payout account was changed' : 'ZexCore: payout account set', note);
-  if (caller.email && caller.email.toLowerCase() !== owner.toLowerCase()) await sendMail(c.env, c.d, caller.email, changed ? 'ZexCore: your payout account was changed' : 'ZexCore: payout account set', note);
+  const subject = changed ? 'ZexCore: your payout account was changed' : 'ZexCore: payout account set';
+  const spec = (hello: string) => ({
+    heading: changed ? 'Your payout account was changed' : 'Your payout account is set', greeting: `Hello ${hello},`,
+    paragraphs: [changed ? 'The bank account that receives your ZexCore booking deposits was changed.' : 'A bank account was set to receive your ZexCore booking deposits.', 'If this was not you, sign in, change your password straight away and contact us.'],
+    details: [['Account name', accountName], ['Bank', String(b.bankName ?? '').slice(0, 80) || bankCode], ['Account ending', accountNumber.slice(-4)], ['Time', `${c.d.now().toISOString().replace('T', ' ').slice(0, 16)} UTC`]] as [string, string][],
+    button: { text: 'Open dashboard', url: `${c.env.APP_URL.replace(/\/$/, '')}/app/settings` }, note: 'We email you every time the payout account changes so nobody can redirect your money unnoticed.',
+  });
+  const owner = await ownerContact(c, wid);
+  await sendFormal(c.env, c.d, owner.email, subject, spec(owner.name));
+  if (caller.email && caller.email.toLowerCase() !== owner.email.toLowerCase()) await sendFormal(c.env, c.d, caller.email, subject, spec(firstName('', caller.email)));
   return json({ ok: true, accountName, last4: accountNumber.slice(-4) }, 200, c.headers);
 }
 
@@ -118,7 +125,7 @@ export async function publicDeposit(c: Ctx): Promise<Response> {
 
 export async function depositLink(c: Ctx): Promise<Response> {
   const b = await readJson(c.req, 2048);
-  const { wid, caller } = await requireMember(c, b.workspaceId);
+  const { wid, caller } = await requireMember(c, b.workspaceId, DOERS);
   const slug = String((await fsGet(c.env, c.d, `workspaces/${wid}`))?.data.slug ?? '');
   const plan = await planDeposit(c, wid, slug, String(b.bookingId ?? ''), b.email, { requireFresh: false });
   return json(await startPayment(c, plan, caller.uid), 201, c.headers);
@@ -160,4 +167,24 @@ export async function depositStatus(c: Ctx): Promise<Response> {
   const id = String(pay?.data.bookingId ?? '');
   return json({ ref: `ZX-${id.replace('_', '-')}`, status: booking?.data.status ?? 'pending', depositStatus: state === 'paid' ? 'paid' : state === 'mismatch' ? 'mismatch' : 'unpaid', amountMinor: Number(pay?.data.usdMinor ?? 0), currency: 'USD', chargedNgnMinor: Number(pay?.data.amountMinor ?? 0), rate: Number(pay?.data.rate ?? 0),
     serviceName: svc?.data.name ?? '', startsAt: booking?.data.startsAt instanceof Date ? booking.data.startsAt.toISOString() : null }, 200, c.headers);
+}
+
+/** Refunds a paid deposit through Paystack and records it. Owners and admins only; a deposit can be refunded once. */
+export async function refundDeposit(c: Ctx): Promise<Response> {
+  const b = await readJson(c.req, 1024);
+  const { wid, caller } = await requireMember(c, b.workspaceId, ['owner', 'admin']);
+  const bookingId = String(b.bookingId ?? '');
+  if (!BOOKING_RE.test(bookingId)) throw new HttpError(400, 'Invalid booking');
+  const paid = await fsQuery(c.env, c.d, { parent: `workspaces/${wid}`, collection: 'depositPayments', where: [{ field: 'bookingId', op: 'EQUAL', value: bookingId }, { field: 'status', op: 'EQUAL', value: 'paid' }], limit: 1 });
+  const pay = paid[0];
+  if (!pay) throw new HttpError(409, 'There is no paid deposit to refund for this booking.', 'nothing_to_refund');
+  const r = await ps(c.env, c.d, '/refund', { method: 'POST', body: JSON.stringify({ transaction: String(pay.data.reference), customer_note: 'Booking deposit refund', merchant_note: `Refund requested by ${caller.uid}` }) });
+  const j = (await r.json().catch(() => ({}))) as { status?: boolean; message?: string };
+  if (!r.ok || !j.status) throw new HttpError(502, j.message ? `Paystack could not refund this deposit: ${j.message}` : 'Paystack could not refund this deposit. Try again shortly.', 'refund_failed');
+  const now = c.d.now();
+  await fsCommit(c.env, c.d, [
+    { path: pay.path, fields: { status: 'refunded', refundedAt: now, refundedBy: caller.uid }, mask: ['status', 'refundedAt', 'refundedBy'], precondition: { exists: true } },
+    { path: `workspaces/${wid}/bookings/${bookingId}`, fields: { depositStatus: 'refunded' }, mask: ['depositStatus'], precondition: { exists: true } },
+  ]);
+  return json({ ok: true }, 200, c.headers);
 }

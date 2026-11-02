@@ -46,7 +46,7 @@ const CSS = `<style>
 export interface Cta { text: string; href: string; primary?: boolean }
 
 export function intro(eyebrow: string, title: string, desc: string, ctas: Cta[] = []): string {
-  return `<section class="section-white page-intro-section"><div class="site-container"><div class="page-intro-header page-hero-content-col">
+  return `<section class="section-white page-intro-section"><div class="site-container"><div class="page-intro-header">
     <div class="section-eyebrow">${esc(eyebrow)}</div><h1 class="page-intro-title">${esc(title)}</h1><p class="page-intro-desc">${esc(desc)}</p>
     ${ctas.length ? `<div class="final-cta-buttons" style="justify-content:flex-start;margin-top:22px">${ctas.map((c) => `<a href="${c.href}" data-link class="btn ${c.primary ? 'btn-primary' : 'btn-secondary'} btn-lg">${esc(c.text)}</a>`).join('')}</div>` : ''}
   </div></div></section>`;

@@ -7,23 +7,26 @@ import { current, loadMe, logout } from '../lib/session';
 import { clearStore } from '../lib/store';
 import { authLayout } from '../layouts';
 import { navigate } from '../router';
+import { hasFeatureAccess } from '../lib/fb/plan';
 import { acceptInvite, inviteInfo, type TeamInvite, type TeamMember } from '../lib/fb/team';
 
 const ROLE_TEXT: Record<string, string> = {
   owner: 'Owner. Full control, including plan and payouts.',
   admin: 'Admin. Runs the workspace: settings, team, automations. Cannot change the owner.',
   editor: 'Editor. Handles bookings, customers, messages, services, staff calendars and website pages. No settings, billing or team changes.',
+  viewer: 'Viewer. Read-only: sees bookings, customers, payments and the audit log, but cannot change anything or read customer chats. For accountants and investors (Enterprise and Dedicated).',
   staff: 'Staff',
 };
-const roleLabel = (r: string): string => ({ owner: 'Owner', admin: 'Admin', editor: 'Editor' } as Record<string, string>)[r] ?? 'Staff';
+const roleLabel = (r: string): string => ({ owner: 'Owner', admin: 'Admin', editor: 'Editor', viewer: 'Viewer' } as Record<string, string>)[r] ?? 'Staff';
 
 export async function renderAccess(view: HTMLElement): Promise<void> {
   const me = current()!;
   const isOwner = me.role === 'owner', isAdmin = isOwner || me.role === 'admin';
+  const viewerOk = hasFeatureAccess(me.tenant.tier, 'export');   // Enterprise and Dedicated
   mount(view, html`<div class="page-head"><div><h1>Team access</h1><p>People who can sign in to ${me.tenant.name}. Staff that customers book with are managed under Bookable staff.</p></div>${isAdmin ? html`<button class="btn btn-primary" data-invite>${ic('plus', 'ico-sm')} Invite</button>` : ''}</div>
     <div class="card" id="l"></div>
     <div class="card card-pad" style="margin-top:16px"><h3 style="margin-bottom:8px">What each role can do</h3>
-      <div class="stack-sm">${(['owner', 'admin', 'editor'] as const).map((r) => html`<div class="small"><b>${roleLabel(r)}.</b> ${ROLE_TEXT[r]!.replace(/^[A-Za-z]+\. /, '')}</div>`)}</div></div>`);
+      <div class="stack-sm">${(['owner', 'admin', 'editor', 'viewer'] as const).map((r) => html`<div class="small"><b>${roleLabel(r)}.</b> ${ROLE_TEXT[r]!.replace(/^[A-Za-z]+\. /, '')}</div>`)}</div></div>`);
   const host = $('#l', view)!;
   let data: { members: TeamMember[]; invites: TeamInvite[]; seats: number } | null = null;
 
@@ -37,7 +40,7 @@ export async function renderAccess(view: HTMLElement): Promise<void> {
         ${d.members.map((m) => html`<div class="list-item"><span class="avatar green">${(m.name ?? m.email ?? '?').slice(0, 1).toUpperCase()}</span>
           <div class="grow"><b>${m.name ?? m.email ?? 'Member'}</b> ${m.you ? html`<span class="badge">You</span>` : ''}<div class="muted small">${m.email ?? ''}</div></div>
           <span class="badge">${roleLabel(m.role)}</span>
-          ${m.role !== 'owner' && (isOwner || (isAdmin && m.role === 'editor')) && !m.you ? html`<button class="btn btn-ghost btn-sm" data-manage="${m.uid}">Manage</button>` : ''}
+          ${m.role !== 'owner' && (isOwner || (isAdmin && (m.role === 'editor' || m.role === 'viewer'))) && !m.you ? html`<button class="btn btn-ghost btn-sm" data-manage="${m.uid}">Manage</button>` : ''}
           ${m.you && m.role !== 'owner' ? html`<button class="btn btn-ghost btn-sm" data-leave>Leave</button>` : ''}</div>`)}
         ${d.invites.map((i) => html`<div class="list-item"><span class="avatar grey">${ic('mail', 'ico-sm')}</span>
           <div class="grow"><b>${i.email}</b> <span class="badge">Invited as ${roleLabel(i.role)}</span><div class="muted small">Waiting to accept${i.expiresAt ? ` until ${new Date(i.expiresAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}` : ''}</div></div>
@@ -56,7 +59,7 @@ export async function renderAccess(view: HTMLElement): Promise<void> {
     openModal({
       title: m.email ?? 'Team member', subtitle: `Currently ${roleLabel(m.role).toLowerCase()}`,
       body: html`<div id="me" class="alert alert-error hidden"></div>
-        ${isOwner ? html`<div class="field"><label for="mr">Role</label><select class="input" id="mr"><option value="editor" ${m.role === 'editor' ? 'selected' : ''}>Editor</option><option value="admin" ${m.role === 'admin' ? 'selected' : ''}>Admin</option></select></div>` : ''}
+        ${isOwner ? html`<div class="field"><label for="mr">Role</label><select class="input" id="mr"><option value="editor" ${m.role === 'editor' ? 'selected' : ''}>Editor</option><option value="admin" ${m.role === 'admin' ? 'selected' : ''}>Admin</option>${viewerOk || m.role === 'viewer' ? html`<option value="viewer" ${m.role === 'viewer' ? 'selected' : ''}>Viewer (read-only)</option>` : ''}</select></div>` : ''}
         <p class="muted small" style="margin-top:10px">Removing someone signs them out of this workspace. Their past bookings and notes stay.</p>`,
       footer: html`<button class="btn btn-secondary" data-close>Cancel</button><button class="btn btn-danger" data-rm>Remove</button>${isOwner ? html`<button class="btn btn-primary" data-save>Save role</button>` : ''}`,
       onMount: (el, close) => {
@@ -82,7 +85,7 @@ export async function renderAccess(view: HTMLElement): Promise<void> {
       title: 'Invite someone', subtitle: 'They get an email with a link that works for 7 days.',
       body: html`<div id="ie" class="alert alert-error hidden"></div>
         <div class="field"><label for="im">Email</label><input class="input" id="im" type="email" maxlength="254" autocomplete="off" placeholder="name@example.com"></div>
-        <div class="field"><label for="ir">Role</label><select class="input" id="ir"><option value="editor">Editor</option>${isOwner ? html`<option value="admin">Admin</option>` : ''}</select></div>
+        <div class="field"><label for="ir">Role</label><select class="input" id="ir"><option value="editor">Editor</option>${isOwner ? html`<option value="admin">Admin</option>` : ''}${viewerOk ? html`<option value="viewer">Viewer (read-only)</option>` : ''}</select></div>
         <p class="muted small" id="ih">${ROLE_TEXT.editor}</p><div id="il"></div>`,
       footer: html`<button class="btn btn-secondary" data-close>Close</button><button class="btn btn-primary" data-send>Send invitation</button>`,
       onMount: (el) => {
@@ -127,7 +130,7 @@ export async function renderAcceptInvite(query: URLSearchParams): Promise<void> 
     return;
   }
   setPending(inv);
-  const who = html`<b>${info.workspace}</b> as ${info.role === 'admin' ? 'an admin' : 'an editor'}`;
+  const who = html`<b>${info.workspace}</b> as ${info.role === 'admin' ? 'an admin' : info.role === 'viewer' ? 'a read-only viewer' : 'an editor'}`;
   const me = await loadMe().catch(() => null);
   if (!me) {
     card(html`<h1 style="font-size:1.4rem">You're invited</h1>

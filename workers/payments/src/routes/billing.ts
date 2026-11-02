@@ -17,7 +17,7 @@ export const PLANS: Record<Tier, { monthlyUsd: number; annualUsd: number }> = {
   enterprise: { monthlyUsd: 499, annualUsd: 4990 },
   dedicated: { monthlyUsd: 1500, annualUsd: 15000 },
 };
-const RANK: Record<string, number> = { free: 0, starter: 1, growth: 2, agency: 3, enterprise: 4, dedicated: 5 };
+export const RANK: Record<string, number> = { free: 0, starter: 1, growth: 2, agency: 3, enterprise: 4, dedicated: 5 };
 /** The plan a workspace is paying for right now (free once it has lapsed), and when it ends. */
 export function activePlan(ws: Record<string, unknown> | undefined, now: Date): { tier: string; expires: Date | null } {
   const tier = String(ws?.plan ?? 'free');
@@ -27,12 +27,35 @@ export function activePlan(ws: Record<string, unknown> | undefined, now: Date): 
 /** Days of the new plan that the unused time on the old one is worth (same daily value as its monthly price). */
 export function creditDays(oldTier: string, remainingMs: number, newTier: Tier): number {
   const old = PLANS[oldTier as Tier]; if (!old || remainingMs <= 0) return 0;
-  return Math.floor((remainingMs / 86_400_000) * (old.monthlyUsd / PLANS[newTier].monthlyUsd));
+  return Math.floor((remainingMs / 86_400_000) * old.monthlyUsd / PLANS[newTier].monthlyUsd);
 }
 export const isTier = (v: unknown): v is Tier => typeof v === 'string' && Object.prototype.hasOwnProperty.call(PLANS, v);
 export function amountMinor(tier: Tier, cycle: Cycle, currency: Currency, ngnPerUsd = DEFAULT_FALLBACK_RATE): number {
   const usd = cycle === 'annual' ? PLANS[tier].annualUsd : PLANS[tier].monthlyUsd;
   return Math.round((currency === 'NGN' ? usd * ngnPerUsd : usd) * 100);
+}
+
+const PAID_RANK: Record<Tier, number> = { starter: 0, growth: 1, agency: 2, enterprise: 3, dedicated: 4 };
+
+/**
+ * What a successful payment does to the workspace. Time is never lost:
+ *  - same plan: the new period is added to what is left;
+ *  - upgrade: what is left on the old plan is converted into time on the new one, at the ratio of their monthly prices;
+ *  - paying for a lower plan while a higher one is active (an old checkout left open): the higher plan stays and is extended
+ *    by the equivalent time.
+ */
+export function planAfterPayment(currentPlan: unknown, currentExpiry: Date | null, tier: Tier, cycle: Cycle, now: Date): { plan: Tier; expires: Date } {
+  const addMs = (cycle === 'annual' ? 365 : 31) * 86_400_000;
+  const active = isTier(currentPlan) && currentExpiry !== null && currentExpiry > now;
+  if (!active) return { plan: tier, expires: new Date(now.getTime() + addMs) };
+  const cur = currentPlan as Tier;
+  if (cur === tier) return { plan: tier, expires: new Date(currentExpiry!.getTime() + addMs) };
+  if (PAID_RANK[cur] < PAID_RANK[tier]) {
+    const carriedDays = creditDays(cur, currentExpiry!.getTime() - now.getTime(), tier);   // whole days, same rule as everywhere else
+    return { plan: tier, expires: new Date(now.getTime() + carriedDays * 86_400_000 + addMs) };
+  }
+  const extra = addMs * (PLANS[tier].monthlyUsd / PLANS[cur].monthlyUsd);
+  return { plan: cur, expires: new Date(currentExpiry!.getTime() + extra) };
 }
 
 // ───────────── POST /api/checkout ─────────────
@@ -107,18 +130,13 @@ export async function webhook(req: Request, env: Env, d: Deps): Promise<Response
   if (!isTier(tier)) return json({ ok: true, ignored: 'bad_tier' });
   const ws = await fsGet(env, d, `workspaces/${metaWid}`);
   if (!ws) return json({ ok: true, ignored: 'unknown_workspace' });
-  const days = cycle === 'annual' ? 365 : 31;
   const now = d.now();
-  const cur = activePlan(ws.data, now);
-  // Renewing the same plan early keeps the remaining time. Moving up a plan turns the unused time into extra days on the new one.
-  const base = cur.tier === tier && cur.expires ? cur.expires : now;
-  const credit = cur.tier !== tier && cur.expires && (RANK[tier] ?? 0) > (RANK[cur.tier] ?? 0) ? creditDays(cur.tier, cur.expires.getTime() - now.getTime(), tier) : 0;
-  const expires = new Date(base.getTime() + (days + credit) * 86400000);
+  const { plan: newPlan, expires } = planAfterPayment(ws.data.plan, ws.data.planExpiresAt instanceof Date ? ws.data.planExpiresAt : null, tier, cycle, now);
 
   await fsCommit(env, d, [
     { path, fields: { status: 'paid', paidMinor: vj.data.amount, paidAt: now }, mask: ['status', 'paidMinor', 'paidAt'], precondition: { updateTime: pay.updateTime } },
-    { path: `workspaces/${metaWid}`, fields: { plan: tier, planCycle: cycle, planExpiresAt: expires }, mask: ['plan', 'planCycle', 'planExpiresAt'], precondition: { exists: true } },
+    { path: `workspaces/${metaWid}`, fields: { plan: newPlan, planCycle: newPlan === tier ? cycle : (ws.data.planCycle ?? cycle), planExpiresAt: expires }, mask: ['plan', 'planCycle', 'planExpiresAt'], precondition: { exists: true } },
   ]);
-  return json({ ok: true, activated: tier, expiresAt: expires.toISOString() });
+  return json({ ok: true, activated: newPlan, expiresAt: expires.toISOString() });
 }
 

@@ -5,13 +5,13 @@ import { fb } from './firebase';
 import { worker } from './worker';
 import { slotLimit } from './plan';
 
-export interface TeamMember { uid: string; email: string | null; name: string | null; role: 'owner' | 'admin' | 'editor' | 'staff'; you: boolean }
-export interface TeamInvite { id: string; email: string; role: 'admin' | 'editor'; expiresAt: string | null }
+export interface TeamMember { uid: string; email: string | null; name: string | null; role: 'owner' | 'admin' | 'editor' | 'viewer' | 'staff'; you: boolean }
+export interface TeamInvite { id: string; email: string; role: 'admin' | 'editor' | 'viewer'; expiresAt: string | null }
 
 export async function listTeam(): Promise<{ members: TeamMember[]; invites: TeamInvite[]; seats: number; myRole: string }> {
   const c = await loadCtx();
   const ms = await getDocs(wsCol(c, 'members'));
-  const order = { owner: 0, admin: 1, editor: 2, staff: 3 } as const;
+  const order = { owner: 0, admin: 1, editor: 2, viewer: 3, staff: 4 } as const;
   const members = ms.docs.map((d) => ({ uid: d.id, email: (d.data().email as string | undefined) ?? null, name: (d.data().name as string | undefined) ?? null, role: d.data().role as TeamMember['role'], you: d.id === c.uid }))
     .sort((a, b) => order[a.role] - order[b.role] || String(a.email).localeCompare(String(b.email)));
   let invites: TeamInvite[] = [];
@@ -32,7 +32,7 @@ export async function revokeInvite(id: string): Promise<{ ok: true }> { const c 
 export async function setRole(uid: string, role: string): Promise<{ ok: true }> { const c = await loadCtx(); await worker('/api/team/role', { body: { wid: c.wid, uid, role } }); return { ok: true }; }
 export async function removeMember(uid: string): Promise<{ ok: true }> { const c = await loadCtx(); await worker('/api/team/remove', { body: { wid: c.wid, uid } }); return { ok: true }; }
 
-export const inviteInfo = (w: string, t: string) => worker<{ workspace: string; role: 'admin' | 'editor'; email: string }>('/api/team/invite-info', { query: { w, t }, auth: false });
+export const inviteInfo = (w: string, t: string) => worker<{ workspace: string; role: 'admin' | 'editor' | 'viewer'; email: string }>('/api/team/invite-info', { query: { w, t }, auth: false });
 export async function acceptInvite(wid: string, token: string): Promise<{ wid: string; role: string }> {
   const r = await worker<{ wid: string; role: string }>('/api/team/accept', { body: { wid, token } });
   setPreferredWorkspace(r.wid); clearCtx();
