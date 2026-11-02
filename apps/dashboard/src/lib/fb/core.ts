@@ -1,7 +1,7 @@
 import { worker } from './worker';
 import { doc, getDoc, getDocs, collection, query, orderBy, limit as qLimit, runTransaction, serverTimestamp, Timestamp, type DocumentData } from 'firebase/firestore';
 import { fb, isConfigured } from './firebase';
-import { effectiveTier, slotLimit, UNLIMITED_SLOTS, type EnforcedKey, type Tier } from './plan';
+import { effectiveTier, hasFeatureAccess, slotLimit, FEATURE_TIERS, UNLIMITED_SLOTS, type EnforcedKey, type FeatureKey, type Tier } from './plan';
 
 export class ApiError extends Error {
   status: number;
@@ -24,7 +24,7 @@ export const DEFAULT_SETTINGS: WorkspaceSettings = {
   logoUrl: null, rules: [],
 };
 
-export type Role = 'owner' | 'admin' | 'staff';
+export type Role = 'owner' | 'admin' | 'editor' | 'viewer' | 'staff';
 export interface Ctx {
   uid: string; email: string | null; name: string | null; emailVerified: boolean;
   wid: string; slug: string; wsName: string; plan: string; planCycle: string | null; planExpiresAt: string | null;
@@ -33,6 +33,11 @@ export interface Ctx {
 
 let cached: Ctx | null = null;
 export const clearCtx = (): void => { cached = null; };
+
+/** Which workspace to open when the account belongs to more than one (a teammate can be in several). Remembered on this device only. */
+const WS_KEY = 'zx.workspace';
+export const preferredWorkspace = (): string | null => { try { return localStorage.getItem(WS_KEY); } catch { return null; } };
+export const setPreferredWorkspace = (id: string): void => { try { localStorage.setItem(WS_KEY, id); } catch { /* ignore */ } cached = null; };
 
 export const iso = (v: unknown): string | null => (v instanceof Timestamp ? v.toDate().toISOString() : typeof v === 'string' ? v : null);
 
@@ -59,7 +64,8 @@ export async function loadCtx(force = false): Promise<Ctx> {
   if (force) await user.reload().catch(() => undefined);
   try {
     const u = await getDoc(doc(db, 'users', user.uid));
-    const wid = (u.data()?.workspaceIds as string[] | undefined)?.[0];
+    const ids = (u.data()?.workspaceIds as string[] | undefined) ?? [];
+    const wid = ids.includes(preferredWorkspace() ?? '') ? preferredWorkspace()! : ids[0];
     if (!wid) throw new ApiError(403, 'This account has no workspace.', 'no_workspace');
     const [ws, mem] = await Promise.all([getDoc(doc(db, 'workspaces', wid)), getDoc(doc(db, 'workspaces', wid, 'members', user.uid))]);
     if (!ws.exists() || !mem.exists()) throw new ApiError(403, 'This account has no access to its workspace.', 'no_workspace');
@@ -86,9 +92,17 @@ export const wsDoc = (c: Ctx, ...path: string[]) => doc(fb().db, 'workspaces', c
 export const wsCol = (c: Ctx, name: string) => collection(fb().db, 'workspaces', c.wid, name);
 
 export const canWrite = (c: Ctx): boolean => c.role === 'owner' || c.role === 'admin';
+export const canEditContent = (c: Ctx): boolean => c.role === 'owner' || c.role === 'admin' || c.role === 'editor';
+/** Services, staff calendars and website pages: owners, admins and editors. */
+export function requireEditor(c: Ctx): void { if (!canEditContent(c)) throw new ApiError(403, 'Your role cannot change this.', 'forbidden'); }
 export function requireAdmin(c: Ctx): void { if (!canWrite(c)) throw new ApiError(403, 'Only a workspace owner or admin can do that.', 'forbidden'); }
 
 const NOUN: Record<EnforcedKey, string> = { bookingsPerMonth: 'bookings a month', staff: 'team members', services: 'services', cmsPages: 'website pages', crmContacts: 'contacts', devices: 'devices', rules: 'automations' };
+const FEATURE_NAME: Record<FeatureKey, string> = { branding: 'Custom branding', compliance: 'Data protection', automations: 'Automations', devices: 'Device monitoring', export: 'Data export' };
+/** Stops a paid feature up front with a clear upgrade message, instead of the database refusing it with a bare "no permission". */
+export function requireFeature(c: Ctx, f: FeatureKey): void {
+  if (!hasFeatureAccess(c.tier, f)) throw new ApiError(402, `${FEATURE_NAME[f]} is part of the ${FEATURE_TIERS[f][0]!.toUpperCase()}${FEATURE_TIERS[f].slice(1)} plan and above. Upgrade to unlock it.`, 'plan_feature');
+}
 export const limitError = (c: Ctx, key: EnforcedKey): ApiError =>
   new ApiError(402, `Your ${c.tier} plan includes ${slotLimit(c.tier, key).toLocaleString('en-NG')} ${NOUN[key]}. Upgrade your plan to add more.`, 'plan_limit');
 

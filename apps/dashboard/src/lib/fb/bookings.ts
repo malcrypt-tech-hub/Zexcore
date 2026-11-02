@@ -212,7 +212,7 @@ export async function patchBooking(id: string, b: Record<string, unknown>): Prom
     const status = String(b.status);
     if (![...LIVE, 'cancelled'].includes(status)) throw new ApiError(400, 'Unknown booking status.');
     const batch = writeBatch(db);
-    batch.update(ref, { status });
+    batch.update(ref, status === 'cancelled' && cur.depositStatus === 'paid' ? { status, refundDue: true } : { status });
     if (status === 'cancelled') for (const n of (cur.cells ?? []) as number[]) batch.delete(doc(db, 'workspaces', c.wid, 'locks', `${cur.staffId}_${n}`)); // frees the time
     await batch.commit().catch((e) => { throw toApiError(e); });
     void audit(c, `booking.${status}`, 'booking', id);
@@ -260,7 +260,7 @@ export async function summary(): Promise<unknown> {
   }
   return {
     businessName: s.publicName ?? c.wsName, currency: 'USD', today, utcOffsetMinutes: off,
-    setup: { onboarded: s.onboarded, services: svcs.length, staff: staff.length, depositEnabled: s.depositEnabled },
+    setup: { onboarded: s.onboarded, services: svcs.length, staff: staff.length, depositEnabled: s.depositEnabled, hasPhone: !!(s.phone ?? '').trim(), hasName: !!(s.publicName ?? '').trim() },
     todayBookings: rows.filter((b) => { const t = new Date(b.startsAt).getTime(); return t >= dayStart && t < dayStart + 86_400_000; }),
     week: { total: rows.length, depositsMinor: rows.reduce((n, b) => n + (b.depositStatus === 'paid' ? b.depositMinor : 0), 0), noShows: rows.filter((b) => b.status === 'no_show').length, perDay },
     attention: { pending: pend.size, unpaidCount: unpaid.length, unpaidMinor: unpaid.reduce((n, b) => n + b.depositMinor, 0), waitingReplies: 0 },

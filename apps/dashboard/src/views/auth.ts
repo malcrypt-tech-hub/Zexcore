@@ -123,7 +123,7 @@ export function renderSignUp(): void {
         <button class="btn btn-primary btn-lg btn-block" type="submit">Create workspace ${ic('arrow-right', 'ico-sm')}</button>
       </form>
       ${googleBlock()}
-      <p class="muted small" style="text-align:center;margin-top:18px">By continuing you agree to our <a href="/terms" data-link style="text-decoration:underline">Terms</a> and <a href="/privacy" data-link style="text-decoration:underline">Privacy Policy</a>.</p>
+      <p class="muted small" style="text-align:center;margin-top:18px">By continuing you agree to our <a href="/terms" data-link style="text-decoration:underline;display:inline;min-height:0;padding:0">Terms</a> and <a href="/privacy" data-link style="text-decoration:underline;display:inline;min-height:0;padding:0">Privacy Policy</a>.</p>
       <p style="text-align:center;margin-top:8px;font-size:.9rem">Already have an account? <a href="/signin" data-link style="color:var(--primary);font-weight:600">Sign in</a></p>
     </div>`);
   const form = $('#f') as HTMLFormElement;

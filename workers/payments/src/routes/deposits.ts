@@ -11,12 +11,12 @@
  *   POST /api/deposit/refund                owner/admin: refund a paid deposit through Paystack
  * The webhook (routes/billing.ts) settles deposits too, so closing the tab never loses a payment.
  */
-import { requireMember } from '../auth';
+import { DOERS, requireMember } from '../auth';
 import type { Ctx, Deps, Env } from '../env';
 import { FsConflict, fsCommit, fsGet, fsQuery } from '../fs';
-import { ownerEmail } from '../automation';
-import { sendMail } from '../mail';
-import { HttpError, ID_RE, json, randomRef, readJson } from '../util';
+import { ownerContact } from '../automation';
+import { sendFormal } from '../mail';
+import { HttpError, ID_RE, firstName, json, randomRef, readJson } from '../util';
 import { getLiveNgnRate } from '../rates';
 
 const PAYSTACK = 'https://api.paystack.co';
@@ -56,10 +56,18 @@ export async function payoutSetup(c: Ctx): Promise<Response> {
   const code = sj.data?.subaccount_code ?? (existing?.data.subaccountCode as string | undefined);
   if (!sub.ok || !sj.status || !code) throw new HttpError(502, 'Paystack could not set up your payout account. Try again shortly.');
   await fsCommit(c.env, c.d, [{ path: `workspaces/${wid}/payout/main`, fields: { subaccountCode: code, bankCode, bankName: String(b.bankName ?? '').slice(0, 80), accountName, last4: accountNumber.slice(-4), updatedAt: c.d.now(), updatedBy: caller.uid } }]);
-  // Redirecting deposits is the most valuable thing an attacker with a stolen login could do, so the owner is always told.
-  const to = await ownerEmail(c, wid);
-  await sendMail(c.env, c.d, to, existing?.data.subaccountCode ? 'Your ZexCore payout account was changed' : 'Your ZexCore payout account was added',
-    `Deposits for ${String(ws?.data.name ?? 'your business')} will now be paid to ${accountName}, account ending ${accountNumber.slice(-4)}.\n\nIf this was not you, sign in and change your password now, then contact support.`);
+  // Tell the owner every time the place deposits are paid is set or changed, so a hijacked session cannot redirect money silently.
+  const changed = Boolean(existing?.data.last4) && (existing?.data.bankCode !== bankCode || existing?.data.last4 !== accountNumber.slice(-4));
+  const subject = changed ? 'ZexCore: your payout account was changed' : 'ZexCore: payout account set';
+  const spec = (hello: string) => ({
+    heading: changed ? 'Your payout account was changed' : 'Your payout account is set', greeting: `Hello ${hello},`,
+    paragraphs: [changed ? 'The bank account that receives your ZexCore booking deposits was changed.' : 'A bank account was set to receive your ZexCore booking deposits.', 'If this was not you, sign in, change your password straight away and contact us.'],
+    details: [['Account name', accountName], ['Bank', String(b.bankName ?? '').slice(0, 80) || bankCode], ['Account ending', accountNumber.slice(-4)], ['Time', `${c.d.now().toISOString().replace('T', ' ').slice(0, 16)} UTC`]] as [string, string][],
+    button: { text: 'Open dashboard', url: `${c.env.APP_URL.replace(/\/$/, '')}/app/settings` }, note: 'We email you every time the payout account changes so nobody can redirect your money unnoticed.',
+  });
+  const owner = await ownerContact(c, wid);
+  await sendFormal(c.env, c.d, owner.email, subject, spec(owner.name));
+  if (caller.email && caller.email.toLowerCase() !== owner.email.toLowerCase()) await sendFormal(c.env, c.d, caller.email, subject, spec(firstName('', caller.email)));
   return json({ ok: true, accountName, last4: accountNumber.slice(-4) }, 200, c.headers);
 }
 
@@ -117,7 +125,7 @@ export async function publicDeposit(c: Ctx): Promise<Response> {
 
 export async function depositLink(c: Ctx): Promise<Response> {
   const b = await readJson(c.req, 2048);
-  const { wid, caller } = await requireMember(c, b.workspaceId);
+  const { wid, caller } = await requireMember(c, b.workspaceId, DOERS);
   const slug = String((await fsGet(c.env, c.d, `workspaces/${wid}`))?.data.slug ?? '');
   const plan = await planDeposit(c, wid, slug, String(b.bookingId ?? ''), b.email, { requireFresh: false });
   return json(await startPayment(c, plan, caller.uid), 201, c.headers);

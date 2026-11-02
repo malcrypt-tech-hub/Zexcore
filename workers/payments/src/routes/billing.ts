@@ -17,13 +17,25 @@ export const PLANS: Record<Tier, { monthlyUsd: number; annualUsd: number }> = {
   enterprise: { monthlyUsd: 499, annualUsd: 4990 },
   dedicated: { monthlyUsd: 1500, annualUsd: 15000 },
 };
+export const RANK: Record<string, number> = { free: 0, starter: 1, growth: 2, agency: 3, enterprise: 4, dedicated: 5 };
+/** The plan a workspace is paying for right now (free once it has lapsed), and when it ends. */
+export function activePlan(ws: Record<string, unknown> | undefined, now: Date): { tier: string; expires: Date | null } {
+  const tier = String(ws?.plan ?? 'free');
+  const exp = ws?.planExpiresAt instanceof Date ? ws.planExpiresAt : null;
+  return tier !== 'free' && exp && exp > now ? { tier, expires: exp } : { tier: 'free', expires: null };
+}
+/** Days of the new plan that the unused time on the old one is worth (same daily value as its monthly price). */
+export function creditDays(oldTier: string, remainingMs: number, newTier: Tier): number {
+  const old = PLANS[oldTier as Tier]; if (!old || remainingMs <= 0) return 0;
+  return Math.floor((remainingMs / 86_400_000) * (old.monthlyUsd / PLANS[newTier].monthlyUsd));
+}
 export const isTier = (v: unknown): v is Tier => typeof v === 'string' && Object.prototype.hasOwnProperty.call(PLANS, v);
 export function amountMinor(tier: Tier, cycle: Cycle, currency: Currency, ngnPerUsd = DEFAULT_FALLBACK_RATE): number {
   const usd = cycle === 'annual' ? PLANS[tier].annualUsd : PLANS[tier].monthlyUsd;
   return Math.round((currency === 'NGN' ? usd * ngnPerUsd : usd) * 100);
 }
 
-const RANK: Record<Tier, number> = { starter: 0, growth: 1, agency: 2, enterprise: 3, dedicated: 4 };
+const PAID_RANK: Record<Tier, number> = { starter: 0, growth: 1, agency: 2, enterprise: 3, dedicated: 4 };
 
 /**
  * What a successful payment does to the workspace. Time is never lost:
@@ -38,7 +50,7 @@ export function planAfterPayment(currentPlan: unknown, currentExpiry: Date | nul
   if (!active) return { plan: tier, expires: new Date(now.getTime() + addMs) };
   const cur = currentPlan as Tier;
   if (cur === tier) return { plan: tier, expires: new Date(currentExpiry!.getTime() + addMs) };
-  if (RANK[cur] < RANK[tier]) {
+  if (PAID_RANK[cur] < PAID_RANK[tier]) {
     const carried = (currentExpiry!.getTime() - now.getTime()) * (PLANS[cur].monthlyUsd / PLANS[tier].monthlyUsd);
     return { plan: tier, expires: new Date(now.getTime() + carried + addMs) };
   }
@@ -63,11 +75,11 @@ export async function checkout(req: Request, env: Env, d: Deps, headers: Record<
   const member = await fsGet(env, d, `workspaces/${workspaceId}/members/${caller.uid}`);
   if (!member || !['owner', 'admin'].includes(String(member.data.role))) return json({ error: 'Only a workspace owner or admin can change the plan.' }, 403, headers);
 
-  const wsDoc = await fsGet(env, d, `workspaces/${workspaceId}`);
-  const curPlan = wsDoc?.data.plan; const curExp = wsDoc?.data.planExpiresAt instanceof Date ? wsDoc.data.planExpiresAt : null;
-  if (isTier(curPlan) && curExp && curExp > d.now() && RANK[tier] < RANK[curPlan]) {
-    return json({ error: `You are on ${curPlan[0]!.toUpperCase() + curPlan.slice(1)} until ${curExp.toISOString().slice(0, 10)}. Pick a higher plan, or wait until it ends to move to a lower one.`, code: 'downgrade_blocked' }, 409, headers);
-  }
+  // Buying a cheaper plan while a dearer one is still running would throw the paid time away. Ask them to wait or write to us.
+  const wsNow = await fsGet(env, d, `workspaces/${workspaceId}`);
+  const cur = activePlan(wsNow?.data, d.now());
+  if ((RANK[tier] ?? 0) < (RANK[cur.tier] ?? 0)) return json({ error: `You are on the ${cur.tier} plan until ${cur.expires?.toISOString().slice(0, 10)}. To move to a cheaper plan, wait until it ends or contact us.`, code: 'downgrade_blocked' }, 409, headers);
+
   const liveRate = await getLiveNgnRate(env, d);
   const amount = amountMinor(tier, cycle, currency, liveRate);
   const reference = randomRef(workspaceId);

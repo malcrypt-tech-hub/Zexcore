@@ -51,7 +51,7 @@ export async function renderOnboarding(): Promise<void> {
           <div class="card card-pad form-grid">
             <div class="field"><label for="pn">Business name</label><input class="input" id="pn" required maxlength="255" value="${s.publicName || me.tenant.name}"></div>
             <div class="field"><label>Your booking link</label><div class="copy-box"><code>${SITE_URL.replace(/^https?:\/\//, '')}/${tenantSlug()}</code></div><span class="hint">Customers use this address to book.</span></div>
-            <div class="field"><label for="ph">Business phone / WhatsApp</label><input class="input" id="ph" type="tel" placeholder="0803 123 4567" value="${s.phone ?? ''}"></div>
+            <div class="field"><label for="ph">Business phone / WhatsApp</label><input class="input" id="ph" type="tel" required placeholder="0803 123 4567" value="${s.phone ?? ''}"></div>
             <div class="form-grid two"><div class="field"><label for="op">Opens</label><input class="input" id="op" type="time" value="${minutesToTime(s.openMinutes)}"></div><div class="field"><label for="cl">Closes</label><input class="input" id="cl" type="time" value="${minutesToTime(s.closeMinutes)}"></div></div>
             <div class="field"><label>Open days</label><div class="day-pills">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => html`<label><input type="checkbox" name="day" value="${i}" ${s.daysOpen.includes(i) ? 'checked' : ''}><span>${d}</span></label>`)}</div></div>
           </div>
@@ -95,6 +95,10 @@ export async function renderOnboarding(): Promise<void> {
         sync();
         const fail = (m: string) => { err.textContent = m; err.classList.remove('hidden'); };
         const open = timeToMinutes(($('#op') as HTMLInputElement).value), close = timeToMinutes(($('#cl') as HTMLInputElement).value);
+        const nameOk = ($('#pn') as HTMLInputElement).value.trim().length > 1;
+        const phoneOk = (($('#ph') as HTMLInputElement).value.match(/\d/g) ?? []).length >= 7;
+        if (!nameOk) return fail('Enter your business name.');
+        if (!phoneOk) return fail('Enter a phone or WhatsApp number so customers can reach you.');
         if (close <= open) return fail('Closing time must be after opening time.');
         const days = $$('input[name=day]:checked').map((i) => Number((i as HTMLInputElement).value));
         if (!days.length) return fail('Pick at least one open day.');
@@ -108,7 +112,7 @@ export async function renderOnboarding(): Promise<void> {
           if (!existing.services.length) for (const r of svcs) await api('/api/bookings/services', { method: 'POST', body: { name: r.name.trim(), durationMin: Math.min(480, Math.max(5, r.min)), priceMinor: Math.round(r.ngn * 100) } });
           for (const n of team) await api('/api/bookings/staff', { method: 'POST', body: { name: n } });
           await loadSettings(true);
-          toast('Workspace ready', 'success');
+          toast('Workspace ready. Your booking page is live.', 'success');
           navigate('/app', true);
         } catch (x) { fail(x instanceof ApiError ? x.message : 'Could not save your setup'); }
       });

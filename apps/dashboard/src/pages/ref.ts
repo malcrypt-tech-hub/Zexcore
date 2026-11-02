@@ -27,9 +27,10 @@ const CSS = `<style>
 .rp-note{border-left:3px solid #E50920;background:#FDF2F2;border-radius:0 10px 10px 0;padding:14px 16px;color:#475569;font-size:.92rem;line-height:1.6;margin-top:18px}
 .rp-h{margin:0 0 10px;font-size:1.8rem;letter-spacing:-.02em;color:#0f172a}
 .rp-lead{margin:0 0 28px;color:#475569;max-width:720px;line-height:1.65}
+.page-wrapper .page-intro-section .site-container{justify-content:flex-start}
 .page-intro-header.page-hero-content-col{margin:0;max-width:820px}
 .rp-hero{padding:88px 0 72px;background:linear-gradient(180deg,#fff,#FDF2F2);border-bottom:1px solid #f1e3e5}
-.rp-hero-copy{max-width:800px;margin:0 auto;text-align:center}
+.rp-hero-copy{max-width:960px;margin:0 auto;text-align:center}
 .rp-hero-title{font-size:clamp(2.2rem,6vw,3.6rem);line-height:1.08;letter-spacing:-.035em;margin:0 0 18px;color:#0f172a}
 .rp-hero-red{color:#E50920}
 .rp-hero-desc{font-size:1.1rem;line-height:1.65;color:#475569;margin:0 auto 28px;max-width:640px}
@@ -56,8 +57,8 @@ export function block(title: string, lead: string, body: string, tinted = false,
     <h2 class="rp-h">${esc(title)}</h2>${lead ? `<p class="rp-lead">${esc(lead)}</p>` : ''}${body}</div></section>`;
 }
 
-export function cards(items: { tag?: string; title: string; text: string }[]): string {
-  return `<div class="rp-grid">${items.map((i) => `<div class="rp-card">${i.tag ? `<span class="rp-tag">${esc(i.tag)}</span>` : ''}<h3>${esc(i.title)}</h3><p>${esc(i.text)}</p></div>`).join('')}</div>`;
+export function cards(items: { tag?: string; title: string; text: string }[], minWidth = 0): string {
+  return `<div class="rp-grid"${minWidth ? ` style="grid-template-columns:repeat(auto-fit,minmax(min(100%,${minWidth}px),1fr))"` : ''}>${items.map((i) => `<div class="rp-card">${i.tag ? `<span class="rp-tag">${esc(i.tag)}</span>` : ''}<h3>${esc(i.title)}</h3><p>${esc(i.text)}</p></div>`).join('')}</div>`;
 }
 
 export function steps(items: { title: string; text: string }[]): string {

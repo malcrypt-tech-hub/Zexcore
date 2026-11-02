@@ -12,6 +12,8 @@ import { audit, verifyAudit } from './routes/audit';
 import { ingest } from './routes/iot';
 import { banks, depositLink, depositStatus, payoutSetup, publicDeposit, refundDeposit } from './routes/deposits';
 import { memberEvent, publicBooked } from './routes/events';
+import { welcome } from './routes/welcome';
+import { accept, invite, inviteInfo, remove, revoke, setRole } from './routes/team';
 
 export type { Env, Deps } from './env';
 export { amountMinor, isTier, PLANS, planAfterPayment } from './routes/billing';
@@ -42,9 +44,17 @@ const ROUTES: Record<string, Handler> = {
   'GET /api/public/deposit-status': depositStatus,
   'POST /api/events': memberEvent,
   'POST /api/public/booked': publicBooked,
+  'POST /api/welcome': welcome,
+  'POST /api/team/invite': invite,
+  'GET /api/team/invite-info': inviteInfo,
+  'POST /api/team/accept': accept,
+  'POST /api/team/revoke': revoke,
+  'POST /api/team/role': setRole,
+  'POST /api/team/remove': remove,
 };
 
 /** Routes that take or confirm money. They stay off unless a live Paystack key is set (or the Worker is explicitly marked staging). */
+const PUBLIC_ROUTES = new Set(['POST /api/public/deposit', 'GET /api/public/deposit-status', 'POST /api/public/booked', 'GET /api/banks', 'GET /api/team/invite-info']);
 const MONEY_ROUTES = new Set(['POST /api/checkout', 'POST /api/paystack-webhook', 'GET /api/banks', 'POST /api/payout/setup', 'POST /api/public/deposit', 'POST /api/deposit/link', 'POST /api/deposit/refund', 'GET /api/public/deposit-status']);
 export function paymentsEnabled(env: Env): boolean {
   const k = (env.PAYSTACK_SECRET_KEY ?? '').trim();
@@ -76,6 +86,11 @@ export async function handle(req: Request, env: Env, d: Deps = realDeps()): Prom
     const rk = `${req.method} ${url.pathname}`;
     if (PUBLIC_LIMITED.has(rk) && throttled(`${req.headers.get('cf-connecting-ip') ?? 'unknown'} ${rk}`, d.now().getTime())) {
       return json({ error: 'Too many requests. Please wait a minute and try again.', code: 'rate_limited' }, 429, { ...headers, 'retry-after': '60' });
+    }
+    if (env.PUBLIC_RL && PUBLIC_ROUTES.has(`${req.method} ${url.pathname}`)) {
+      const ip = req.headers.get('cf-connecting-ip') ?? 'unknown';
+      const { success } = await env.PUBLIC_RL.limit({ key: `${ip}:${url.pathname}` }).catch(() => ({ success: true }));
+      if (!success) return json({ error: 'Too many requests. Please wait a minute and try again.', code: 'rate_limited' }, 429, headers);
     }
     if (MONEY_ROUTES.has(`${req.method} ${url.pathname}`) && !paymentsEnabled(env)) {
       // A webhook must not be retried forever; everything else tells the user plainly.

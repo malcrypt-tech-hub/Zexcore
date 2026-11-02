@@ -3,7 +3,7 @@ import { api, getToken, setToken, ApiError } from './api';
 export interface Me {
   user: { id: string; email: string | null; name: string | null; emailVerified?: boolean };
   tenant: { id: string; slug: string; name: string; tier: string; plan_cycle: string | null; plan_expires_at: string | null };
-  role: 'owner' | 'admin' | 'member' | 'viewer' | null;
+  role: 'owner' | 'admin' | 'editor' | 'member' | 'viewer' | null;
   isPlatformAdmin: boolean;
 }
 
@@ -17,7 +17,9 @@ let me: Me | null = getToken() ? ssRead() : null;
 
 export const current = (): Me | null => me;
 export const isSignedIn = (): boolean => !!getToken();
-export const canManage = (): boolean => !!me && (me.role === 'owner' || me.role === 'admin' || me.role === 'member' || me.isPlatformAdmin);
+export const canManage = (): boolean => !!me && (me.role === 'owner' || me.role === 'admin' || me.role === 'editor' || me.role === 'member' || me.isPlatformAdmin);
+/** Services, staff calendars and website pages. */
+export const canEdit = (): boolean => !!me && (me.role === 'owner' || me.role === 'admin' || me.role === 'editor' || me.isPlatformAdmin);
 export const canAdmin = (): boolean => !!me && (me.role === 'owner' || me.role === 'admin' || me.isPlatformAdmin);
 
 // Tracks whether we've revalidated against Firebase in this page session.
@@ -39,6 +41,7 @@ export async function loadMe(force = false): Promise<Me | null> {
     me = await api<Me>('/api/auth/me');
     _validated = true;
     ssWrite(me);
+    greetOnce();
   } catch (e) {
     if (e instanceof ApiError && (e.status === 401 || e.status === 400 || e.status === 403)) {
       setToken(null); me = null; ssWrite(null); return null;
@@ -70,4 +73,11 @@ export function logout(): void {
   // Revoke the session on the server first (best effort), so a copied token stops working immediately.
   if (getToken()) void api('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
   setToken(null); me = null; _validated = false; ssWrite(null);
+}
+
+/** Asks the Worker to send the one-time welcome e-mail. It decides whether this person is due one; failures are ignored. */
+function greetOnce(): void {
+  try { if (sessionStorage.getItem('zx.greeted')) return; } catch { /* still try once */ }
+  void import('./fb/worker').then(({ worker }) => worker<{ reason?: string }>('/api/welcome', { method: 'POST', body: {} }))
+    .then((r) => { if (r.reason !== 'unverified') { try { sessionStorage.setItem('zx.greeted', '1'); } catch { /* ignore */ } } }).catch(() => undefined);
 }

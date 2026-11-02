@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { creditDays } from '../../workers/payments/src/routes/billing.js';
+import { SEATS } from '../../workers/payments/src/routes/team.js';
+import { LIMITS } from '../../apps/dashboard/src/lib/fb/plan';
 import { handle, paystackSignature, amountMinor, planAfterPayment, throttled, toFs, fromFs, resetTokenCache, resetJwksCache, type Env } from '../../workers/payments/src/index.js';
 
 const PROJECT = 'zexcore-5d6c0';
@@ -25,6 +28,7 @@ async function idToken(over: Record<string, unknown> = {}, key = idKey.privateKe
 
 // ── in-memory Firestore + Google + Paystack ──
 type Doc = { fields: Record<string, any>; v: number };
+let emails: any[] = [];
 let store: Map<string, Doc>; let commits: any[]; let paystackInit: any[]; let paystackVerify: Record<string, any>; let paystackSub: any[];
 const fsPath = (u: string) => decodeURIComponent(u.split('/documents/')[1]!.split('?')[0]!);
 function mockFetch(): typeof fetch {
@@ -35,18 +39,27 @@ function mockFetch(): typeof fetch {
     if (url.endsWith(':commit')) {
       const writes = JSON.parse(init.body).writes as any[];
       for (const w of writes) {   // validate every precondition first = atomic
-        const p = fsPath(w.update.name); const cur = store.get(p);
+        const p = fsPath((w.update ?? { name: w.delete }).name); const cur = store.get(p);
         if (w.currentDocument?.exists === false && cur) return new Response('{}', { status: 409 });
         if (w.currentDocument?.exists === true && !cur) return new Response('{}', { status: 404 });
         if (w.currentDocument?.updateTime && String(cur?.v) !== w.currentDocument.updateTime) return new Response('{}', { status: 409 });
       }
       for (const w of writes) {
+        if (w.delete) { store.delete(fsPath(w.delete)); continue; }
         const p = fsPath(w.update.name); const cur = store.get(p);
         const next = w.updateMask ? { ...(cur?.fields ?? {}), ...Object.fromEntries(w.updateMask.fieldPaths.map((k: string) => [k, w.update.fields[k]])) } : w.update.fields;
         store.set(p, { fields: next, v: (cur?.v ?? 0) + 1 });
       }
       commits.push(writes);
       return Response.json({});
+    }
+    if (url === 'https://api.resend.com/emails') { emails.push(JSON.parse(init.body)); return Response.json({ id: 'e1' }); }
+    if (url.endsWith(':runQuery')) {   // lists a collection under a parent; filters are not evaluated (tests seed only what they need)
+      const parent = decodeURIComponent(url.split('/documents')[1]!.replace(/:runQuery$/, '')).replace(/^\//, '');
+      const col = JSON.parse(init.body).structuredQuery.from[0].collectionId;
+      const prefix = `${parent ? parent + '/' : ''}${col}/`;
+      return Response.json([...store.entries()].filter(([k]) => k.startsWith(prefix) && !k.slice(prefix.length).includes('/'))
+        .map(([k, d]) => ({ document: { name: `projects/${PROJECT}/databases/(default)/documents/${k}`, fields: d.fields, updateTime: String(d.v) } })));
     }
     if (url.includes('firestore.googleapis.com')) {
       const d = store.get(fsPath(url));
@@ -73,12 +86,25 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   resetTokenCache(); resetJwksCache();
-  store = new Map(); commits = []; paystackInit = []; paystackVerify = {}; paystackSub = [];
+  emails = []; store = new Map(); commits = []; paystackInit = []; paystackVerify = {}; paystackSub = [];
   env = { PAYSTACK_SECRET_KEY: SECRET, ALLOW_TEST_PAYMENTS: 'true', FIREBASE_PROJECT_ID: PROJECT, APP_URL: 'https://zexcore.com.ng', ALLOWED_ORIGINS: 'https://zexcore.com.ng,https://zexcore-5d6c0.web.app', NGN_PER_USD: '1500',
     FIREBASE_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'w@x.iam.gserviceaccount.com', private_key: saPem }) };
   seedDoc(`workspaces/${WID}`, { name: 'Sade Salon', plan: 'free', ownerUid: 'owner1', slug: 'sade-salon' });
   seedDoc(`workspaces/${WID}/members/owner1`, { role: 'owner' });
   seedDoc(`workspaces/${WID}/members/staff1`, { role: 'staff' });
+});
+
+describe('public route rate limit', () => {
+  it('returns 429 when the optional limiter says no, and ignores it when absent', async () => {
+    const limited = { ...env, PUBLIC_RL: { limit: async () => ({ success: false }) } } as Env;
+    const r = await handle(new Request('https://pay.example.workers.dev/api/public/deposit', { method: 'POST', body: '{}' }), limited, { fetch: mockFetch(), now: () => NOW });
+    expect(r.status).toBe(429);
+    const open = { ...env, PUBLIC_RL: { limit: async () => ({ success: true }) } } as Env;
+    const r2 = await handle(new Request('https://pay.example.workers.dev/api/public/deposit', { method: 'POST', body: '{}' }), open, { fetch: mockFetch(), now: () => NOW });
+    expect(r2.status).not.toBe(429);
+    const r3 = await handle(new Request('https://pay.example.workers.dev/api/public/deposit', { method: 'POST', body: '{}' }), env, { fetch: mockFetch(), now: () => NOW });
+    expect(r3.status).not.toBe(429);
+  });
 });
 
 describe('test-key guard', () => {
@@ -204,12 +230,39 @@ describe('POST /api/paystack-webhook', () => {
     expect((await (await send(JSON.stringify({ event: 'charge.failed', data: { reference: REF } }))).json()).ignored).toBe(true);
     expect(plan()).toBe('free');
   });
+  it('moving up a plan credits the unused time of the old one', async () => {
+    seedDoc(`workspaces/${WID}`, { plan: 'starter', ownerUid: 'owner1', planExpiresAt: new Date(NOW.getTime() + 30 * 86400000) });
+    pending(); ok();
+    await send(event());
+    expect(plan()).toBe('growth');
+    const exp = fromFs(store.get(`workspaces/${WID}`)!.fields.planExpiresAt) as Date;
+    expect(exp.getTime()).toBe(NOW.getTime() + (31 + Math.floor(30 * 19 / 49)) * 86400000);
+  });
   it('renewing early keeps the time already paid for', async () => {
     seedDoc(`workspaces/${WID}`, { plan: 'growth', ownerUid: 'owner1', planExpiresAt: new Date(NOW.getTime() + 10 * 86400000) });
     pending(); ok();
     await send(event());
     const exp = fromFs(store.get(`workspaces/${WID}`)!.fields.planExpiresAt) as Date;
     expect(exp.getTime()).toBe(NOW.getTime() + 41 * 86400000);
+  });
+});
+
+describe('plan changes while a plan is running', () => {
+  it('refuses a cheaper plan while a dearer one is still paid for', async () => {
+    seedDoc(`workspaces/${WID}`, { plan: 'growth', ownerUid: 'owner1', planExpiresAt: new Date(NOW.getTime() + 10 * 86400000) });
+    const r = await call('/api/checkout', { headers: await authed(), body: checkoutBody({ tier: 'starter' }) });
+    expect(r.status).toBe(409);
+    expect((await r.json() as any).code).toBe('downgrade_blocked');
+  });
+  it('allows the same plan or a dearer one', async () => {
+    seedDoc(`workspaces/${WID}`, { plan: 'starter', ownerUid: 'owner1', planExpiresAt: new Date(NOW.getTime() + 10 * 86400000) });
+    expect((await call('/api/checkout', { headers: await authed(), body: checkoutBody({ tier: 'starter' }) })).status).toBe(201);
+    expect((await call('/api/checkout', { headers: await authed(), body: checkoutBody({ tier: 'growth' }) })).status).toBe(201);
+  });
+  it('turns unused time on the old plan into extra days when moving up', () => {
+    expect(creditDays('starter', 30 * 86_400_000, 'growth')).toBe(Math.floor(30 * 19 / 49));
+    expect(creditDays('starter', 0, 'growth')).toBe(0);
+    expect(creditDays('free', 30 * 86_400_000, 'growth')).toBe(0);
   });
 });
 
@@ -329,5 +382,141 @@ describe('public route throttle', () => {
     expect(throttled('1.2.3.4 POST /x', t + 21)).toBe(true);
     expect(throttled('5.6.7.8 POST /x', t + 21)).toBe(false);
     expect(throttled('1.2.3.4 POST /x', t + 61_000)).toBe(false);
+  });
+});
+
+describe('team access', () => {
+  const body = (o: object) => JSON.stringify({ wid: WID_T, ...o });
+  const WID_T = 'abcdefghij0123456789';
+  const asUser = (sub: string, email: string, verified = true) => authed({ sub, email, email_verified: verified });
+  const inviteReq = async (sub: string, email: string, role: string, to = 'new@example.com') =>
+    call('/api/team/invite', { body: body({ email: to, role }), headers: await asUser(sub, email) });
+  const tokenOf = (link: string) => new URL(link).searchParams.get('t')!;
+  beforeEach(() => {
+    seedDoc(`workspaces/${WID_T}`, { name: 'Team Salon', plan: 'growth', planExpiresAt: new Date(NOW.getTime() + 20 * 86_400_000), ownerUid: 'owner1', slug: 'team-salon' });
+    seedDoc(`workspaces/${WID_T}/members/owner1`, { role: 'owner', email: 'sade@example.com' });
+    seedDoc(`workspaces/${WID_T}/members/adm1`, { role: 'admin', email: 'adm@example.com' });
+    seedDoc(`workspaces/${WID_T}/members/ed1`, { role: 'editor', email: 'ed@example.com' });
+  });
+
+  it('seat limits per plan match the pricing page limits', () => {
+    for (const t of Object.keys(LIMITS) as (keyof typeof LIMITS)[]) {
+      const n = LIMITS[t].staff;
+      expect(SEATS[t]).toBe(n === null || n > 1000 ? 1000 : n);
+    }
+  });
+
+  it('owner invites an editor, the invitee accepts once, and becomes a member of that workspace', async () => {
+    const r = await inviteReq('owner1', 'sade@example.com', 'editor');
+    expect(r.status).toBe(200);
+    const { link } = (await r.json()) as { link: string };
+    const token = tokenOf(link);
+    const info = await call(`/api/team/invite-info?w=${WID_T}&t=${token}`, { method: 'GET', headers: { origin: 'https://zexcore.com.ng' } });
+    expect(await info.json()).toMatchObject({ workspace: 'Team Salon', role: 'editor', email: 'new@example.com' });
+    const acc = await call('/api/team/accept', { body: body({ token }), headers: await asUser('new1', 'New@Example.com') });
+    expect(acc.status).toBe(200);
+    expect(fromFs(store.get(`workspaces/${WID_T}/members/new1`)!.fields.role)).toBe('editor');
+    expect(fromFs(store.get('users/new1')!.fields.workspaceIds)).toEqual([WID_T]);
+    expect([...store.keys()].some((k) => k.startsWith(`workspaces/${WID_T}/invites/`))).toBe(false);
+    expect((await call('/api/team/accept', { body: body({ token }), headers: await asUser('new1', 'new@example.com') })).status).toBe(410);
+  });
+
+  it('only the invited, verified email can accept', async () => {
+    const { link } = (await (await inviteReq('owner1', 'sade@example.com', 'editor')).json()) as { link: string };
+    const token = tokenOf(link);
+    expect((await call('/api/team/accept', { body: body({ token }), headers: await asUser('x1', 'other@example.com') })).status).toBe(403);
+    expect((await call('/api/team/accept', { body: body({ token }), headers: await asUser('new1', 'new@example.com', false) })).status).toBe(403);
+    expect((await call('/api/team/accept', { body: body({ token }), headers: { 'content-type': 'application/json' } })).status).toBe(401);
+    expect((await call('/api/team/accept', { body: body({ token: 'f'.repeat(48) }), headers: await asUser('new1', 'new@example.com') })).status).toBe(410);
+    expect(store.has(`workspaces/${WID_T}/members/new1`)).toBe(false);
+  });
+
+  it('expired invitations stop working', async () => {
+    const { link } = (await (await inviteReq('owner1', 'sade@example.com', 'editor')).json()) as { link: string };
+    const key = [...store.keys()].find((k) => k.startsWith(`workspaces/${WID_T}/invites/`))!;
+    store.get(key)!.fields.expiresAt = toFs(new Date(NOW.getTime() - 1000));
+    const r = await call('/api/team/accept', { body: body({ token: tokenOf(link) }), headers: await asUser('new1', 'new@example.com') });
+    expect(r.status).toBe(410);
+  });
+
+  it('enforces who may invite or remove whom', async () => {
+    expect((await inviteReq('ed1', 'ed@example.com', 'editor')).status).toBe(403);
+    expect((await inviteReq('adm1', 'adm@example.com', 'admin')).status).toBe(403);
+    expect((await inviteReq('adm1', 'adm@example.com', 'editor')).status).toBe(200);
+    expect((await inviteReq('owner1', 'sade@example.com', 'owner')).status).toBe(400);
+    const remove = async (sub: string, email: string, uid: string) => call('/api/team/remove', { body: body({ uid }), headers: await asUser(sub, email) });
+    expect((await remove('adm1', 'adm@example.com', 'owner1')).status).toBe(403);
+    expect((await remove('ed1', 'ed@example.com', 'adm1')).status).toBe(403);
+    expect((await remove('adm1', 'adm@example.com', 'ed1')).status).toBe(200);
+    expect(store.has(`workspaces/${WID_T}/members/ed1`)).toBe(false);
+  });
+
+  it('only the owner changes roles, and never the owner', async () => {
+    const setRole = async (sub: string, email: string, uid: string, role: string) => call('/api/team/role', { body: body({ uid, role }), headers: await asUser(sub, email) });
+    expect((await setRole('adm1', 'adm@example.com', 'ed1', 'admin')).status).toBe(403);
+    expect((await setRole('owner1', 'sade@example.com', 'owner1', 'editor')).status).toBe(403);
+    expect((await setRole('owner1', 'sade@example.com', 'ed1', 'admin')).status).toBe(200);
+    expect(fromFs(store.get(`workspaces/${WID_T}/members/ed1`)!.fields.role)).toBe('admin');
+  });
+
+  it('refuses invitations beyond the plan\'s team logins', async () => {
+    seedDoc(`workspaces/${WID_T}`, { name: 'Team Salon', plan: 'starter', planExpiresAt: new Date(NOW.getTime() + 20 * 86_400_000), ownerUid: 'owner1', slug: 'team-salon' });
+    const r = await inviteReq('owner1', 'sade@example.com', 'editor');    // starter = 3 logins, already 3 members
+    expect(r.status).toBe(402);
+    expect(((await r.json()) as any).code).toBe('seat_limit');
+    seedDoc(`workspaces/${WID_T}`, { name: 'Team Salon', plan: 'free', ownerUid: 'owner1', slug: 'team-salon' });
+    expect((await inviteReq('owner1', 'sade@example.com', 'editor')).status).toBe(402);
+  });
+
+  it('viewer logins are Enterprise and Dedicated only, and cannot act', async () => {
+    expect((await inviteReq('owner1', 'sade@example.com', 'viewer')).status).toBe(402);   // growth plan
+    seedDoc(`workspaces/${WID_T}`, { name: 'Team Salon', plan: 'enterprise', planExpiresAt: new Date(NOW.getTime() + 20 * 86_400_000), ownerUid: 'owner1', slug: 'team-salon' });
+    const r = await inviteReq('owner1', 'sade@example.com', 'viewer');
+    expect(r.status).toBe(200);
+    expect((await inviteReq('adm1', 'adm@example.com', 'viewer', 'acct@example.com')).status).toBe(200);
+    seedDoc(`workspaces/${WID_T}/members/view1`, { role: 'viewer', email: 'view@example.com' });
+    const v = await asUser('view1', 'view@example.com');
+    expect((await call('/api/team/invite', { body: body({ email: 'x@example.com', role: 'editor' }), headers: v })).status).toBe(403);
+    expect((await call('/api/events', { body: JSON.stringify({ workspaceId: WID_T, event: 'booking.created', payload: {} }), headers: v })).status).toBe(403);
+    expect((await call('/api/audit', { body: JSON.stringify({ workspaceId: WID_T, action: 'x.y', entity: 'x' }), headers: v })).status).toBe(403);
+  });
+
+  it('rejects duplicates of someone already on the team', async () => {
+    expect((await inviteReq('owner1', 'sade@example.com', 'editor', 'ED@example.com')).status).toBe(409);
+  });
+});
+
+describe('formal e-mails', () => {
+  beforeEach(() => { env = { ...env, RESEND_API_KEY: 're_test' }; seedDoc('users/owner1', { name: 'Sade Bello', email: 'sade@example.com', workspaceIds: [WID] }); });
+  const welcomeReq = async (over?: Record<string, unknown>) => call('/api/welcome', { body: '{}', headers: await authed(over) });
+
+  it('welcomes a verified new user once, by name, with an Open dashboard button', async () => {
+    const r = await welcomeReq();
+    expect(await r.json()).toMatchObject({ ok: true, sent: true });
+    expect(emails).toHaveLength(1);
+    const m = emails[0];
+    expect(m.to).toEqual(['sade@example.com']); expect(m.subject).toBe('Welcome to ZexCore, Sade');
+    expect(m.html).toContain('Open dashboard'); expect(m.html).toContain('href="https://zexcore.com.ng/app"'); expect(m.html).toContain('Sade Salon');
+    expect(m.text).toContain('Open dashboard: https://zexcore.com.ng/app'); expect(m.reply_to).toBe('hello@zexcore.com.ng');
+    expect(await (await welcomeReq()).json()).toMatchObject({ sent: false });      // never twice
+    expect(emails).toHaveLength(1);
+  });
+  it('does not mail an address that has not been verified, and does not use up the welcome', async () => {
+    expect(await (await welcomeReq({ email_verified: false })).json()).toMatchObject({ sent: false, reason: 'unverified' });
+    expect(emails).toHaveLength(0);
+    expect(await (await welcomeReq()).json()).toMatchObject({ sent: true });
+  });
+  it('booking requests carry the details and escape anything a customer typed', async () => {
+    seedDoc(`slugs/sade-salon`, { wid: WID });
+    seedDoc(`workspaces/${WID}`, { name: 'Sade Salon', plan: 'free', ownerUid: 'owner1', slug: 'sade-salon', settings: { utcOffsetMinutes: 60 } });
+    seedDoc(`workspaces/${WID}/members/owner1`, { role: 'owner', email: 'sade@example.com', name: 'Sade Bello' });
+    seedDoc(`workspaces/${WID}/services/s_0`, { name: 'Braids', priceMinor: 5000 });
+    const id = `${NOW.toISOString().slice(0, 7).replace('-', '')}_1`;
+    seedDoc(`workspaces/${WID}/bookings/${id}`, { customerName: '<img src=x onerror=alert(1)>', customerPhone: '+2348031234567', serviceId: 's_0', status: 'pending', source: 'public', startsAt: new Date('2026-11-07T15:00:00Z'), createdAt: new Date(NOW.getTime() - 60_000) });
+    const r = await call('/api/public/booked', { body: JSON.stringify({ slug: 'sade-salon', bookingId: id }), headers: { 'content-type': 'application/json', origin: 'https://zexcore.com.ng' } });
+    expect(r.status).toBe(200);
+    const m = emails.find((x) => String(x.subject).startsWith('New booking request'))!;
+    expect(m.html).not.toContain('<img src=x'); expect(m.html).toContain('&lt;img');
+    expect(m.html).toContain('Sat, 7 Nov 2026 at 4:00 PM'); expect(m.html).toContain('Open dashboard'); expect(m.html).toContain('Hello Sade');
   });
 });

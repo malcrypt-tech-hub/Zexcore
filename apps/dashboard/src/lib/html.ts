@@ -22,7 +22,11 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): Raw {
   let out = '';
   strings.forEach((s, i) => {
     out += s;
-    if (i < values.length) out += render(values[i]);
+    if (i < values.length) {
+      const v = values[i];
+      // aria-checked="${cond}" must read "true" / "false"; a bare boolean otherwise renders nothing (used for conditional blocks)
+      out += typeof v === 'boolean' && /\baria-[a-z]+="$/.test(s) ? String(v) : render(v);
+    }
   });
   return new Raw(out);
 }

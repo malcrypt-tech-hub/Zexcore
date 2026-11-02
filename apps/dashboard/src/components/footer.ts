@@ -65,7 +65,6 @@ export function renderFooter(): string {
               <li><a href="/docs#worker" data-link>Payments Worker API</a></li>
               <li><a href="/resources" data-link>Resources</a></li>
               <li><a href="/pricing" data-link>Pricing</a></li>
-              <li><a href="/app" data-link>Dashboard</a></li>
               <li><a href="/signin" data-link>Workspace Sign In</a></li>
             </ul>
           </div>

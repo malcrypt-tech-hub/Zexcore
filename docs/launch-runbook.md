@@ -18,7 +18,7 @@ Workers & Pages → `zexcore-payments` → Settings → Variables and Secrets:
 - `FIREBASE_SERVICE_ACCOUNT`: a **new** service account JSON with only *Cloud Datastore User*
 - optional `RESEND_API_KEY` and `MAIL_FROM` (an address on a Resend-verified domain) for e-mail alerts
 - optional `DEPOSIT_FEE_MINOR`: flat fee in kobo kept per deposit
-The `[ai]` binding in `wrangler.toml` enables the automation "draft with AI" button (Workers AI); without it that button reports it is unavailable.
+Optional: automation "draft with AI" uses the customer's own Gemini or OpenAI key, entered in the browser. No Worker setup is needed.
 
 ## 4. Paystack (you)
 Settings → API Keys & Webhooks → webhook URL `https://<worker-url>/api/paystack-webhook`. It carries both plan payments and customer deposits.
@@ -46,3 +46,9 @@ gcloud firestore fields ttls update expireAt --collection-group=automationRuns -
 - Automations are event-driven (booking created, lead created, device reading/alert); there is no time-based scheduling yet.
 - Public routes (`/api/public/*`) are throttled to 20 calls a minute per visitor inside the Worker. For a hard limit, add a Cloudflare rate-limiting rule (Security → WAF → Rate limiting rules): URI path starts with `/api/public/`, 30 requests per 10 seconds per IP, action Block.
 - Bot protection for the booking page (optional, recommended): Firebase console → App Check → register the web app with reCAPTCHA v3 and copy the site key, add it as a GitHub variable `VITE_APPCHECK_SITE_KEY`, redeploy, check the App Check metrics show verified traffic, then enforce App Check for Cloud Firestore. Do not enforce before the redeploy, or real visitors are blocked.
+
+## Team access (admins and editors)
+- Owners and admins invite people from **More → Team access**. The Worker emails a 7-day link (needs `RESEND_API_KEY`/`MAIL_FROM`); without email set up the screen shows the link to share by hand.
+- Roles: **owner** (everything), **admin** (everything except changing admins or the owner), **editor** (bookings, customers, messages, services, staff calendars, website pages; no settings, billing or team changes).
+- Team logins per plan equal the plan's "team members" limit (Free 1 = owner only). The Worker's `SEATS` table is checked against the dashboard limits by a test.
+- The invitee must sign in with the invited email address and have it verified.

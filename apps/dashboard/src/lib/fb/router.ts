@@ -11,6 +11,7 @@ import * as pub from './public';
 import * as crm from './crm';
 import * as bill from './billing';
 import * as payout from './payout';
+import * as team from './team';
 import { getLiveNgnRate } from '../fx';
 
 type Params = string[];
@@ -82,6 +83,13 @@ on('PATCH', '/api/crm/leads/:id/close', ({ params, body }) => crm.closeLead(para
 on('GET', '/api/cms/pages', () => crm.listPages());
 on('POST', '/api/cms/pages', ({ body }) => crm.createPage(body));
 on('POST', '/api/cms/pages/:id/publish', ({ params }) => crm.publishPage(params[0]!));
+
+// ── team access ──
+on('GET', '/api/team', () => team.listTeam());
+on('POST', '/api/team/invite', ({ body }) => team.invite(body));
+on('POST', '/api/team/revoke', ({ body }) => team.revokeInvite(String(body.id)));
+on('POST', '/api/team/role', ({ body }) => team.setRole(String(body.uid), String(body.role)));
+on('POST', '/api/team/remove', ({ body }) => team.removeMember(String(body.uid)));
 
 // ── billing + audit ──
 on('GET', '/api/rates', async () => ({ base: 'USD', target: 'NGN', rate: await getLiveNgnRate(), updatedAt: new Date().toISOString() }));
