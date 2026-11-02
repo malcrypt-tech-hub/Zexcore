@@ -94,7 +94,7 @@ Whenever a software company, digital agency, or enterprise builds software for m
 
 ```bash
 # 1. Clone repository into workspace
-git clone https://github.com/malcryptt/Zexcore.git
+git clone https://github.com/malcrypt-tech-hub/Zexcore.git
 cd ZexCore
 
 # 2. Install all workspace dependencies

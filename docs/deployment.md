@@ -38,7 +38,7 @@ The ZexCore API server is containerized and ready for 1-click deployment.
 ### Option A: Railway (Fastest 1-Click)
 1. Install Railway CLI or connect via GitHub: `https://railway.app`
 2. Create a **New Project** → **Provision PostgreSQL**.
-3. Add a **New Service** from your GitHub repo (`malcryptt/Zexcore`).
+3. Add a **New Service** from your GitHub repo (`malcrypt-tech-hub/Zexcore`).
 4. Railway will automatically detect the [Dockerfile](file:///home/mal4crypt404/ZexCore/Dockerfile) and [railway.json](file:///home/mal4crypt404/ZexCore/railway.json).
 5. Add the following Environment Variables:
    - `DATABASE_URL`: `${{Postgres.DATABASE_URL}}`

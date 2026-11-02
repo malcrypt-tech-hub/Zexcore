@@ -111,9 +111,9 @@ export async function appLayout(path: string, onNew: () => void): Promise<HTMLEl
           ${me.role === 'viewer' ? html`<div class="verify-banner" role="status">${ic('eye')}<span class="grow"><b>Read-only access.</b> You can look at records and payments but not change anything.</span></div>` : ''}
           ${me.user.emailVerified === false && !isDismissed ? html`<div class="verify-banner" data-verify-banner role="status">
             ${ic('mail')}
-            <span class="grow"><b>Confirm your email.</b> We sent a link to ${me.user.email ?? 'your address'}. You need it to upgrade your plan.</span>
+            <span class="grow" data-verify-text><b>Confirm your email.</b> We sent a link to ${me.user.email ?? 'your address'}. You need it to upgrade your plan.</span>
             <button class="btn btn-secondary btn-sm" data-resend>Resend</button>
-            <button type="button" class="btn btn-ghost btn-xs btn-icon" data-dismiss-verify aria-label="Dismiss banner" title="Dismiss banner" style="margin-left:6px;opacity:0.75;display:inline-flex;align-items:center;justify-content:center;cursor:pointer">${ic('x', 'ico-sm')}</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-dismiss-verify aria-label="Dismiss this message">Cancel</button>
           </div>` : ''}
           <main class="main" id="view" tabindex="-1"></main>
         </div>
@@ -128,7 +128,13 @@ export async function appLayout(path: string, onNew: () => void): Promise<HTMLEl
     $('[data-new]')!.addEventListener('click', onNew);
     $('[data-resend]')?.addEventListener('click', async (ev) => {
       const b = ev.currentTarget as HTMLButtonElement; b.disabled = true;
-      try { await api('/api/auth/email/resend', { method: 'POST' }); b.textContent = 'Sent'; toast('Confirmation email sent', 'success'); }
+      try {
+        await api('/api/auth/email/resend', { method: 'POST' });
+        // Say it once, then get out of the way.
+        const t = $('[data-verify-text]'); if (t) t.innerHTML = '<b>Link sent.</b> Check your inbox and spam folder.';
+        b.remove();
+        setTimeout(() => { try { sessionStorage.setItem('zx.verify_dismissed', '1'); } catch { /* ignore */ } $('[data-verify-banner]')?.remove(); }, 6000);
+      }
       catch (x) { b.disabled = false; toast(x instanceof Error ? x.message : 'Could not send the email', 'error'); }
     });
     $('[data-dismiss-verify]')?.addEventListener('click', () => {

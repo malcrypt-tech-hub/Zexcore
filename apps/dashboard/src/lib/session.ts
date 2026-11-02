@@ -33,7 +33,12 @@ export async function loadMe(force = false): Promise<Me | null> {
     if (!_validated) {
       _validated = true;
       // Revalidate in background — updates the cache but doesn't block rendering.
-      void api<Me>('/api/auth/me').then((fresh) => { me = fresh; ssWrite(fresh); }).catch(() => undefined);
+      void api<Me>('/api/auth/me').then((fresh) => {
+        // The cached copy belonged to someone else (another account signed in on this device): never keep showing it.
+        const other = !!me && me.user.id !== fresh.user.id;
+        me = fresh; ssWrite(fresh);
+        if (other) location.reload();
+      }).catch(() => undefined);
     }
     return me;
   }
@@ -68,6 +73,9 @@ export async function register(input: { tenantName: string; name: string; email:
   setToken(r.token); me = null; _validated = false; ssWrite(null);
   await loadMe(true);
 }
+
+/** Forget the remembered identity (used when a different account signs in). */
+export function resetSession(): void { me = null; _validated = false; ssWrite(null); }
 
 export function logout(): void {
   // Revoke the session on the server first (best effort), so a copied token stops working immediately.
