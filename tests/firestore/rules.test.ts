@@ -211,6 +211,12 @@ describe('team roles', () => {
     await seed(async (db) => {
       await setDoc(doc(db, 'workspaces', W, 'members', 'admin1'), { role: 'admin', name: 'A', email: 'a@example.com' });
       await setDoc(doc(db, 'workspaces', W, 'members', 'editor1'), { role: 'editor', name: 'E', email: 'e@example.com' });
+      await setDoc(doc(db, 'workspaces', W, 'members', 'viewer1'), { role: 'viewer', name: 'V', email: 'v@example.com' });
+      await setDoc(doc(db, 'workspaces', W, 'bookings', '202611_0'), { status: 'confirmed', customerName: 'Ada' });
+      await setDoc(doc(db, 'workspaces', W, 'payments', 'ref1'), { status: 'paid' });
+      await setDoc(doc(db, 'workspaces', W, 'auditChain', 'a1'), { seq: 1 });
+      await setDoc(doc(db, 'workspaces', W, 'messages', 'm1'), { phone: '+2348031234567', body: 'hi' });
+      await setDoc(doc(db, 'workspaces', W, 'payout', 'main'), { accountNumber: '0123456789' });
     });
   });
   it('an editor looks after services, staff and pages, but not settings, team or automations approval', async () => {
@@ -222,6 +228,19 @@ describe('team roles', () => {
     await assertFails(updateDoc(doc(ed, 'workspaces', W), { name: 'Hijack' }));
     await assertFails(setDoc(doc(ed, 'workspaces', W, 'members', 'editor1'), { role: 'owner' }));
     await assertFails(getDoc(doc(ed, 'workspaces', W, 'invites', 'x')));
+  });
+  it('a viewer reads records, payments and the audit log, but changes nothing and sees no chats or bank details', async () => {
+    const v = asRole('viewer1');
+    await assertSucceeds(getDoc(doc(v, 'workspaces', W)));
+    await assertSucceeds(getDoc(doc(v, 'workspaces', W, 'bookings', '202611_0')));
+    await assertSucceeds(getDoc(doc(v, 'workspaces', W, 'payments', 'ref1')));
+    await assertSucceeds(getDoc(doc(v, 'workspaces', W, 'auditChain', 'a1')));
+    await assertFails(getDoc(doc(v, 'workspaces', W, 'messages', 'm1')));
+    await assertFails(getDoc(doc(v, 'workspaces', W, 'payout', 'main')));
+    await assertFails(updateDoc(doc(v, 'workspaces', W, 'bookings', '202611_0'), { status: 'cancelled' }));
+    await assertFails(setDoc(doc(v, 'workspaces', W, 'services', 's_0'), svc()));
+    await assertFails(setDoc(doc(v, 'workspaces', W, 'contacts', 'c_0'), { name: 'X' }));
+    await assertFails(updateDoc(doc(v, 'workspaces', W), { name: 'Hijack' }));
   });
   it('an admin runs the workspace; a stranger and invites are closed to clients', async () => {
     const ad = asRole('admin1');

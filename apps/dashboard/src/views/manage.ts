@@ -24,6 +24,7 @@ export function renderMore(view: HTMLElement): void {
     { href: '/app/compliance', icon: 'scale', t: 'Data protection', s: 'Consent, erasure and retention' },
     { href: '/app/billing', icon: 'credit-card', t: 'Plan & billing', s: 'Your subscription and payments' },
     { href: '/app/security', icon: 'shield-check', t: 'Security', s: 'Password and signed-in devices' },
+    { href: '/app/export', icon: 'download', t: 'Export data', s: 'CSV and JSON downloads of your records' },
     { href: '/app/audit', icon: 'history', t: 'Audit log', s: 'Tamper-evident record of changes' },
     { href: '/app/settings', icon: 'settings', t: 'Settings', s: 'Hours, deposits and business details' },
   ];
