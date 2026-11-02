@@ -108,6 +108,7 @@ export async function appLayout(path: string, onNew: () => void): Promise<HTMLEl
               </div>
             </div>
           </header>
+          ${me.role === 'viewer' ? html`<div class="verify-banner" role="status">${ic('eye')}<span class="grow"><b>Read-only access.</b> You can look at records and payments but not change anything.</span></div>` : ''}
           ${me.user.emailVerified === false && !isDismissed ? html`<div class="verify-banner" data-verify-banner role="status">
             ${ic('mail')}
             <span class="grow"><b>Confirm your email.</b> We sent a link to ${me.user.email ?? 'your address'}. You need it to upgrade your plan.</span>

@@ -30,8 +30,10 @@ export async function verifyFirebaseIdToken(env: Env, d: Deps, token: string): P
   return { uid: claims.sub, email: claims.email ?? null, emailVerified: claims.email_verified === true };
 }
 
-export type Role = 'owner' | 'admin' | 'editor' | 'staff';
+export type Role = 'owner' | 'admin' | 'editor' | 'viewer' | 'staff';
 /** Verifies the bearer token and that the caller belongs to the workspace (optionally with one of `roles`). */
+/** Everyone except read-only viewers. */
+export const DOERS: Role[] = ['owner', 'admin', 'editor', 'staff'];
 export async function requireMember(c: Ctx, wid: unknown, roles?: Role[]): Promise<{ caller: Caller; role: Role; wid: string }> {
   const bearer = /^Bearer (.+)$/.exec(c.req.headers.get('authorization') ?? '')?.[1];
   const caller = bearer ? await verifyFirebaseIdToken(c.env, c.d, bearer) : null;
@@ -40,6 +42,6 @@ export async function requireMember(c: Ctx, wid: unknown, roles?: Role[]): Promi
   const m = await fsGet(c.env, c.d, `workspaces/${wid}/members/${caller.uid}`);
   const role = m?.data.role as Role | undefined;
   if (!role) throw new HttpError(403, 'You do not have access to that workspace.', 'forbidden');
-  if (roles && !roles.includes(role)) throw new HttpError(403, 'Only a workspace owner or admin can do that.', 'forbidden');
+  if (roles && !roles.includes(role)) throw new HttpError(403, role === 'viewer' ? 'Your login is read-only.' : 'Only a workspace owner or admin can do that.', 'forbidden');
   return { caller, role, wid };
 }

@@ -5,12 +5,13 @@
  * owner  – everything, including plan, payouts and who the admins are
  * admin  – everything except changing admins or the plan owner
  * editor – day-to-day work: bookings, customers, services, staff, pages (never settings, billing, team)
+ * viewer – read-only (accountants, investors): records, payments and the audit log; no customer chats. Enterprise and Dedicated only.
  */
 import type { Ctx } from '../env';
 import { requireMember, verifyFirebaseIdToken } from '../auth';
 import { FsConflict, fsCommit, fsGet, fsQuery } from '../fs';
 import { sendFormal } from '../mail';
-import { activePlan } from './billing';
+import { RANK, activePlan } from './billing';
 import { HttpError, ID_RE, WID_RE, json, randomHex, readJson, sha256Hex } from '../util';
 
 /** Team logins per plan. Mirrors the "Team members" limit shown on the pricing page (LIMITS.staff in the dashboard); a test keeps them equal. */
@@ -34,6 +35,11 @@ async function seatLimit(c: Ctx, wid: string): Promise<number> {
   return SEATS[activePlan(ws?.data, c.d.now()).tier] ?? 1;
 }
 
+async function requireViewerPlan(c: Ctx, wid: string): Promise<void> {
+  const ws = await fsGet(c.env, c.d, `workspaces/${wid}`);
+  if ((RANK[activePlan(ws?.data, c.d.now()).tier] ?? 0) < (RANK.enterprise ?? 4)) throw new HttpError(402, 'Read-only viewer logins are part of the Enterprise and Dedicated plans.', 'plan_feature');
+}
+
 async function setUserWorkspaces(c: Ctx, uid: string, edit: (ids: string[]) => string[]): Promise<void> {
   const u = await fsGet(c.env, c.d, `users/${uid}`);
   const cur = Array.isArray(u?.data.workspaceIds) ? (u!.data.workspaceIds as string[]) : [];
@@ -49,8 +55,9 @@ export async function invite(c: Ctx): Promise<Response> {
   const email = String(b.email ?? '').trim().toLowerCase();
   const role = b.role;
   if (!EMAIL_RE.test(email)) throw new HttpError(400, 'Enter a valid email address.');
-  if (role !== 'admin' && role !== 'editor') throw new HttpError(400, 'Choose a role: admin or editor.');
+  if (role !== 'admin' && role !== 'editor' && role !== 'viewer') throw new HttpError(400, 'Choose a role: admin, editor or viewer.');
   if (role === 'admin' && me !== 'owner') throw new HttpError(403, 'Only the workspace owner can invite an admin.', 'forbidden');
+  if (role === 'viewer') await requireViewerPlan(c, wid);
   const members = await fsQuery(c.env, c.d, { parent: `workspaces/${wid}`, collection: 'members', limit: 1100 });
   if (members.some((m) => String(m.data.email ?? '').toLowerCase() === email)) throw new HttpError(409, 'That person is already on your team.', 'exists');
   const limit = await seatLimit(c, wid);
@@ -142,7 +149,8 @@ async function target(c: Ctx, wid: string, uid: unknown) {
 export async function setRole(c: Ctx): Promise<Response> {
   const b = await readJson(c.req);
   const { wid } = await requireMember(c, b.wid, ['owner']);
-  if (b.role !== 'admin' && b.role !== 'editor') throw new HttpError(400, 'Choose a role: admin or editor.');
+  if (b.role !== 'admin' && b.role !== 'editor' && b.role !== 'viewer') throw new HttpError(400, 'Choose a role: admin, editor or viewer.');
+  if (b.role === 'viewer') await requireViewerPlan(c, wid);
   const m = await target(c, wid, b.uid);
   await fsCommit(c.env, c.d, [{ path: m.path, fields: { role: b.role }, mask: ['role'], precondition: { exists: true } }]);
   return json({ ok: true }, 200, c.headers);

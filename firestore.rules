@@ -7,7 +7,7 @@ rules_version = '2';
 //   users/{uid}                          the signed-in user's own profile
 //   workspaces/{wid}                     plan fields are NEVER writable from a client (only the payment Worker,
 //                                        which uses a service account and bypasses these rules)
-//   workspaces/{wid}/members/{uid}       role: owner | admin | staff (created only together with the workspace)
+//   workspaces/{wid}/members/{uid}       role: owner | admin | editor | viewer (created only together with the workspace)
 //   workspaces/{wid}/services|staff|contacts|pages/{kind_N}
 //                                        document ids are numbered slots (e.g. s_0 .. s_{limit-1}); the plan
 //                                        limit is enforced by refusing ids at or above it. Race-free, no counters.
@@ -30,6 +30,10 @@ service cloud.firestore {
     // Roles: owner and admin run the workspace; editor looks after services, staff and website pages plus the day-to-day
     // work every member can do (bookings, contacts, leads, inbox). 'staff' is the old name for the day-to-day role.
     function isEditor(wid) { return isMember(wid) && memberRole(wid) in ['owner', 'admin', 'editor']; }
+    // Viewers are read-only (accountants, investors): they can read records and money, never change anything or read customer chats.
+    function isViewer(wid) { return isMember(wid) && memberRole(wid) == 'viewer'; }
+    function isWorker(wid) { return isMember(wid) && memberRole(wid) != 'viewer'; }
+    function canSeeMoney(wid) { return isAdmin(wid) || isViewer(wid); }
     function onlyChanges(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
     function noExtraKeys(allowed) { return request.resource.data.keys().hasOnly(allowed); }
 
@@ -150,15 +154,15 @@ service cloud.firestore {
 
       match /contacts/{id} {
         allow read: if isMember(wid);
-        allow create: if isMember(wid) && slotId(wid, 'c', 'crmContacts', id);
-        allow update, delete: if isMember(wid);
+        allow create: if isWorker(wid) && slotId(wid, 'c', 'crmContacts', id);
+        allow update, delete: if isWorker(wid);
       }
       match /stages/{id} { allow read, write: if isAdmin(wid); allow read: if isMember(wid); }
       // Leads use numbered slots like contacts, so the plan's contact limit also bounds them.
       match /leads/{id} {
         allow read: if isMember(wid);
-        allow create: if isMember(wid) && slotId(wid, 'l', 'crmContacts', id);
-        allow update, delete: if isMember(wid);
+        allow create: if isWorker(wid) && slotId(wid, 'l', 'crmContacts', id);
+        allow update, delete: if isWorker(wid);
       }
       // Customers are derived from bookings; nothing writes this collection.
       match /customers/{id} { allow read: if isMember(wid); allow write: if false; }
@@ -173,9 +177,9 @@ service cloud.firestore {
       // Bookings: staff manage freely; the public may only CREATE, never read or change
       match /bookings/{id} {
         allow read: if isMember(wid);
-        allow update, delete: if isMember(wid);
+        allow update, delete: if isWorker(wid);
 
-        allow create: if (isMember(wid) || publicBookingOk(wid)) && bookingSlotOk(wid, id);
+        allow create: if (isWorker(wid) || publicBookingOk(wid)) && bookingSlotOk(wid, id);
       }
 
       // Time cells: create-only. The booking batch must create every cell it occupies.
@@ -193,14 +197,14 @@ service cloud.firestore {
           && cell.split('_').size() == 3
           && cell.split('_')[0] + '_' + cell.split('_')[1] == getAfter(bookingPath(wid, request.resource.data.bookingId)).data.staffId
           && int(cell.split('_')[2]) in getAfter(bookingPath(wid, request.resource.data.bookingId)).data.cells;
-        allow delete: if isMember(wid);   // staff cancelling a booking frees its cells
+        allow delete: if isWorker(wid);   // staff cancelling a booking frees its cells
         allow update: if false;
       }
 
       // Plan payments. Created, and later marked paid, only by the payments Worker (service account, bypasses
       // rules) after it prices the plan itself and verifies the charge with Paystack. Clients can only read them.
       match /payments/{ref} {
-        allow read: if isAdmin(wid);
+        allow read: if canSeeMoney(wid);
         allow write: if false;
       }
 
@@ -235,13 +239,13 @@ service cloud.firestore {
       // Runs are written by the Worker.
       match /rules/{id} {
         allow read: if isMember(wid);
-        allow create: if isMember(wid) && hasGrowth(wid) && slotId(wid, 'r', 'rules', id)
+        allow create: if isWorker(wid) && hasGrowth(wid) && slotId(wid, 'r', 'rules', id)
           && noExtraKeys(['name', 'description', 'trigger', 'conditions', 'actions', 'enabled', 'approved', 'createdAt', 'createdBy', 'seq', 'lastRunAt'])
           && request.resource.data.approved == false && request.resource.data.enabled == false
           && request.resource.data.createdBy == request.auth.uid && request.resource.data.createdAt == request.time
           && request.resource.data.actions is list && request.resource.data.actions.size() >= 1 && request.resource.data.actions.size() <= 3;
         allow update: if isAdmin(wid) && onlyChanges(['approved', 'enabled', 'approvedBy']);
-        allow delete: if isMember(wid);
+        allow delete: if isWorker(wid);
       }
       match /automationRuns/{id} { allow read: if isAdmin(wid); allow write: if false; }
       match /automationMarkers/{id} { allow read, write: if false; }
@@ -252,8 +256,8 @@ service cloud.firestore {
 
       // Inbox: replies the team sends (and customer replies they log), and which conversations have been read.
       match /messages/{id} {
-        allow read: if isMember(wid);
-        allow create: if isMember(wid) && noExtraKeys(['phone', 'name', 'direction', 'kind', 'body', 'createdAt', 'by'])
+        allow read: if isWorker(wid);
+        allow create: if isWorker(wid) && noExtraKeys(['phone', 'name', 'direction', 'kind', 'body', 'createdAt', 'by'])
           && request.resource.data.phone.matches('^\\+[0-9]{8,15}$')
           && request.resource.data.direction in ['in', 'out'] && request.resource.data.kind == 'text'
           && request.resource.data.body is string && request.resource.data.body.size() >= 1 && request.resource.data.body.size() <= 2000
@@ -263,9 +267,9 @@ service cloud.firestore {
         allow delete: if isAdmin(wid);       // data-protection erasure and retention
       }
       match /convState/{phone} {
-        allow read: if isMember(wid);
+        allow read: if isWorker(wid);
         allow delete: if isAdmin(wid);
-        allow create, update: if isMember(wid) && phone.matches('^\\+[0-9]{8,15}$') && noExtraKeys(['readAt']) && request.resource.data.readAt == request.time;
+        allow create, update: if isWorker(wid) && phone.matches('^\\+[0-9]{8,15}$') && noExtraKeys(['readAt']) && request.resource.data.readAt == request.time;
       }
 
       // Data protection (admins only except consent, which any member may record)
@@ -281,17 +285,17 @@ service cloud.firestore {
       }
       match /consents/{id} {
         allow read: if isMember(wid) && hasStarter(wid);
-        allow create: if isMember(wid) && hasStarter(wid) && noExtraKeys(['subjectId', 'purpose', 'legalBasis', 'grantedAt', 'revokedAt', 'by'])
+        allow create: if isWorker(wid) && hasStarter(wid) && noExtraKeys(['subjectId', 'purpose', 'legalBasis', 'grantedAt', 'revokedAt', 'by'])
           && request.resource.data.grantedAt == request.time && request.resource.data.by == request.auth.uid && request.resource.data.revokedAt == null;
-        allow update: if isMember(wid) && hasStarter(wid) && onlyChanges(['revokedAt']) && request.resource.data.revokedAt == request.time;
+        allow update: if isWorker(wid) && hasStarter(wid) && onlyChanges(['revokedAt']) && request.resource.data.revokedAt == request.time;
         allow delete: if isAdmin(wid) && hasStarter(wid);
       }
 
       // Tamper-evident audit trail. Written ONLY by the Worker (service account), which chains each entry to the
       // previous one and takes the actor from the verified ID token. Admins can read it; nobody can write it here.
-      match /auditChain/{id} { allow read: if isAdmin(wid); allow write: if false; }
-      match /auditMeta/{id}  { allow read: if isAdmin(wid); allow write: if false; }
-      match /audit/{id}      { allow read: if isAdmin(wid); allow write: if false; }   // legacy entries
+      match /auditChain/{id} { allow read: if canSeeMoney(wid); allow write: if false; }
+      match /auditMeta/{id}  { allow read: if canSeeMoney(wid); allow write: if false; }
+      match /audit/{id}      { allow read: if canSeeMoney(wid); allow write: if false; }   // legacy entries
     }
 
     // Public booking validation ------------------------------------------------------------------------------

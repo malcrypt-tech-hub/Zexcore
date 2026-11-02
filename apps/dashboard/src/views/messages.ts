@@ -5,12 +5,13 @@ import { ago, initials, timeOf, whenLabel, money } from '../lib/format';
 import { emptyState, errorState, skeletonRows, toast, openModal, busy, copyText, sendViaWhatsApp } from '../lib/ui';
 import { loadSettings, offset } from '../lib/store';
 import { refreshUnread } from '../layouts';
-import { canManage } from '../lib/session';
+import { canManage, current } from '../lib/session';
 
 interface Conv { phone: string; name: string; lastBody: string; lastKind: string; lastDirection: string; lastAt: string; unread: number; nextSlot: string | null; nextStatus: string | null; nextRef: string | null }
 interface Msg { id: string; direction: 'in' | 'out'; kind: 'text' | 'system' | 'payment'; body: string; createdAt: string }
 
 export async function renderMessages(view: HTMLElement, phoneParam?: string | null): Promise<void> {
+  if (current()?.role === 'viewer') { mount(view, html`<div class="page-head"><div><h1>Messages</h1></div></div><div class="alert alert-info">Customer chats are private to the team. Your read-only login does not include them.</div>`); return; }
   await loadSettings();
   let filter: 'all' | 'waiting' | 'booked' = 'all';
   let active: string | null = phoneParam ?? null;

@@ -24,7 +24,7 @@ export const DEFAULT_SETTINGS: WorkspaceSettings = {
   logoUrl: null, rules: [],
 };
 
-export type Role = 'owner' | 'admin' | 'editor' | 'staff';
+export type Role = 'owner' | 'admin' | 'editor' | 'viewer' | 'staff';
 export interface Ctx {
   uid: string; email: string | null; name: string | null; emailVerified: boolean;
   wid: string; slug: string; wsName: string; plan: string; planCycle: string | null; planExpiresAt: string | null;
