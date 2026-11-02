@@ -8,13 +8,14 @@
  *   POST /api/public/deposit                booking page: start a deposit payment for a booking the visitor just made
  *   POST /api/deposit/link                  team: payment link for an existing booking
  *   GET  /api/public/deposit-status         booking page: did the payment go through? (also verifies with Paystack)
+ *   POST /api/deposit/refund                owner/admin: refund a paid deposit through Paystack
  * The webhook (routes/billing.ts) settles deposits too, so closing the tab never loses a payment.
  */
 import { DOERS, requireMember } from '../auth';
 import type { Ctx, Deps, Env } from '../env';
-import { FsConflict, fsCommit, fsGet } from '../fs';
-import { sendFormal } from '../mail';
+import { FsConflict, fsCommit, fsGet, fsQuery } from '../fs';
 import { ownerContact } from '../automation';
+import { sendFormal } from '../mail';
 import { HttpError, ID_RE, firstName, json, randomRef, readJson } from '../util';
 import { getLiveNgnRate } from '../rates';
 
@@ -166,4 +167,24 @@ export async function depositStatus(c: Ctx): Promise<Response> {
   const id = String(pay?.data.bookingId ?? '');
   return json({ ref: `ZX-${id.replace('_', '-')}`, status: booking?.data.status ?? 'pending', depositStatus: state === 'paid' ? 'paid' : state === 'mismatch' ? 'mismatch' : 'unpaid', amountMinor: Number(pay?.data.usdMinor ?? 0), currency: 'USD', chargedNgnMinor: Number(pay?.data.amountMinor ?? 0), rate: Number(pay?.data.rate ?? 0),
     serviceName: svc?.data.name ?? '', startsAt: booking?.data.startsAt instanceof Date ? booking.data.startsAt.toISOString() : null }, 200, c.headers);
+}
+
+/** Refunds a paid deposit through Paystack and records it. Owners and admins only; a deposit can be refunded once. */
+export async function refundDeposit(c: Ctx): Promise<Response> {
+  const b = await readJson(c.req, 1024);
+  const { wid, caller } = await requireMember(c, b.workspaceId, ['owner', 'admin']);
+  const bookingId = String(b.bookingId ?? '');
+  if (!BOOKING_RE.test(bookingId)) throw new HttpError(400, 'Invalid booking');
+  const paid = await fsQuery(c.env, c.d, { parent: `workspaces/${wid}`, collection: 'depositPayments', where: [{ field: 'bookingId', op: 'EQUAL', value: bookingId }, { field: 'status', op: 'EQUAL', value: 'paid' }], limit: 1 });
+  const pay = paid[0];
+  if (!pay) throw new HttpError(409, 'There is no paid deposit to refund for this booking.', 'nothing_to_refund');
+  const r = await ps(c.env, c.d, '/refund', { method: 'POST', body: JSON.stringify({ transaction: String(pay.data.reference), customer_note: 'Booking deposit refund', merchant_note: `Refund requested by ${caller.uid}` }) });
+  const j = (await r.json().catch(() => ({}))) as { status?: boolean; message?: string };
+  if (!r.ok || !j.status) throw new HttpError(502, j.message ? `Paystack could not refund this deposit: ${j.message}` : 'Paystack could not refund this deposit. Try again shortly.', 'refund_failed');
+  const now = c.d.now();
+  await fsCommit(c.env, c.d, [
+    { path: pay.path, fields: { status: 'refunded', refundedAt: now, refundedBy: caller.uid }, mask: ['status', 'refundedAt', 'refundedBy'], precondition: { exists: true } },
+    { path: `workspaces/${wid}/bookings/${bookingId}`, fields: { depositStatus: 'refunded' }, mask: ['depositStatus'], precondition: { exists: true } },
+  ]);
+  return json({ ok: true }, 200, c.headers);
 }

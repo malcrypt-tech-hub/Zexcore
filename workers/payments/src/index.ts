@@ -10,13 +10,13 @@ import { HttpError, cors, json } from './util';
 import { checkout, webhook } from './routes/billing';
 import { audit, verifyAudit } from './routes/audit';
 import { ingest } from './routes/iot';
-import { banks, depositLink, depositStatus, payoutSetup, publicDeposit } from './routes/deposits';
+import { banks, depositLink, depositStatus, payoutSetup, publicDeposit, refundDeposit } from './routes/deposits';
 import { memberEvent, publicBooked } from './routes/events';
 import { welcome } from './routes/welcome';
 import { accept, invite, inviteInfo, remove, revoke, setRole } from './routes/team';
 
 export type { Env, Deps } from './env';
-export { amountMinor, isTier, PLANS } from './routes/billing';
+export { amountMinor, isTier, PLANS, planAfterPayment } from './routes/billing';
 export { paystackSignature } from './util';
 export { toFs, fromFs } from './fs';
 export { resetTokenCache } from './google';
@@ -40,6 +40,7 @@ const ROUTES: Record<string, Handler> = {
   'POST /api/payout/setup': payoutSetup,
   'POST /api/public/deposit': publicDeposit,
   'POST /api/deposit/link': depositLink,
+  'POST /api/deposit/refund': refundDeposit,
   'GET /api/public/deposit-status': depositStatus,
   'POST /api/events': memberEvent,
   'POST /api/public/booked': publicBooked,
@@ -54,12 +55,25 @@ const ROUTES: Record<string, Handler> = {
 
 /** Routes that take or confirm money. They stay off unless a live Paystack key is set (or the Worker is explicitly marked staging). */
 const PUBLIC_ROUTES = new Set(['POST /api/public/deposit', 'GET /api/public/deposit-status', 'POST /api/public/booked', 'GET /api/banks', 'GET /api/team/invite-info']);
-const MONEY_ROUTES = new Set(['POST /api/checkout', 'POST /api/paystack-webhook', 'GET /api/banks', 'POST /api/payout/setup', 'POST /api/public/deposit', 'POST /api/deposit/link', 'GET /api/public/deposit-status']);
+const MONEY_ROUTES = new Set(['POST /api/checkout', 'POST /api/paystack-webhook', 'GET /api/banks', 'POST /api/payout/setup', 'POST /api/public/deposit', 'POST /api/deposit/link', 'POST /api/deposit/refund', 'GET /api/public/deposit-status']);
 export function paymentsEnabled(env: Env): boolean {
   const k = (env.PAYSTACK_SECRET_KEY ?? '').trim();
   if (!k) return false;
   if (k.startsWith('sk_live_')) return true;
   return k.startsWith('sk_test_') && env.ALLOW_TEST_PAYMENTS === 'true';
+}
+
+/**
+ * Best-effort throttle for the public (signed-out) routes: 20 calls a minute per visitor per route, per Worker instance.
+ * It stops casual abuse; for a hard limit add a Cloudflare rate-limiting rule on /api/public/* (see docs/launch-runbook.md).
+ */
+const PUBLIC_LIMITED = new Set(['POST /api/public/deposit', 'GET /api/public/deposit-status', 'POST /api/public/booked']);
+const hits = new Map<string, number[]>();
+export function throttled(key: string, now: number, max = 20, windowMs = 60_000): boolean {
+  const recent = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
+  recent.push(now); hits.set(key, recent);
+  if (hits.size > 5000) for (const [k, v] of hits) if (!v.some((t) => now - t < windowMs)) hits.delete(k);
+  return recent.length > max;
 }
 
 export async function handle(req: Request, env: Env, d: Deps = realDeps()): Promise<Response> {
@@ -69,6 +83,10 @@ export async function handle(req: Request, env: Env, d: Deps = realDeps()): Prom
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers });
     const h = ROUTES[`${req.method} ${url.pathname}`];
     if (!h) return json({ error: 'Not found' }, 404, headers);
+    const rk = `${req.method} ${url.pathname}`;
+    if (PUBLIC_LIMITED.has(rk) && throttled(`${req.headers.get('cf-connecting-ip') ?? 'unknown'} ${rk}`, d.now().getTime())) {
+      return json({ error: 'Too many requests. Please wait a minute and try again.', code: 'rate_limited' }, 429, { ...headers, 'retry-after': '60' });
+    }
     if (env.PUBLIC_RL && PUBLIC_ROUTES.has(`${req.method} ${url.pathname}`)) {
       const ip = req.headers.get('cf-connecting-ip') ?? 'unknown';
       const { success } = await env.PUBLIC_RL.limit({ key: `${ip}:${url.pathname}` }).catch(() => ({ success: true }));
