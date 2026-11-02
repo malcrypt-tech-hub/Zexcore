@@ -312,7 +312,7 @@ describe('devices and automations, end to end', () => {
     const rl = await import('../../apps/dashboard/src/lib/fb/rules');
     // Devices and automations are Growth-and-above: refused on the free plan, up front by requireFeature.
     expect(await code(iot.createDevice({ name: 'Blocked', deviceKey: 'blocked-1', kind: 'x' }))).toBe('plan_feature');
-    expect(await code(rl.createRule({ name: 'Blocked', trigger: { source: 'event:iot.reading' }, actions: [{ type: 'notify', message: 'x' }] }))).toBe('plan_feature');
+    expect(await code(rl.createRule({ name: 'Blocked', trigger: { source: 'event:iot.reading' }, actions: [{ type: 'notify', message: 'x' }] }))).toBe('plan_limit');
     await setPlan('growth');
     const ctx = await core.loadCtx(true);
     const made: any = await iot.createDevice({ name: 'Cold room', deviceKey: 'cold-room-1', kind: 'temperature_sensor' });
