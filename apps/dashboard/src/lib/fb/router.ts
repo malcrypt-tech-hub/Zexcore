@@ -10,6 +10,7 @@ import * as bk from './bookings';
 import * as pub from './public';
 import * as crm from './crm';
 import * as bill from './billing';
+import * as appt from './appointments';
 import * as payout from './payout';
 import * as team from './team';
 import { getLiveNgnRate } from '../fx';
@@ -90,6 +91,14 @@ on('POST', '/api/team/invite', ({ body }) => team.invite(body));
 on('POST', '/api/team/revoke', ({ body }) => team.revokeInvite(String(body.id)));
 on('POST', '/api/team/role', ({ body }) => team.setRole(String(body.uid), String(body.role)));
 on('POST', '/api/team/remove', ({ body }) => team.removeMember(String(body.uid)));
+
+// ── calendar appointments ──
+on('GET', '/api/appointments', ({ query }) => appt.list(String(query.get('from')), String(query.get('to'))));
+on('GET', '/api/appointments/pinned', () => appt.pinned());
+on('POST', '/api/appointments', ({ body }) => appt.create(body));
+on('PATCH', '/api/appointments/:id', ({ params, body }) => appt.update(params[0]!, body));
+on('POST', '/api/appointments/:id/flag', ({ params, body }) => appt.flag(params[0]!, body));
+on('DELETE', '/api/appointments/:id', ({ params }) => appt.remove(params[0]!));
 
 // ── billing + audit ──
 on('GET', '/api/rates', async () => ({ base: 'USD', target: 'NGN', rate: await getLiveNgnRate(), updatedAt: new Date().toISOString() }));

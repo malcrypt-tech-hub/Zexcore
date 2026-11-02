@@ -119,6 +119,15 @@
 .cal-dots { display: flex; gap: 3px; flex-wrap: wrap; }
 .cal-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
 .cal-count { font-size: .6875rem; color: var(--slate); font-weight: 600; }
+.cal-dots i.high { background: #dc2626; } .cal-dots i.normal { background: #64748b; } .cal-dots i.low { background: #2563eb; }
+.cal-pin { color: #d97706; font-size: .75rem; line-height: 1; }
+.appt { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--border); border-left-width: 4px; border-radius: var(--r); background: #fff; }
+.appt.high { border-left-color: #dc2626; } .appt.normal { border-left-color: #64748b; } .appt.low { border-left-color: #2563eb; }
+.appt.done .appt-title { text-decoration: line-through; opacity: .6; }
+.appt-time { min-width: 76px; font-weight: 700; font-size: .875rem; }
+.appt-actions { display: flex; gap: 2px; margin-left: auto; flex: none; }
+.cal-jump { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
+.cal-jump .input { height: 34px; width: auto; }
 @media (max-width: 560px) { .cal-cell { min-height: 56px; padding: 4px; } }
 
 /* ───────── Auth / onboarding / public booking ───────── */
