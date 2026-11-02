@@ -259,7 +259,7 @@ export async function summary(): Promise<unknown> {
   }
   return {
     businessName: s.publicName ?? c.wsName, currency: 'USD', today, utcOffsetMinutes: off,
-    setup: { onboarded: s.onboarded, services: svcs.length, staff: staff.length, depositEnabled: s.depositEnabled },
+    setup: { onboarded: s.onboarded, services: svcs.length, staff: staff.length, depositEnabled: s.depositEnabled, hasPhone: !!(s.phone ?? '').trim(), hasName: !!(s.publicName ?? '').trim() },
     todayBookings: rows.filter((b) => { const t = new Date(b.startsAt).getTime(); return t >= dayStart && t < dayStart + 86_400_000; }),
     week: { total: rows.length, depositsMinor: rows.reduce((n, b) => n + (b.depositStatus === 'paid' ? b.depositMinor : 0), 0), noShows: rows.filter((b) => b.status === 'no_show').length, perDay },
     attention: { pending: pend.size, unpaidCount: unpaid.length, unpaidMinor: unpaid.reduce((n, b) => n + b.depositMinor, 0), waitingReplies: 0 },

@@ -1,6 +1,6 @@
 import { collection, deleteDoc, getDocs, limit as qLimit, orderBy, query, updateDoc, writeBatch, addDoc, serverTimestamp } from 'firebase/firestore';
 import { fb, paymentsUrl } from './firebase';
-import { ApiError, audit, claimSlot, iso, loadCtx, requireAdmin, wsCol, wsDoc } from './core';
+import { ApiError, audit, claimSlot, iso, loadCtx, requireAdmin, requireFeature, wsCol, wsDoc } from './core';
 
 const ONLINE_MS = 10 * 60_000;
 const KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{2,63}$/;
@@ -30,7 +30,7 @@ export async function latest(): Promise<{ latest: unknown[] }> {
   return { latest: s.docs.filter((d) => d.data().latest).map((d) => ({ device_id: d.id, metrics: d.data().latest, recorded_at: iso(d.data().latestAt) })) };
 }
 export async function createDevice(b: Record<string, unknown>): Promise<{ device: unknown; token: string }> {
-  const c = await loadCtx(); requireAdmin(c);
+  const c = await loadCtx(); requireAdmin(c); requireFeature(c, 'devices');
   const name = String(b.name ?? '').trim(), deviceKey = String(b.deviceKey ?? '').trim(), kind = String(b.kind ?? '').trim();
   if (name.length < 1 || name.length > 128) throw new ApiError(400, 'Give the device a name.');
   if (!KEY_RE.test(deviceKey)) throw new ApiError(400, 'The device ID needs 3 to 64 letters, numbers, dashes or underscores.');
@@ -43,21 +43,21 @@ export async function createDevice(b: Record<string, unknown>): Promise<{ device
   return { device: dto(id, { name, deviceKey, kind }), token };
 }
 export async function patchDevice(id: string, b: Record<string, unknown>): Promise<{ ok: true }> {
-  const c = await loadCtx(); requireAdmin(c);
+  const c = await loadCtx(); requireAdmin(c); requireFeature(c, 'devices');
   const name = String(b.name ?? '').trim();
   if (name.length < 1 || name.length > 128) throw new ApiError(400, 'Give the device a name.');
   await updateDoc(wsDoc(c, 'devices', id), { name });
   return { ok: true };
 }
 export async function rotateToken(id: string): Promise<{ token: string }> {
-  const c = await loadCtx(); requireAdmin(c);
+  const c = await loadCtx(); requireAdmin(c); requireFeature(c, 'devices');
   const { token, hash } = await newToken();
   await updateDoc(wsDoc(c, 'devices', id), { tokenHash: hash });
   void audit(c, 'device.rotate_token', 'device', id);
   return { token };
 }
 export async function removeDevice(id: string): Promise<{ ok: true }> {
-  const c = await loadCtx(); requireAdmin(c);
+  const c = await loadCtx(); requireAdmin(c); requireFeature(c, 'devices');
   const { db } = fb();
   for (let i = 0; i < 20; i++) {                       // readings and their rules go with the device
     const r = await getDocs(query(collection(db, 'workspaces', c.wid, 'devices', id, 'readings'), qLimit(400))).catch(() => null);
@@ -78,7 +78,7 @@ export async function listAlertRules(): Promise<{ alerts: unknown[] }> {
   return { alerts: s.docs.map((d) => ({ id: d.id, device_id: d.data().deviceId ?? null, metric: d.data().metric, op: d.data().op, threshold: d.data().threshold, severity: d.data().severity, message: d.data().message ?? null, enabled: d.data().enabled !== false })) };
 }
 export async function createAlertRule(b: Record<string, unknown>): Promise<{ id: string }> {
-  const c = await loadCtx(); requireAdmin(c);
+  const c = await loadCtx(); requireAdmin(c); requireFeature(c, 'devices');
   const metric = String(b.metric ?? '').trim();
   if (!/^[A-Za-z0-9_]{1,40}$/.test(metric)) throw new ApiError(400, 'Use the reading name your device sends, for example temperature.');
   if (!OPS.includes(String(b.op))) throw new ApiError(400, 'Choose when the alert should fire.');
@@ -91,7 +91,7 @@ export async function createAlertRule(b: Record<string, unknown>): Promise<{ id:
   return { id: ref.id };
 }
 export async function removeAlertRule(id: string): Promise<{ ok: true }> {
-  const c = await loadCtx(); requireAdmin(c);
+  const c = await loadCtx(); requireAdmin(c); requireFeature(c, 'devices');
   await deleteDoc(wsDoc(c, 'alertRules', id));
   return { ok: true };
 }

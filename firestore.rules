@@ -90,7 +90,7 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
       allow create, update: if signedIn() && request.auth.uid == uid
-        && noExtraKeys(['name', 'email', 'phone', 'workspaceIds', 'createdAt'])
+        && noExtraKeys(['name', 'email', 'phone', 'workspaceIds', 'createdAt', 'welcomedAt'])
         && request.resource.data.workspaceIds is list && request.resource.data.workspaceIds.size() <= 5;
       allow delete: if false;
     }

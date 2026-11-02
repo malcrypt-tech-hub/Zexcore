@@ -90,3 +90,19 @@ export function copyText(text: string): void {
   else { const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); done(); } catch { toast('Could not copy', 'error'); } t.remove(); }
 }
 export { esc };
+
+/**
+ * Runs `job` (which saves a message and returns the WhatsApp link) and opens WhatsApp for the person to press send.
+ * The window is opened synchronously on the click, before any waiting, because browsers block pop-ups opened afterwards.
+ * If it still cannot open, the link stays on screen as a button.
+ */
+export async function sendViaWhatsApp(job: () => Promise<{ whatsappUrl: string }>): Promise<boolean> {
+  const win = window.open('about:blank', '_blank');
+  try {
+    const { whatsappUrl } = await job();
+    if (win && !win.closed) { win.opener = null; win.location.href = whatsappUrl; return true; }
+    toast('Saved. Tap Open WhatsApp to send it.', 'info');
+    openModal({ title: 'Message saved', body: html`<p class="muted">Your browser blocked the WhatsApp window. Open it here to send the message.</p>`, footer: html`<a class="btn btn-primary" href="${whatsappUrl}" target="_blank" rel="noopener noreferrer" data-close>Open WhatsApp</a>` });
+    return true;
+  } catch (e) { win?.close(); throw e; }
+}

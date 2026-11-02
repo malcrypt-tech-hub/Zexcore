@@ -1,9 +1,9 @@
 import { requireMember } from '../auth';
-import { fireEvent, ownerEmail } from '../automation';
+import { fireEvent, ownerContact } from '../automation';
 import type { Ctx } from '../env';
 import { FsConflict, fsCommit, fsGet } from '../fs';
-import { sendMail } from '../mail';
-import { HttpError, ID_RE, json, readJson } from '../util';
+import { sendFormal } from '../mail';
+import { HttpError, ID_RE, json, localWhen, readJson } from '../util';
 
 const BOOKING_RE = /^\d{6}_\d{1,6}$/;
 
@@ -51,7 +51,15 @@ export async function publicBooked(c: Ctx): Promise<Response> {
     await fsCommit(c.env, c.d, [{ path: `workspaces/${wid}/automationMarkers/${bookingId}`, fields: { at: c.d.now() }, precondition: { exists: false } }]);
   } catch (e) { if (e instanceof FsConflict) return json({ ok: true, duplicate: true }, 200, c.headers); throw e; }
   const bk = r.payload.booking as Record<string, unknown>;
-  await sendMail(c.env, c.d, await ownerEmail(c, wid), `New booking request: ${String(bk.customerName)}`,
-    `${String(bk.customerName)} (${String(bk.customerPhone)}) asked to book ${String(bk.service)} on ${String(bk.startsAt)}.\n\nOpen your dashboard to confirm it.`);
+  const owner = await ownerContact(c, wid);
+  const ws = await fsGet(c.env, c.d, `workspaces/${wid}`);
+  const off = Number((ws?.data.settings as Record<string, unknown> | undefined)?.utcOffsetMinutes ?? 60);
+  const price = Number(bk.priceMinor ?? 0);
+  await sendFormal(c.env, c.d, owner.email, `New booking request: ${String(bk.customerName)}`, {
+    heading: 'You have a new booking request', preheader: `${String(bk.customerName)} wants to book ${String(bk.service)}`, greeting: `Hello ${owner.name},`,
+    paragraphs: [`${String(bk.customerName)} has asked to book through your ZexCore booking page. Please review it and confirm or decline from your dashboard.`],
+    details: [['Customer', String(bk.customerName)], ['Phone', String(bk.customerPhone)], ['Service', String(bk.service || 'Service')], ['When', localWhen(String(bk.startsAt), off)], ['Reference', String(bk.ref)], ...(price > 0 ? [['Price', `$${(price / 100).toFixed(2)}`] as [string, string]] : [])],
+    button: { text: 'Open dashboard', url: `${c.env.APP_URL.replace(/\/$/, '')}/app/bookings` },
+    note: 'You receive this email each time a customer books through your public page.' });
   return json({ ok: true, ran: await fireEvent(c, wid, 'bookings.booking.created', r.payload) }, 200, c.headers);
 }

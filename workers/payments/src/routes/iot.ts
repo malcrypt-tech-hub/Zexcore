@@ -3,10 +3,10 @@
  *   POST /api/iot/ingest   headers: x-tenant-id (workspace id), x-device-token   body: { metrics: { temperature: 4.2 } }
  */
 import { alertHit, ALERT_OPS, type AlertOp } from '../../../../shared/rules-engine';
-import { fireEvent, ownerEmail } from '../automation';
+import { fireEvent, ownerContact } from '../automation';
 import type { Ctx } from '../env';
 import { fsCommit, fsQuery } from '../fs';
-import { sendMail } from '../mail';
+import { sendFormal } from '../mail';
 import { HttpError, WID_RE, json, randomHex, readJson, sha256Hex, timingSafeEqual } from '../util';
 
 const DAY = 86_400_000;
@@ -58,7 +58,11 @@ export async function ingest(c: Ctx): Promise<Response> {
       { path: a.path, fields: { lastFiredAt: now }, mask: ['lastFiredAt'] },
     ]);
     fired += 1;
-    await sendMail(c.env, c.d, await ownerEmail(c, wid), `ZexCore alert: ${message}`, `${message}\n\nSeverity: ${alert.severity}\nDevice: ${device.name}`);
+    const owner = await ownerContact(c, wid);
+    await sendFormal(c.env, c.d, owner.email, `ZexCore alert: ${message}`, {
+      heading: 'Device alert', greeting: `Hello ${owner.name},`, paragraphs: [message],
+      details: [['Device', String(device.name)], ['Severity', String(alert.severity)], ['Reading', `${String(d.metric)} is ${String(metrics[String(d.metric)])}`], ['Time', now.toISOString().replace('T', ' ').slice(0, 16) + ' UTC']],
+      button: { text: 'Open dashboard', url: `${c.env.APP_URL.replace(/\/$/, '')}/app/devices` }, note: 'You receive this because an alert rule on this device fired. Repeats are limited to one every ten minutes.' });
     await fireEvent(c, wid, 'iot.alert', { device, alert });
   }
   await fireEvent(c, wid, 'iot.reading', { device, metrics });

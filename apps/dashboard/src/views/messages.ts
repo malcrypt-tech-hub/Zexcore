@@ -2,7 +2,7 @@ import { html, mount, $ } from '../lib/html';
 import { ic } from '../lib/icons';
 import { api, ApiError } from '../lib/api';
 import { ago, initials, timeOf, whenLabel, money } from '../lib/format';
-import { emptyState, errorState, skeletonRows, toast, openModal, busy } from '../lib/ui';
+import { emptyState, errorState, skeletonRows, toast, openModal, busy, copyText, sendViaWhatsApp } from '../lib/ui';
 import { loadSettings, offset } from '../lib/store';
 import { refreshUnread } from '../layouts';
 import { canManage } from '../lib/session';
@@ -47,10 +47,11 @@ export async function renderMessages(view: HTMLElement, phoneParam?: string | nu
       const name = b?.customerName ?? '';
       mount(host, html`
         <div class="card-head"><div class="row"><span class="avatar">${initials(name || r.phone)}</span><div><b>${name || r.phone}</b><div class="muted small mono">${r.phone}</div></div></div>
-          <a class="btn btn-secondary btn-sm btn-icon" href="tel:${r.phone}" aria-label="Call">${ic('phone', 'ico-sm')}</a></div>
+          ${matchMedia('(pointer: coarse)').matches ? html`<a class="btn btn-secondary btn-sm btn-icon" href="tel:${r.phone}" aria-label="Call ${r.phone}">${ic('phone', 'ico-sm')}</a>` : html`<button class="btn btn-secondary btn-sm btn-icon" data-copy-phone aria-label="Copy phone number" title="Copy phone number">${ic('copy', 'ico-sm')}</button>`}</div>
         ${b ? html`<div class="row between wrap" style="padding:12px 20px;background:var(--canvas);border-bottom:1px solid var(--border);gap:16px"><div><div class="faint small" style="text-transform:uppercase;letter-spacing:.06em">Next slot</div><b>${whenLabel(b.startsAt, offset())}</b></div><div><div class="faint small" style="text-transform:uppercase;letter-spacing:.06em">Deposit</div><b class="mono">${b.depositMinor ? `${money(b.depositMinor, b.currency)} ${b.depositStatus}` : 'None'}</b></div></div>` : ''}
         <div class="thread" id="msgs" style="max-height:52vh;overflow:auto">${r.messages.length === 0 ? html`<p class="muted small" style="text-align:center">No messages yet.</p>` : r.messages.map((m) => m.kind === 'system' ? html`<div class="msg-sys">${m.body}</div>` : m.kind === 'payment' ? html`<div class="msg-pay"><span class="icon-tile" style="background:var(--success);color:#fff;border-radius:50%">${ic('shield-check')}</span><div><b>Payment received</b><div class="muted small mono">${m.body}</div></div></div>` : html`<div class="msg ${m.direction}">${m.body}<span class="ts">${timeOf(m.createdAt, offset())}</span></div>`)}</div>
         ${canManage() ? html`<form class="compose" id="reply" autocomplete="off"><input class="input" id="rb" placeholder="Write a reply" maxlength="2000" aria-label="Reply"><button class="btn btn-primary btn-icon" type="submit" aria-label="Send">${ic('send', 'ico-sm')}</button></form><p class="hint" style="padding:0 14px 12px">Replies are saved here and opened in WhatsApp so you can send them to the customer.</p>` : ''}`);
+      $('[data-copy-phone]', host)?.addEventListener('click', () => copyText(r.phone));
       const box = $('#msgs', host); if (box) box.scrollTop = box.scrollHeight;
       await api('/api/bookings/conversation/read', { method: 'POST', body: { phone: active } }).catch(() => {});
       void refreshUnread();
@@ -59,8 +60,7 @@ export async function renderMessages(view: HTMLElement, phoneParam?: string | nu
         const input = $('#rb', host) as HTMLInputElement; const body = input.value.trim(); if (!body) return;
         void busy($('#reply button', host) as HTMLButtonElement, async () => {
           try {
-            const res = await api<{ whatsappUrl: string }>('/api/bookings/messages', { method: 'POST', body: { phone: active, body } });
-            window.open(res.whatsappUrl, '_blank', 'noopener,noreferrer');
+            await sendViaWhatsApp(() => api<{ whatsappUrl: string }>('/api/bookings/messages', { method: 'POST', body: { phone: active, body } }));
             await loadThread(); await loadConvs();
           } catch (x) { toast(x instanceof ApiError ? x.message : 'Could not send', 'error'); }
         });
@@ -76,8 +76,8 @@ export async function renderMessages(view: HTMLElement, phoneParam?: string | nu
       onMount: (el, close) => $('[data-send]', el)!.addEventListener('click', () => void busy($('[data-send]', el) as HTMLButtonElement, async () => {
         const err = $('#nc-err', el)!; err.classList.add('hidden');
         try {
-          const res = await api<{ whatsappUrl: string }>('/api/bookings/messages', { method: 'POST', body: { phone: ($('#ncp', el) as HTMLInputElement).value, name: ($('#ncn', el) as HTMLInputElement).value, body: ($('#ncb', el) as HTMLTextAreaElement).value } });
-          window.open(res.whatsappUrl, '_blank', 'noopener,noreferrer'); close(); await loadConvs();
+          await sendViaWhatsApp(() => api<{ whatsappUrl: string }>('/api/bookings/messages', { method: 'POST', body: { phone: ($('#ncp', el) as HTMLInputElement).value, name: ($('#ncn', el) as HTMLInputElement).value, body: ($('#ncb', el) as HTMLTextAreaElement).value } }));
+          close(); await loadConvs();
         } catch (x) { err.textContent = x instanceof ApiError ? x.message : 'Could not send'; err.classList.remove('hidden'); }
       })),
     });

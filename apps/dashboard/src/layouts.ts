@@ -21,7 +21,8 @@ const NAV: { label?: string; items: { href: string; icon: IconName; text: string
   ] },
   { label: 'Business', items: [
     { href: '/app/services', icon: 'list-checks', text: 'Services' },
-    { href: '/app/team', icon: 'id-card', text: 'Team' },
+    { href: '/app/team', icon: 'id-card', text: 'Bookable staff' },
+    { href: '/app/access', icon: 'users', text: 'Team access' },
     { href: '/app/booking-page', icon: 'link', text: 'Booking page' },
   ] },
   { label: 'Workspace tools', items: [
