@@ -425,3 +425,40 @@ describe('deposits and payouts (written only by the payments Worker)', () => {
     await assertFails(updateDoc(doc(other(), 'slugs', SLUG), { depositEnabled: true }));
   });
 });
+
+describe('calendar appointments', () => {
+  const appt = (over: object = {}) => ({ title: 'Meet supplier', date: '2026-11-09', startMin: 600, durationMin: 30, notes: null, priority: 'normal', pinned: false, reminderMin: 30,
+    recur: { freq: 'none', interval: 1, until: null }, recurring: false, done: false, createdAt: serverTimestamp(), createdBy: 'owner1', ...over });
+  const ref = (db: any, id: string) => doc(db, 'workspaces', W, 'appointments', id);
+  beforeEach(async () => { await createWorkspace(owner()); });
+
+  it('members add, change and delete appointments on any date, past or years ahead', async () => {
+    await assertSucceeds(setDoc(ref(owner(), '20261109_0'), appt()));
+    await assertSucceeds(setDoc(ref(owner(), '20300101_0'), appt({ date: '2030-01-01' })));
+    await assertSucceeds(setDoc(ref(owner(), '20200101_0'), appt({ date: '2020-01-01' })));
+    await assertSucceeds(updateDoc(ref(owner(), '20261109_0'), { pinned: true, priority: 'high' }));
+    await assertSucceeds(deleteDoc(ref(owner(), '20261109_0')));
+  });
+  it('a day holds at most fifteen: slot 15 and ids that do not match the date are refused', async () => {
+    for (const n of [0, 7, 14]) await assertSucceeds(setDoc(ref(owner(), `20261109_${n}`), appt()));
+    await assertFails(setDoc(ref(owner(), '20261109_15'), appt()));
+    await assertFails(setDoc(ref(owner(), '20261110_0'), appt()));          // date field says 09
+    await assertFails(setDoc(ref(owner(), 'anything'), appt()));
+  });
+  it('rejects bad contents and moving an appointment to another date', async () => {
+    await assertFails(setDoc(ref(owner(), '20261109_1'), appt({ title: '' })));
+    await assertFails(setDoc(ref(owner(), '20261109_1'), appt({ priority: 'urgent' })));
+    await assertFails(setDoc(ref(owner(), '20261109_1'), appt({ startMin: 1500 })));
+    await assertFails(setDoc(ref(owner(), '20261109_1'), appt({ reminderMin: -1 })));
+    await assertFails(setDoc(ref(owner(), '20261109_1'), appt({ recur: { freq: 'daily', interval: 0, until: null }, recurring: true })));
+    await assertFails(setDoc(ref(owner(), '20261109_1'), appt({ recurring: true })));              // flag must match the repeat rule
+    await assertFails(setDoc(ref(owner(), '20261109_1'), appt({ extra: 'x' })));
+    await assertSucceeds(setDoc(ref(owner(), '20261109_2'), appt()));
+    await assertFails(updateDoc(ref(owner(), '20261109_2'), { date: '2026-11-10' }));
+  });
+  it('outsiders cannot read or write another workspace calendar', async () => {
+    await assertSucceeds(setDoc(ref(owner(), '20261109_0'), appt()));
+    await assertFails(getDoc(ref(other(), '20261109_0')));
+    await assertFails(setDoc(ref(other(), '20261109_1'), appt()));
+  });
+});

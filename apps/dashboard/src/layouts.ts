@@ -148,6 +148,7 @@ export async function appLayout(path: string, onNew: () => void): Promise<HTMLEl
     document.addEventListener('click', () => panel.classList.add('hidden'));
     $('[data-logout]')!.addEventListener('click', () => { logout(); clearStore(); navigate('/signin'); });
     void refreshUnread();
+    void import('./lib/reminders').then((m) => m.startReminders());
     // Patch logo and business name from settings without blocking first paint.
     void loadSettings().then((s) => {
       const name = s.publicName || me.tenant.name;

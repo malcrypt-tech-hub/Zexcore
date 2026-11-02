@@ -140,7 +140,7 @@ const appRoute = (path: string, loader: () => Promise<(view: HTMLElement, ctx: {
 route('/app/onboarding', async () => { const { renderOnboarding } = await import('./views/onboarding'); await renderOnboarding(); });
 appRoute('/app', () => import('./views/home').then((m) => m.renderHome));
 appRoute('/app/bookings', () => import('./views/bookings').then((m) => m.renderBookings));
-appRoute('/app/calendar', () => import('./views/calendar').then((m) => m.renderCalendar));
+appRoute('/app/calendar', () => import('./views/calendar').then((m) => (v, c) => m.renderCalendar(v, c.query.get('date'))));
 appRoute('/app/messages', () => import('./views/messages').then((m) => (v, c) => m.renderMessages(v, c.query.get('phone'))));
 appRoute('/app/more', () => import('./views/manage').then((m) => m.renderMore));
 appRoute('/app/customers', () => import('./views/customers').then((m) => m.renderCustomers));
