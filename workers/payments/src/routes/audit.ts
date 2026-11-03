@@ -28,7 +28,7 @@ export async function appendAudit(c: Ctx, wid: string, actor: string, action: st
     const hash = await entryHash(prev, seq, at.toISOString(), actor, action, target, detail);
     try {
       await fsCommit(c.env, c.d, [
-        { path: `workspaces/${wid}/auditChain/${entryId(seq)}`, fields: { seq, at, actor, action, target, detail, prevHash: prev, hash }, precondition: { exists: false } },
+        { path: `workspaces/${wid}/auditChain/${entryId(seq)}`, fields: { seq, at, actor, action, target, detail, prevHash: prev, hash }, precondition: { exists: false }, serverTime: ['committedAt'] },
         { path: `workspaces/${wid}/auditMeta/head`, fields: { seq, hash, at }, precondition: head ? { updateTime: head.updateTime } : { exists: false } },
       ]);
       return { seq, hash };

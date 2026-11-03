@@ -21,9 +21,11 @@ const roleLabel = (r: string): string => ({ owner: 'Owner', admin: 'Admin', edit
 
 export async function renderAccess(view: HTMLElement): Promise<void> {
   const me = current()!;
+  if (me.role === 'viewer') { mount(view, html`<div class="card card-pad">${errorState('Team access is not available to read-only logins.', false)}</div>`); return; }
   const isOwner = me.role === 'owner', isAdmin = isOwner || me.role === 'admin';
   const viewerOk = hasFeatureAccess(me.tenant.tier, 'export');   // Enterprise and Dedicated
-  mount(view, html`<div class="page-head"><div><h1>Team access</h1><p>People who can sign in to ${me.tenant.name}. Staff that customers book with are managed under Bookable staff.</p></div>${isAdmin ? html`<button class="btn btn-primary" data-invite>${ic('plus', 'ico-sm')} Invite</button>` : ''}</div>
+  mount(view, html`<div class="page-head"><div><h1>Team access</h1><p>People who can sign in to ${me.tenant.name}. Staff that customers book with are managed under Bookable staff.</p></div><button class="btn btn-primary" data-invite ${isAdmin ? html`` : html`disabled aria-disabled="true" title="Only owners and admins can invite people"`}>${ic('plus', 'ico-sm')} Invite</button></div>
+    ${isAdmin ? '' : html`<div class="alert alert-info" style="margin-bottom:16px">${ic('info', 'ico-sm')} You can see who has access. Only owners and admins can invite, change roles or remove people.</div>`}
     <div class="card" id="l"></div>
     <div class="card card-pad" style="margin-top:16px"><h3 style="margin-bottom:8px">What each role can do</h3>
       <div class="stack-sm">${(['owner', 'admin', 'editor', 'viewer'] as const).map((r) => html`<div class="small"><b>${roleLabel(r)}.</b> ${ROLE_TEXT[r]!.replace(/^[A-Za-z]+\. /, '')}</div>`)}</div></div>`);
@@ -40,7 +42,7 @@ export async function renderAccess(view: HTMLElement): Promise<void> {
         ${d.members.map((m) => html`<div class="list-item"><span class="avatar green">${(m.name ?? m.email ?? '?').slice(0, 1).toUpperCase()}</span>
           <div class="grow"><b>${m.name ?? m.email ?? 'Member'}</b> ${m.you ? html`<span class="badge">You</span>` : ''}<div class="muted small">${m.email ?? ''}</div></div>
           <span class="badge">${roleLabel(m.role)}</span>
-          ${m.role !== 'owner' && (isOwner || (isAdmin && (m.role === 'editor' || m.role === 'viewer'))) && !m.you ? html`<button class="btn btn-ghost btn-sm" data-manage="${m.uid}">Manage</button>` : ''}
+          ${m.role !== 'owner' && !m.you ? (isOwner || (isAdmin && (m.role === 'editor' || m.role === 'viewer')) ? html`<button class="btn btn-ghost btn-sm" data-manage="${m.uid}">Manage</button>` : html`<button class="btn btn-ghost btn-sm" disabled aria-disabled="true" title="Only owners and admins can manage people">Manage</button>`) : ''}
           ${m.you && m.role !== 'owner' ? html`<button class="btn btn-ghost btn-sm" data-leave>Leave</button>` : ''}</div>`)}
         ${d.invites.map((i) => html`<div class="list-item"><span class="avatar grey">${ic('mail', 'ico-sm')}</span>
           <div class="grow"><b>${i.email}</b> <span class="badge">Invited as ${roleLabel(i.role)}</span><div class="muted small">Waiting to accept${i.expiresAt ? ` until ${new Date(i.expiresAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}` : ''}</div></div>

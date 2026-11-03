@@ -30,6 +30,7 @@ async function idToken(over: Record<string, unknown> = {}, key = idKey.privateKe
 // ── in-memory Firestore + Google + Paystack ──
 type Doc = { fields: Record<string, any>; v: number };
 let emails: any[] = [];
+let deletedLogins: string[] = [];
 let store: Map<string, Doc>; let commits: any[]; let paystackInit: any[]; let paystackVerify: Record<string, any>; let paystackSub: any[];
 const fsPath = (u: string) => decodeURIComponent(u.split('/documents/')[1]!.split('?')[0]!);
 function mockFetch(): typeof fetch {
@@ -54,6 +55,7 @@ function mockFetch(): typeof fetch {
       commits.push(writes);
       return Response.json({});
     }
+    if (url.includes('identitytoolkit.googleapis.com') && url.endsWith('/accounts:delete')) { deletedLogins.push(JSON.parse(init.body).localId); return Response.json({}); }
     if (url === 'https://api.resend.com/emails') { emails.push(JSON.parse(init.body)); return Response.json({ id: 'e1' }); }
     if (url.endsWith(':runQuery')) {   // lists a collection under a parent; filters are not evaluated (tests seed only what they need)
       const parent = decodeURIComponent(url.split('/documents')[1]!.replace(/:runQuery$/, '')).replace(/^\//, '');
@@ -597,5 +599,72 @@ describe('formal e-mails', () => {
     const m = emails.find((x) => String(x.subject).startsWith('New booking request'))!;
     expect(m.html).not.toContain('<img src=x'); expect(m.html).toContain('&lt;img');
     expect(m.html).toContain('Sat, 7 Nov 2026 at 4:00 PM'); expect(m.html).toContain('Open dashboard'); expect(m.html).toContain('Hello Sade');
+  });
+});
+
+describe('team changes and account deletion are audited', () => {
+  const W = 'abcdefghij0123456789';
+  const auditOf = (wid = W) => [...store.entries()].filter(([k]) => k.startsWith(`workspaces/${wid}/auditChain/`)).sort(([a], [b]) => a.localeCompare(b)).map(([, d]) => ({ action: fromFs(d.fields.action), actor: fromFs(d.fields.actor), detail: fromFs(d.fields.detail) }));
+  const nowS = () => Math.floor(NOW.getTime() / 1000);
+  const as = (sub: string, email: string, authTime = nowS()) => authed({ sub, email, email_verified: true, auth_time: authTime });
+  beforeEach(() => {
+    deletedLogins = [];
+    seedDoc(`workspaces/${W}`, { name: 'Audit Salon', plan: 'enterprise', planExpiresAt: new Date(NOW.getTime() + 20 * 86_400_000), ownerUid: 'owner1', slug: 'audit-salon' });
+    seedDoc(`workspaces/${W}/members/owner1`, { role: 'owner', email: 'sade@example.com' });
+    seedDoc(`workspaces/${W}/members/ed1`, { role: 'editor', email: 'ed@example.com' });
+    seedDoc('users/owner1', { workspaceIds: [W] });
+    seedDoc('users/ed1', { workspaceIds: [W] });
+    seedDoc('slugs/audit-salon', { wid: W });
+    seedDoc(`workspaces/${W}/bookings/b1`, { customerName: 'Tunde' });
+    seedDoc(`workspaces/${W}/customers/c1`, { name: 'Tunde' });
+    seedDoc(`workspaces/${W}/devices/d1`, { name: 'Sensor' });
+    seedDoc(`workspaces/${W}/devices/d1/readings/r1`, { v: 1 });
+  });
+
+  it('invite, role change and removal each leave a log entry naming who did it', async () => {
+    const inv = await call('/api/team/invite', { body: JSON.stringify({ wid: W, email: 'new@example.com', role: 'admin' }), headers: await as('owner1', 'sade@example.com') });
+    expect(inv.status).toBe(200);
+    expect((await call('/api/team/role', { body: JSON.stringify({ wid: W, uid: 'ed1', role: 'viewer' }), headers: await as('owner1', 'sade@example.com') })).status).toBe(200);
+    expect((await call('/api/team/remove', { body: JSON.stringify({ wid: W, uid: 'ed1' }), headers: await as('owner1', 'sade@example.com') })).status).toBe(200);
+    const log = auditOf();
+    expect(log.map((e) => e.action)).toEqual(['team.invite', 'team.role', 'team.remove']);
+    expect(log.every((e) => e.actor === 'owner1')).toBe(true);
+    expect(log[0]!.detail).toBe('new@example.com as admin');
+    expect(log[1]!.detail).toContain('editor to viewer');
+  });
+
+  it('a member deleting their account leaves the workspace and is logged', async () => {
+    const r = await call('/api/account/delete', { body: JSON.stringify({ confirm: 'ED@example.com' }), headers: await as('ed1', 'ed@example.com') });
+    expect(r.status).toBe(200);
+    expect(store.has(`workspaces/${W}/members/ed1`)).toBe(false);
+    expect(store.has('users/ed1')).toBe(false);
+    expect(store.has(`workspaces/${W}/bookings/b1`)).toBe(true);   // the workspace itself is untouched
+    expect(deletedLogins).toEqual(['ed1']);
+    expect(auditOf().map((e) => [e.action, e.actor])).toEqual([['account.delete', 'ed1']]);
+  });
+
+  it('an owner deleting their account logs it first, then erases the workspace but keeps the log', async () => {
+    const r = await call('/api/account/delete', { body: JSON.stringify({ confirm: 'sade@example.com' }), headers: await as('owner1', 'sade@example.com') });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ workspacesClosed: 1 });
+    for (const k of ['bookings/b1', 'customers/c1', 'devices/d1', 'devices/d1/readings/r1', 'members/owner1', 'members/ed1']) expect(store.has(`workspaces/${W}/${k}`)).toBe(false);
+    expect(store.has('slugs/audit-salon')).toBe(false);
+    expect(store.has('users/owner1')).toBe(false);
+    expect(fromFs(store.get('users/ed1')!.fields.workspaceIds)).toEqual([]);   // teammates lose the workspace
+    expect(fromFs(store.get(`workspaces/${W}`)!.fields.status)).toBe('deleted');
+    expect(auditOf().map((e) => [e.action, e.actor])).toEqual([['account.delete', 'owner1']]);
+    expect(deletedLogins).toEqual(['owner1']);
+  });
+
+  it('needs a recent sign-in and the exact email', async () => {
+    const stale = await call('/api/account/delete', { body: JSON.stringify({ confirm: 'sade@example.com' }), headers: await as('owner1', 'sade@example.com', nowS() - 3600) });
+    expect(stale.status).toBe(401);
+    expect(((await stale.json()) as { code: string }).code).toBe('reauth');
+    const wrong = await call('/api/account/delete', { body: JSON.stringify({ confirm: 'someone@else.com' }), headers: await as('owner1', 'sade@example.com') });
+    expect(wrong.status).toBe(400);
+    expect((await call('/api/account/delete', { body: JSON.stringify({ confirm: 'sade@example.com' }), headers: { 'content-type': 'application/json' } })).status).toBe(401);
+    expect(store.has(`workspaces/${W}/bookings/b1`)).toBe(true);
+    expect(auditOf()).toEqual([]);
+    expect(deletedLogins).toEqual([]);
   });
 });

@@ -228,6 +228,8 @@ describe('team roles', () => {
     await assertFails(updateDoc(doc(ed, 'workspaces', W), { name: 'Hijack' }));
     await assertFails(setDoc(doc(ed, 'workspaces', W, 'members', 'editor1'), { role: 'owner' }));
     await assertFails(getDoc(doc(ed, 'workspaces', W, 'invites', 'x')));
+    await assertSucceeds(getDocs(collection(ed, 'workspaces', W, 'members')));   // editors can see who has access
+    await assertSucceeds(deleteDoc(doc(ed, 'workspaces', W, 'services', 's_0')));
   });
   it('a viewer reads records, payments and the audit log, but changes nothing and sees no chats or bank details', async () => {
     const v = asRole('viewer1');
@@ -241,6 +243,9 @@ describe('team roles', () => {
     await assertFails(setDoc(doc(v, 'workspaces', W, 'services', 's_0'), svc()));
     await assertFails(setDoc(doc(v, 'workspaces', W, 'contacts', 'c_0'), { name: 'X' }));
     await assertFails(updateDoc(doc(v, 'workspaces', W), { name: 'Hijack' }));
+    // Team access is not for read-only logins: they can read their own row (the app needs it) but not list the team
+    await assertSucceeds(getDoc(doc(v, 'workspaces', W, 'members', 'viewer1')));
+    await assertFails(getDocs(collection(v, 'workspaces', W, 'members')));
   });
   it('an admin runs the workspace; a stranger and invites are closed to clients', async () => {
     const ad = asRole('admin1');

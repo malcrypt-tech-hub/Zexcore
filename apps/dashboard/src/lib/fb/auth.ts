@@ -1,9 +1,10 @@
 import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updateProfile, sendEmailVerification, sendPasswordResetEmail,
-  confirmPasswordReset, applyActionCode, GoogleAuthProvider, signInWithPopup, type User, EmailAuthProvider, reauthenticateWithCredential, updatePassword, deleteUser,
+  confirmPasswordReset, applyActionCode, GoogleAuthProvider, signInWithPopup, type User, EmailAuthProvider, reauthenticateWithCredential, updatePassword, deleteUser, reauthenticateWithPopup,
 } from 'firebase/auth';
 import { collection, doc, getDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { fb } from './firebase';
+import { worker } from './worker';
 import { ApiError, DEFAULT_SETTINGS, clearCtx, loadCtx, toApiError, claimSlot, type Ctx } from './core';
 import { syncBookingCap } from './catalog';
 
@@ -114,8 +115,12 @@ async function createWorkspaceFor(user: User, tenantName: string, name: string, 
   clearCtx();
   await updateProfile(user, { displayName: name }).catch(() => undefined);
   // Every business needs one bookable calendar. It is replaced if the owner adds their own team member (see staff handler).
-  const ctx = await loadCtx(true);
-  await claimSlot(ctx, 'staff', 'p', 'staff', { name, title: 'Owner', active: true, auto: true }).catch(() => undefined);
+  // The workspace now exists. The first calendar is a convenience: if it cannot be made right now the owner can add one under Bookable staff,
+  // and it must never turn a successful sign-up into an error.
+  try {
+    const ctx = await loadCtx(true);
+    await claimSlot(ctx, 'staff', 'p', 'staff', { name, title: 'Owner', active: true, auto: true });
+  } catch { /* the owner can add a calendar under Bookable staff */ }
 }
 
 /** Google sign-in through Firebase Authentication. Returns whether the person already has a workspace. */
@@ -145,6 +150,38 @@ export async function googleCreateWorkspace(tenantName: string): Promise<void> {
   const n = String(tenantName ?? '').trim();
   if (n.length < 2 || n.length > 120) throw new ApiError(400, 'Enter your business name.');
   await createWorkspaceFor(user, n, user.displayName ?? n, undefined, false);
+}
+
+/** How this account signs in, so the app knows whether to ask for a password or the Google window to confirm it is really them. */
+export function signInMethod(): 'password' | 'google' {
+  const u = fb().auth.currentUser;
+  return u?.providerData.some((p) => p.providerId === 'password') ? 'password' : 'google';
+}
+
+/** Permanently deletes the signed-in account (and every workspace it owns). Re-confirms the sign-in first; the Worker re-checks it. */
+export async function deleteAccount(password: string | undefined, confirmEmail: string): Promise<void> {
+  const { auth } = fb();
+  const user = auth.currentUser;
+  if (!user || !user.email) throw new ApiError(401, 'Please sign in again.', 'unauthenticated');
+  if (confirmEmail.trim().toLowerCase() !== user.email.toLowerCase()) throw new ApiError(400, 'Type your sign-in email exactly to confirm.');
+  try {
+    if (signInMethod() === 'password') {
+      if (!password) throw new ApiError(400, 'Enter your password to confirm.');
+      await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
+    } else {
+      await reauthenticateWithPopup(user, new GoogleAuthProvider());
+    }
+    await user.getIdToken(true);   // fresh token carrying the new sign-in time
+  } catch (e) {
+    if (e instanceof ApiError) throw e;
+    const code = (e as { code?: string }).code ?? '';
+    if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') throw new ApiError(400, 'That password is not right.', code);
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') throw new ApiError(0, 'Confirmation was cancelled.', code);
+    throw authMessage(e);
+  }
+  await worker('/api/account/delete', { body: { confirm: confirmEmail } });
+  clearCtx();
+  try { await signOut(auth); } catch { /* the login is already gone */ }
 }
 
 export async function login(email: string, password: string): Promise<void> {

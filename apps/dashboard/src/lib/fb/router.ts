@@ -40,12 +40,16 @@ on('GET', '/api/auth/sessions', () => ({ sessions: [] }));
 on('POST', '/api/auth/sessions/revoke-others', () => { throw unavailable('Signing out other devices'); });
 on('DELETE', '/api/auth/sessions/:id', () => { throw unavailable('Signing out other devices'); });
 
+on('GET', '/api/account/method', () => ({ method: authApi.signInMethod() }));
+on('POST', '/api/account/delete', async ({ body }) => { await authApi.deleteAccount(body.password, String(body.confirm ?? '')); return { ok: true }; });
+
 // ── workspace catalog ──
 on('GET', '/api/bookings/settings', () => cat.getSettings());
 on('PUT', '/api/bookings/settings', ({ body }) => cat.putSettings(body));
 on('GET', '/api/bookings/services', async () => ({ services: await cat.listServices(await loadCtx()) }));
 on('POST', '/api/bookings/services', ({ body }) => cat.createService(body));
 on('PATCH', '/api/bookings/services/:id', ({ params, body }) => cat.patchService(params[0]!, body));
+on('DELETE', '/api/bookings/services/:id', ({ params }) => cat.deleteService(params[0]!));
 on('GET', '/api/bookings/staff', async () => ({ staff: await cat.listStaff(await loadCtx()) }));
 on('POST', '/api/bookings/staff', ({ body }) => cat.createStaff(body));
 on('PATCH', '/api/bookings/staff/:id', ({ params, body }) => cat.patchStaff(params[0]!, body));

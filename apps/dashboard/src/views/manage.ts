@@ -2,7 +2,7 @@ import { html, mount, $, $$, type Raw } from '../lib/html';
 import { ic, type IconName } from '../lib/icons';
 import { api, ApiError } from '../lib/api';
 import { money, initials, minutesToTime, timeToMinutes } from '../lib/format';
-import { toast, openModal, emptyState, errorState, skeletonRows, busy, copyText } from '../lib/ui';
+import { toast, openModal, emptyState, errorState, skeletonRows, busy, copyText, confirmDialog } from '../lib/ui';
 import { loadSettings, bookingUrl, clearStore, type Service, type Staff } from '../lib/store';
 import { canAdmin, canEdit, current, loadMe, logout } from '../lib/session';
 import { navigate } from '../router';
@@ -31,7 +31,7 @@ export function renderMore(view: HTMLElement): void {
   ];
   const me = current()!;
   mount(view, html`<div class="page-head"><div><h1>More</h1><p>${me.tenant.name}</p></div></div>
-    <div class="card list">${items.map((i) => html`<a class="list-item hover" href="${i.href}" data-link><span class="icon-tile">${ic(i.icon)}</span><span class="grow"><b>${i.t}</b><br><span class="muted small">${i.s}</span></span>${ic('chevron-right')}</a>`)}</div>
+    <div class="card list">${items.filter((i) => !(me.role === 'viewer' && i.href === '/app/access')).map((i) => html`<a class="list-item hover" href="${i.href}" data-link><span class="icon-tile">${ic(i.icon)}</span><span class="grow"><b>${i.t}</b><br><span class="muted small">${i.s}</span></span>${ic('chevron-right')}</a>`)}</div>
     <button class="btn btn-secondary btn-block" style="margin-top:16px" data-out>${ic('log-out', 'ico-sm')} Sign out</button>`);
   $('[data-out]', view)!.addEventListener('click', () => { logout(); navigate('/signin'); });
   void import('../lib/fb/team').then(async ({ myWorkspaces, switchWorkspace }) => {
@@ -66,13 +66,20 @@ export async function renderServices(view: HTMLElement): Promise<void> {
         <div class="field"><label for="sp">Price ($)</label><input class="input" id="sp" type="number" min="0" value="${s ? s.priceMinor / 100 : 0}"></div></div>
         <div class="field"><label for="sx">Description <span class="faint">(optional)</span></label><input class="input" id="sx" maxlength="500" value="${s?.description ?? ''}"></div>
         ${s ? html`<label class="check"><input type="checkbox" id="sa" ${s.active ? 'checked' : ''}> Show on my booking page</label>` : ''}</form>`,
-      footer: html`<button class="btn btn-secondary" data-close>Cancel</button><button class="btn btn-primary" data-save>Save</button>`,
-      onMount: (el, close) => $('[data-save]', el)!.addEventListener('click', () => void busy($('[data-save]', el) as HTMLButtonElement, async () => {
+      footer: html`${s ? html`<button class="btn btn-soft-danger" data-del style="margin-right:auto">${ic('trash-2', 'ico-sm')} Delete</button>` : ''}<button class="btn btn-secondary" data-close>Cancel</button><button class="btn btn-primary" data-save>Save</button>`,
+      onMount: (el, close) => {
+        $('[data-del]', el)?.addEventListener('click', async () => {
+          if (!await confirmDialog({ title: `Delete “${s!.name}”?`, message: 'Customers will no longer be able to book it. Bookings already made stay in your list and show as a removed service. To keep it but stop new bookings, untick “Show on my booking page” instead. This is recorded in your audit log.', confirmLabel: 'Delete service', danger: true })) return;
+          try { await api(`/api/bookings/services/${s!.id}`, { method: 'DELETE' }); toast('Service deleted', 'success'); close(); void load(); }
+          catch (x) { const e = $('#se', el)!; e.textContent = x instanceof ApiError ? x.message : 'Could not delete'; e.classList.remove('hidden'); }
+        });
+        $('[data-save]', el)!.addEventListener('click', () => void busy($('[data-save]', el) as HTMLButtonElement, async () => {
         const body: Record<string, unknown> = { name: ($('#sn', el) as HTMLInputElement).value.trim(), durationMin: Number(($('#sd', el) as HTMLInputElement).value), priceMinor: Math.round(Number(($('#sp', el) as HTMLInputElement).value) * 100), description: ($('#sx', el) as HTMLInputElement).value.trim() };
         if (s) body.active = ($('#sa', el) as HTMLInputElement).checked;
         try { await api(s ? `/api/bookings/services/${s.id}` : '/api/bookings/services', { method: s ? 'PATCH' : 'POST', body }); toast('Saved', 'success'); close(); void load(); }
         catch (x) { const e = $('#se', el)!; e.textContent = x instanceof ApiError ? x.message : 'Could not save'; e.classList.remove('hidden'); }
-      })),
+      }));
+      },
     });
   }
   $('[data-add]', view)?.addEventListener('click', () => edit());

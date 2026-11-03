@@ -5,6 +5,7 @@
  * This Worker is that something. It holds the Paystack secret and a service account and never believes amounts,
  * tiers, plans or identities sent by a browser or found in webhook metadata.
  */
+import { deleteAccount } from './routes/account';
 import { realDeps, type Ctx, type Deps, type Env } from './env';
 import { HttpError, cors, json } from './util';
 import { checkout, webhook } from './routes/billing';
@@ -56,6 +57,7 @@ const ROUTES: Record<string, Handler> = {
   'POST /api/team/revoke': revoke,
   'POST /api/team/role': setRole,
   'POST /api/team/remove': remove,
+  'POST /api/account/delete': deleteAccount,
 };
 
 /** Routes that take or confirm money. They stay off unless a live Paystack key is set (or the Worker is explicitly marked staging). */

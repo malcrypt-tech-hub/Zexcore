@@ -5,6 +5,7 @@ import { money, timeOf, longDate } from '../lib/format';
 import { errorState, skeletonRows, copyText } from '../lib/ui';
 import { current } from '../lib/session';
 import { loadSettings, bookingUrl, type Booking } from '../lib/store';
+import { termsFor } from '../lib/bizTerms';
 import { statusBadge, depositBadge, openNewBooking } from './bookings';
 
 interface Summary {
@@ -18,7 +19,8 @@ interface Summary {
 
 export async function renderHome(view: HTMLElement): Promise<void> {
   mount(view, html`<div class="skel" style="height:190px;border-radius:0 0 28px 28px;margin:-16px -16px 20px"></div>${skeletonRows(3)}`);
-  await loadSettings();
+  const settings = await loadSettings();
+  const tm = termsFor(settings.businessType);
   let s: Summary;
   try { s = await api<Summary>('/api/bookings/summary'); }
   catch (e) { mount(view, html`<div class="card">${errorState(e instanceof ApiError ? e.message : 'Could not load your dashboard')}</div>`); $('[data-retry]', view)?.addEventListener('click', () => void renderHome(view)); return; }
@@ -47,12 +49,16 @@ export async function renderHome(view: HTMLElement): Promise<void> {
         <span class="live-pill"><span class="dot" style="background:#7dffb0"></span>${s.businessName || me.tenant.name}</span>
       </div>
       <div class="stat-grid">
-        <div class="stat-tile"><div class="k">Bookings today ${ic('calendar-check', 'ico-sm')}</div><div class="v num">${s.todayBookings.length}</div></div>
+        <div class="stat-tile"><div class="k">${tm.many.charAt(0).toUpperCase() + tm.many.slice(1)} today ${ic('calendar-check', 'ico-sm')}</div><div class="v num">${s.todayBookings.length}</div></div>
         <div class="stat-tile"><div class="k">Waiting for reply ${ic('message-square', 'ico-sm')}</div><div class="v num">${a.waitingReplies}</div></div>
         <div class="stat-tile"><div class="k">Deposits this week ${ic('banknote', 'ico-sm')}</div><div class="v num">${money(s.week.depositsMinor, cur)}</div></div>
         <div class="stat-tile"><div class="k">No-shows this week ${ic('circle-check', 'ico-sm')}</div><div class="v num">${s.week.noShows}<small>${s.week.total ? `${Math.round((s.week.noShows / s.week.total) * 100)}%` : ''}</small></div></div>
       </div>
     </section>
+
+    <nav class="row wrap" style="gap:8px;margin-bottom:20px" aria-label="Quick actions">${tm.actions.map((x) => x.newBooking
+      ? html`<button class="btn btn-secondary btn-sm" data-new>${ic(x.icon, 'ico-sm')} ${x.t}</button>`
+      : html`<a class="btn btn-secondary btn-sm" href="${x.href!}" data-link>${ic(x.icon, 'ico-sm')} ${x.t}</a>`)}</nav>
 
     ${needsSetup ? html`
     <div class="card card-pad" style="margin-bottom:20px;border-color:var(--primary-border)">
@@ -74,8 +80,8 @@ export async function renderHome(view: HTMLElement): Promise<void> {
         </section>
 
         <section class="card" aria-labelledby="sched">
-          <div class="card-head"><div><h3 id="sched">Today's schedule</h3><div class="muted small">${s.todayBookings.length} ${s.todayBookings.length === 1 ? 'appointment' : 'appointments'}</div></div><a class="small" href="/app/bookings" data-link style="color:var(--primary);font-weight:600">See all</a></div>
-          ${s.todayBookings.length === 0 ? html`<div class="empty"><div class="badge-ico">${ic('calendar-days', 'ico-lg')}</div><h3>Nothing booked today</h3><p>Share your booking link or add a booking by hand.</p><div class="row"><button class="btn btn-primary btn-sm" data-new>${ic('plus', 'ico-sm')} New booking</button><button class="btn btn-secondary btn-sm" data-copy>${ic('copy', 'ico-sm')} Copy booking link</button></div></div>` : html`<div class="list">${s.todayBookings.map((b) => html`
+          <div class="card-head"><div><h3 id="sched">${tm.today}</h3><div class="muted small">${s.todayBookings.length} ${s.todayBookings.length === 1 ? tm.one : tm.many}</div></div><a class="small" href="/app/bookings" data-link style="color:var(--primary);font-weight:600">See all</a></div>
+          ${s.todayBookings.length === 0 ? html`<div class="empty"><div class="badge-ico">${ic('calendar-days', 'ico-lg')}</div><h3>${tm.emptyTitle}</h3><p>${tm.emptyText}</p><div class="row"><button class="btn btn-primary btn-sm" data-new>${ic('plus', 'ico-sm')} ${tm.newLabel}</button><button class="btn btn-secondary btn-sm" data-copy>${ic('copy', 'ico-sm')} Copy booking link</button></div></div>` : html`<div class="list">${s.todayBookings.map((b) => html`
             <div class="sched-item"><div class="time-box">${timeOf(b.startsAt, off).slice(0, 5)}<small>${timeOf(b.startsAt, off).slice(6)}</small></div>
               <div class="grow"><div class="row between"><b>${b.customerName}</b><span class="mono ${b.depositStatus === 'paid' ? '' : 'muted'}" style="${b.depositStatus === 'paid' ? 'color:var(--success)' : ''}">${b.depositStatus === 'paid' ? `${money(b.depositMinor, cur)} paid` : b.depositMinor ? `${money(b.depositMinor, cur)} due` : ''}</span></div>
               <div class="muted small" style="margin:2px 0 8px">${b.serviceName}${b.staffName ? ` · ${b.staffName}` : ''}</div>
@@ -85,8 +91,8 @@ export async function renderHome(view: HTMLElement): Promise<void> {
 
       <div class="stack-lg">
         <section class="card card-pad" aria-labelledby="wk">
-          <div class="row between"><div><h3 id="wk">Bookings this week</h3><div class="muted small">${s.week.total} total</div></div><span class="badge">Mon – Sun</span></div>
-          <div class="chart-bars" style="margin-top:18px" role="img" aria-label="Bookings per day this week">${s.week.perDay.map((n, i) => html`<div class="col ${i === todayIdx ? 'today' : ''}"><span class="num">${n || ''}</span><div class="bar-v" style="height:${Math.max(4, (n / max) * 88)}px"></div><span>${days[i]}</span></div>`)}</div>
+          <div class="row between"><div><h3 id="wk">${tm.many.charAt(0).toUpperCase() + tm.many.slice(1)} this week</h3><div class="muted small">${s.week.total} total</div></div><span class="badge">Mon – Sun</span></div>
+          <div class="chart-bars" style="margin-top:18px" role="img" aria-label="${tm.many} per day this week">${s.week.perDay.map((n, i) => html`<div class="col ${i === todayIdx ? 'today' : ''}"><span class="num">${n || ''}</span><div class="bar-v" style="height:${Math.max(4, (n / max) * 88)}px"></div><span>${days[i]}</span></div>`)}</div>
           <hr style="border:0;border-top:1px solid var(--border);margin:20px 0 14px">
           <h4>Popular services <span class="faint" style="font-weight:500">· last 30 days</span></h4>
           ${s.popularServices.length === 0 ? html`<p class="muted small" style="margin-top:8px">Your most booked services will appear here.</p>` : html`<div class="stack-sm" style="margin-top:12px">${s.popularServices.map((p) => html`<div><div class="row between small"><span>${p.name}</span><b class="num">${p.pct}%</b></div><div class="bar" style="margin-top:4px"><i style="width:${p.pct}%"></i></div></div>`)}</div>`}

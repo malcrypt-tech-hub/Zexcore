@@ -1,5 +1,5 @@
-import { doc, getDoc, getDocs, updateDoc, query, orderBy, type QueryDocumentSnapshot } from 'firebase/firestore';
-import { ApiError, DEFAULT_SETTINGS, audit, claimSlot, loadCtx, requireEditor, wsCol, wsDoc, type Ctx, type WorkspaceSettings } from './core';
+import { deleteDoc, doc, getDoc, getDocs, updateDoc, query, orderBy, type QueryDocumentSnapshot } from 'firebase/firestore';
+import { ApiError, DEFAULT_SETTINGS, audit, claimSlot, loadCtx, requireAdmin, requireEditor, wsCol, wsDoc, type Ctx, type WorkspaceSettings } from './core';
 import { fb } from './firebase';
 import { slotLimit } from './plan';
 
@@ -46,6 +46,16 @@ export async function patchService(id: string, b: Record<string, unknown>): Prom
   const c = await loadCtx(); requireEditor(c);
   await updateDoc(wsDoc(c, 'services', id), checkService(b, true));
   void audit(c, 'service.update', 'service', id);
+  return { ok: true };
+}
+
+export async function deleteService(id: string): Promise<{ ok: true }> {
+  const c = await loadCtx(); requireAdmin(c);
+  const ref = wsDoc(c, 'services', id);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new ApiError(404, 'That service no longer exists.');
+  await deleteDoc(ref);   // past bookings stay in the list and show as a removed service
+  void audit(c, 'service.delete', 'service', id, String(snap.data().name ?? '').slice(0, 120));
   return { ok: true };
 }
 

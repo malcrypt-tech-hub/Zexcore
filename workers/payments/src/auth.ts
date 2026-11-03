@@ -4,7 +4,7 @@ import { fsGet } from './fs';
 
 let jwksCache: { keys: any[]; exp: number } | null = null;
 export function resetJwksCache(): void { jwksCache = null; }
-export interface Caller { uid: string; email: string | null; emailVerified: boolean }
+export interface Caller { uid: string; email: string | null; emailVerified: boolean; /** Unix seconds of the last real sign-in (password or Google), from the token. */ authTime?: number }
 
 export async function verifyFirebaseIdToken(env: Env, d: Deps, token: string): Promise<Caller | null> {
   const parts = token.split('.');
@@ -15,7 +15,7 @@ export async function verifyFirebaseIdToken(env: Env, d: Deps, token: string): P
   const claimsOk = claims.aud === env.FIREBASE_PROJECT_ID && claims.iss === `https://securetoken.google.com/${env.FIREBASE_PROJECT_ID}`
     && typeof claims.exp === 'number' && claims.exp > nowS && typeof claims.sub === 'string' && !!claims.sub;
   // The Firebase Auth emulator issues unsigned tokens. Accepted ONLY when the emulator host is configured (tests), never in production.
-  if (env.FIRESTORE_EMULATOR_HOST && head.alg === 'none') return claimsOk ? { uid: claims.sub, email: claims.email ?? null, emailVerified: claims.email_verified === true } : null;
+  if (env.FIRESTORE_EMULATOR_HOST && head.alg === 'none') return claimsOk ? { uid: claims.sub, email: claims.email ?? null, emailVerified: claims.email_verified === true, authTime: typeof claims.auth_time === 'number' ? claims.auth_time : undefined } : null;
   if (head.alg !== 'RS256' || !head.kid) return null;
   if (!jwksCache || jwksCache.exp < nowS) {
     const r = await d.fetch('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com');
@@ -27,7 +27,7 @@ export async function verifyFirebaseIdToken(env: Env, d: Deps, token: string): P
   const key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
   const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, fromB64url(parts[2]!), enc.encode(`${parts[0]}.${parts[1]}`));
   if (!ok || !claimsOk) return null;
-  return { uid: claims.sub, email: claims.email ?? null, emailVerified: claims.email_verified === true };
+  return { uid: claims.sub, email: claims.email ?? null, emailVerified: claims.email_verified === true, authTime: typeof claims.auth_time === 'number' ? claims.auth_time : undefined };
 }
 
 export type Role = 'owner' | 'admin' | 'editor' | 'viewer' | 'staff';

@@ -48,7 +48,7 @@ export function toApiError(e: unknown): ApiError {
   if (code === 'unavailable' || code === 'auth/network-request-failed' || code === 'deadline-exceeded') return new ApiError(0, 'Cannot reach ZexCore. Check your connection and try again.', 'network');
   if (code === 'resource-exhausted') return new ApiError(429, 'ZexCore is busy right now. Please try again in a moment.', 'busy');
   if (code === 'unauthenticated') return new ApiError(401, 'Please sign in again.', 'unauthenticated');
-  return new ApiError(500, 'Something went wrong. Please try again.', code || undefined);
+  return new ApiError(500, code ? `Something went wrong (${code}). Please try again.` : 'Something went wrong. Please try again.', code || undefined);
 }
 
 export async function loadCtx(force = false): Promise<Ctx> {
@@ -162,8 +162,8 @@ export async function flushAudit(): Promise<void> {
   } finally { flushing = false; }
 }
 /** Tamper-evident audit trail: the Worker chains and signs each entry. Queued locally if the Worker is unreachable. Never blocks the action it describes. */
-export async function audit(c: Ctx, action: string, entity: string, entityId: string | null): Promise<void> {
-  writeQ([...readQ(), { wid: c.wid, action: action.replace(/[^a-z0-9_.]/g, '_'), target: `${entity}${entityId ? ':' + entityId : ''}`, detail: '' }]);
+export async function audit(c: Ctx, action: string, entity: string, entityId: string | null, detail = ''): Promise<void> {
+  writeQ([...readQ(), { wid: c.wid, action: action.replace(/[^a-z0-9_.]/g, '_'), target: `${entity}${entityId ? ':' + entityId : ''}`, detail: detail.slice(0, 300) }]);
   void flushAudit();
 }
 

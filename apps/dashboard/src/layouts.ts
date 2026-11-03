@@ -77,7 +77,7 @@ export async function appLayout(path: string, onNew: () => void): Promise<HTMLEl
           <a href="/app" data-link>${brand()}</a>
           ${NAV.map((g) => html`
             ${g.label ? html`<div class="nav-label">${g.label}</div>` : ''}
-            ${g.items.map((i) => {
+            ${g.items.filter((i) => !(me.role === 'viewer' && i.href === '/app/access')).map((i) => {
               const locked = i.feature && !hasFeatureAccess(me.tenant.tier, i.feature);
               return html`<a class="nav-link" href="${i.href}" data-link data-nav="${i.href}">
                 ${ic(i.icon)}
