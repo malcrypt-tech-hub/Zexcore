@@ -23,6 +23,12 @@ export const depositBadge = (b: Booking): Raw => {
   return '' as unknown as Raw;
 };
 
+export const riskBadge = (b: Booking): Raw => {
+  const r = b.risk; if (!r) return '' as unknown as Raw;
+  const cls = r.level === 'high' ? 'badge-warning' : r.level === 'medium' ? 'badge-primary' : '';
+  return html`<span class="badge ${cls}" title="${r.reasons.join(' · ')}">${r.level === 'low' ? '' : ic('triangle-alert', 'ico-sm')}No-show risk: ${r.level} (${r.score})</span>`;
+};
+
 export function bookingCard(b: Booking): Raw {
   const needs = b.depositStatus === 'unpaid' && (b.status === 'pending' || b.status === 'confirmed');
   return html`<article class="card booking-card ${needs ? 'needs' : ''}" data-id="${b.id}">
@@ -35,7 +41,8 @@ export function bookingCard(b: Booking): Raw {
       <div class="l"><b>${b.serviceName ?? 'Service'}</b><span class="ref">${b.ref}</span></div>
       <div class="l muted"><span>${b.staffName ? ic('user', 'ico-sm') : ''} ${b.staffName ?? 'Unassigned'}</span><span class="row" style="gap:4px">${ic('clock', 'ico-sm')} ${whenLabel(b.startsAt, offset())}</span></div>
     </div>
-    <div class="row wrap" style="gap:8px">${statusBadge(b.status)} ${depositBadge(b)}</div>
+    <div class="row wrap" style="gap:8px">${statusBadge(b.status)} ${depositBadge(b)} ${riskBadge(b)}</div>
+    ${b.risk && b.risk.level !== 'low' && b.status !== 'completed' && b.status !== 'cancelled' && b.status !== 'no_show' ? html`<div class="muted small">${b.risk.reasons.join(' · ')}</div>` : ''}
     ${needs && canManage() ? html`<button class="btn btn-primary btn-block" data-act="link">${ic('send', 'ico-sm')} Send payment link</button>` : ''}
     <div class="row" style="gap:8px">
       <a class="btn btn-secondary btn-sm grow" href="https://wa.me/${b.customerPhone.replace('+', '')}" target="_blank" rel="noopener noreferrer">${ic('message-circle', 'ico-sm')} WhatsApp</a>

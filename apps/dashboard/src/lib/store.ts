@@ -5,6 +5,7 @@ export interface Settings {
   exchangeRate?: number; depositEnabled: boolean; depositMinor: number; openMinutes: number; closeMinutes: number; slotMinutes: number;
   daysOpen: number[]; utcOffsetMinutes: number; leadMinutes: number; maxDaysAhead: number; onboarded: boolean;
   logoUrl?: string | null;
+  riskDepositEnabled?: boolean; riskDepositLevel?: 'medium' | 'high'; riskDepositMinor?: number;
 }
 export interface Service { id: string; name: string; description: string | null; durationMin: number; priceMinor: number; active: boolean }
 export interface Staff { id: string; name: string; title: string | null; active: boolean }
@@ -14,6 +15,7 @@ export interface Booking {
   customerName: string; customerPhone: string; customerEmail: string | null; startsAt: string; endsAt: string;
   currency: string; priceMinor: number; depositMinor: number; depositStatus: 'none' | 'unpaid' | 'paid' | 'refunded' | 'mismatch';
   paymentReference: string | null; notes: string | null; source: string;
+  risk?: { score: number; level: 'low' | 'medium' | 'high'; reasons: string[] } | null;
 }
 
 let settings: Settings | null = null;

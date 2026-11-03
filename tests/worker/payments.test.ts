@@ -1,3 +1,4 @@
+import { scoreRisk } from '../../workers/payments/src/risk';
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { creditDays } from '../../workers/payments/src/routes/billing.js';
 import { SEATS } from '../../workers/payments/src/routes/team.js';
@@ -666,5 +667,88 @@ describe('team changes and account deletion are audited', () => {
     expect(store.has(`workspaces/${W}/bookings/b1`)).toBe(true);
     expect(auditOf()).toEqual([]);
     expect(deletedLogins).toEqual([]);
+  });
+});
+
+describe('no-show risk', () => {
+  const RW = 'wsrisk0000000000000a';
+  const BK = '202611_3';
+  const PHONE = '+2348011112222';
+  const past = (i: number, status: string, over: Record<string, unknown> = {}) =>
+    seedDoc(`workspaces/${RW}/bookings/20260${i}_1`, { status, customerPhone: PHONE, startsAt: new Date(NOW.getTime() - (40 - i) * 86_400_000), ...over });
+  const setup = (settings: Record<string, unknown> = {}, plan = 'enterprise') => {
+    seedDoc(`workspaces/${RW}`, { name: 'Risk Salon', plan, planExpiresAt: new Date(NOW.getTime() + 20 * 86_400_000), ownerUid: 'owner1', slug: 'risk-salon',
+      settings: { depositEnabled: false, depositMinor: 0, exchangeRate: 1500, riskDepositEnabled: true, riskDepositLevel: 'high', riskDepositMinor: 500, ...settings } });
+    seedDoc('slugs/risk-salon', { wid: RW, ownerUid: 'owner1' });
+    seedDoc(`workspaces/${RW}/members/owner1`, { role: 'owner' });
+    seedDoc(`workspaces/${RW}/payout/main`, { subaccountCode: 'ACCT_test123' });
+    seedDoc(`workspaces/${RW}/services/s_0`, { name: 'Braids', priceMinor: 2000 });
+    seedDoc(`workspaces/${RW}/bookings/${BK}`, { status: 'pending', source: 'public', serviceId: 's_0', customerName: 'Ada', customerPhone: PHONE, customerEmail: 'ada@example.com',
+      createdAt: new Date(NOW.getTime() - 60_000), startsAt: new Date(NOW.getTime() + 86_400_000) });
+  };
+  const start = () => call('/api/public/deposit', { headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slug: 'risk-salon', bookingId: BK, email: 'ada@example.com' }) });
+  const bookingField = (k: string) => fromFs(store.get(`workspaces/${RW}/bookings/${BK}`)!.fields[k]);
+
+  it('scores from history with a reason for every point, ignoring itself and later bookings', () => {
+    const base = { id: 'x', startsAt: NOW.getTime() + 86_400_000, createdAt: NOW.getTime(), hasEmail: true };
+    const nos = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `n${i}`, status: 'no_show', startsAt: NOW.getTime() - (i + 1) * 86_400_000 }));
+    expect(scoreRisk([], base)).toMatchObject({ score: 15, level: 'low' });
+    expect(scoreRisk([], { ...base, hasEmail: false }).score).toBe(20);
+    expect(scoreRisk(nos(1), base)).toMatchObject({ score: 35, level: 'medium' });
+    expect(scoreRisk(nos(3), base)).toMatchObject({ score: 80, level: 'high' });
+    const good = Array.from({ length: 4 }, (_, i) => ({ id: `c${i}`, status: 'completed', startsAt: NOW.getTime() - (i + 1) * 86_400_000 }));
+    expect(scoreRisk(good, base)).toMatchObject({ score: 0, level: 'low' });
+    // itself and anything that starts after it are not "history"
+    expect(scoreRisk([...nos(3), { id: 'x', status: 'no_show', startsAt: NOW.getTime() - 1 }, { id: 'later', status: 'no_show', startsAt: NOW.getTime() + 9 * 86_400_000 }], base).score).toBe(80);
+    expect(scoreRisk(nos(1), base).reasons.every((r) => /^[+-]\d+ /.test(r))).toBe(true);
+  });
+
+  it('a customer who keeps missing visits is asked for the risk deposit, even though deposits are off for everyone', async () => {
+    setup(); past(1, 'no_show'); past(2, 'no_show'); past(3, 'no_show');
+    const r = await start();
+    expect(r.status).toBe(201);
+    expect(await r.json()).toMatchObject({ amountMinor: 750_000 });   // $5 at 1,500
+    expect(bookingField('riskLevel')).toBe('high');
+    expect(bookingField('depositStatus')).toBe('unpaid');
+    expect(bookingField('depositMinor')).toBe(500);
+    expect(bookingField('riskDeposit')).toBe(true);
+    expect(paystackInit[0]).toMatchObject({ subaccount: 'ACCT_test123', metadata: { kind: 'deposit', bookingId: BK } });
+  });
+
+  it('a reliable customer is not asked for anything', async () => {
+    setup(); for (const i of [1, 2, 3, 4]) past(i, 'completed');
+    expect((await start()).status).toBe(409);
+    expect(bookingField('riskLevel')).toBe('low');
+    expect(bookingField('depositStatus')).toBeNull();
+    expect(paystackInit).toHaveLength(0);
+  });
+
+  it('the owner chooses the threshold', async () => {
+    setup({ riskDepositLevel: 'high' }); past(1, 'no_show');            // 35: medium
+    expect((await start()).status).toBe(409);
+    setup({ riskDepositLevel: 'medium' }); past(1, 'no_show');
+    expect((await start()).status).toBe(201);
+  });
+
+  it('does nothing when switched off, without payouts, or when the plan is not Enterprise', async () => {
+    setup({ riskDepositEnabled: false }); past(1, 'no_show'); past(2, 'no_show'); past(3, 'no_show');
+    expect((await start()).status).toBe(409);
+    setup(); past(1, 'no_show'); past(2, 'no_show'); past(3, 'no_show'); store.delete(`workspaces/${RW}/payout/main`);
+    expect((await start()).status).toBe(409);
+    setup({}, 'growth'); past(1, 'no_show'); past(2, 'no_show'); past(3, 'no_show');
+    expect((await start()).status).toBe(409);
+    expect(bookingField('riskScore')).toBeNull();   // a plan without the feature is never scored
+    expect(paystackInit).toHaveLength(0);
+  });
+
+  it('team members can ask for a score; non-Enterprise workspaces are told to upgrade', async () => {
+    setup(); past(1, 'no_show');
+    const ok = await call('/api/risk/assess', { body: JSON.stringify({ workspaceId: RW, bookingId: BK }), headers: await authed() });
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toMatchObject({ level: 'medium', score: 35 });
+    setup({}, 'growth');
+    const no = await call('/api/risk/assess', { body: JSON.stringify({ workspaceId: RW, bookingId: BK }), headers: await authed() });
+    expect(no.status).toBe(402);
+    expect(((await no.json()) as { code: string }).code).toBe('plan_feature');
   });
 });

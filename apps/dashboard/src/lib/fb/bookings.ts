@@ -3,7 +3,7 @@ import { fb } from './firebase';
 import { ApiError, audit, iso, limitError, loadCtx, monthPrefix, requireAdmin, toApiError, wsCol, wsDoc, type Ctx } from './core';
 import { listServices, listStaff, type ServiceDto, type StaffDto } from './catalog';
 import { CELL_MS, cellsFor, generateSlotStarts, localDateOf, localMidnightUtc, normalizePhone, weekdayOf, type SlotSettings } from './slots';
-import { slotLimit } from './plan';
+import { hasFeatureAccess, slotLimit } from './plan';
 import { worker } from './worker';
 import { emit } from './rules';
 
@@ -11,6 +11,7 @@ export interface BookingDto {
   id: string; ref: string; status: string; serviceId: string; serviceName: string; durationMin: number; staffId: string | null; staffName: string | null;
   customerName: string; customerPhone: string; customerEmail: string | null; startsAt: string; endsAt: string; currency: string; priceMinor: number;
   depositMinor: number; depositStatus: 'none' | 'unpaid' | 'paid' | 'refunded'; paymentReference: string | null; notes: string | null; source: string; createdAt: string | null;
+  risk: { score: number; level: 'low' | 'medium' | 'high'; reasons: string[] } | null;
 }
 
 export const refOf = (id: string): string => `ZX-${id.replace('_', '-')}`;
@@ -21,6 +22,7 @@ interface Dep { enabled: boolean; minor: number }
 function deposit(x: Record<string, any>, price: number, dep: Dep): { depositMinor: number; depositStatus: 'none' | 'unpaid' | 'paid' | 'refunded'; paymentReference: string | null } {
   if (x.depositStatus === 'refunded') return { depositMinor: Number(x.depositMinor) || 0, depositStatus: 'refunded', paymentReference: x.paymentReference ?? null };
   if (x.depositStatus === 'paid') return { depositMinor: Number(x.depositMinor) || 0, depositStatus: 'paid', paymentReference: x.paymentReference ?? null };
+  if (x.depositStatus === 'unpaid' && Number(x.depositMinor) > 0 && x.status !== 'cancelled') return { depositMinor: Number(x.depositMinor), depositStatus: 'unpaid', paymentReference: null };   // owed because of no-show risk
   const owed = x.source === 'public' && dep.enabled && dep.minor > 0 && x.status !== 'cancelled';
   return owed ? { depositMinor: price > 0 ? Math.min(dep.minor, price) : dep.minor, depositStatus: 'unpaid', paymentReference: null } : { depositMinor: 0, depositStatus: 'none', paymentReference: null };
 }
@@ -32,6 +34,7 @@ function toDto(d: QueryDocumentSnapshot, svcs: Map<string, ServiceDto>, staff: M
     staffId: x.staffId ?? null, staffName: p?.name ?? null, customerName: x.customerName, customerPhone: x.customerPhone, customerEmail: x.customerEmail ?? null,
     startsAt: iso(x.startsAt)!, endsAt: iso(x.endsAt)!, currency: 'USD', priceMinor: s?.priceMinor ?? 0, ...deposit(x, s?.priceMinor ?? 0, dep),
     notes: x.notes ?? null, source: x.source ?? 'staff', createdAt: iso(x.createdAt),
+    risk: typeof x.riskScore === 'number' ? { score: x.riskScore, level: x.riskLevel, reasons: Array.isArray(x.riskReasons) ? x.riskReasons : [] } : null,
   };
 }
 
@@ -132,6 +135,8 @@ export async function staffCreate(b: Record<string, unknown>): Promise<{ booking
   });
   void audit(c, 'booking.create', 'booking', made.id);
   emit('bookings.booking.created', c.wid, made.id);
+  // Enterprise: score the booking now so the owner sees the risk straight away. Best effort; the booking already exists.
+  if (hasFeatureAccess(c.tier, 'risk')) await worker('/api/risk/assess', { body: { workspaceId: c.wid, bookingId: made.id } }).catch(() => undefined);
   const snap = await getDoc(wsDoc(c, 'bookings', made.id));
   const m = await maps(c);
   return { booking: toDto(snap as QueryDocumentSnapshot, m.svcs, m.staff, depOf(c)) };

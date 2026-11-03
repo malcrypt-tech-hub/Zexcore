@@ -12,13 +12,15 @@ export interface WorkspaceSettings {
   depositEnabled: boolean; depositMinor: number; openMinutes: number; closeMinutes: number; slotMinutes: number;
   daysOpen: number[]; utcOffsetMinutes: number; leadMinutes: number; maxDaysAhead: number; onboarded: boolean;
   logoUrl?: string | null; rules?: any[];
+  /** Enterprise: ask customers with a high no-show risk for a deposit even when deposits are otherwise off. */
+  riskDepositEnabled?: boolean; riskDepositLevel?: 'medium' | 'high'; riskDepositMinor?: number;
 }
 import { getCachedNgnRate } from '../fx';
 
 export const DEFAULT_SETTINGS: WorkspaceSettings = {
   businessType: 'other', publicName: null, phone: null, address: null, currency: 'USD', exchangeRate: getCachedNgnRate(), depositEnabled: false, depositMinor: 0,
   openMinutes: 540, closeMinutes: 1020, slotMinutes: 30, daysOpen: [1, 2, 3, 4, 5, 6], utcOffsetMinutes: 60, leadMinutes: 60, maxDaysAhead: 60, onboarded: false,
-  logoUrl: null, rules: [],
+  logoUrl: null, rules: [], riskDepositEnabled: false, riskDepositLevel: 'high', riskDepositMinor: 500,
 };
 
 export type Role = 'owner' | 'admin' | 'editor' | 'viewer' | 'staff';
@@ -104,7 +106,7 @@ export function requireEditor(c: Ctx): void { if (!canEditContent(c)) throw new 
 export function requireAdmin(c: Ctx): void { if (!canWrite(c)) throw new ApiError(403, 'Only a workspace owner or admin can do that.', 'forbidden'); }
 
 const NOUN: Record<EnforcedKey, string> = { bookingsPerMonth: 'bookings a month', staff: 'team members', services: 'services', cmsPages: 'website pages', crmContacts: 'contacts', devices: 'devices', rules: 'automations' };
-const FEATURE_NAME: Record<FeatureKey, string> = { branding: 'Custom branding', compliance: 'Data protection', automations: 'Automations', devices: 'Device monitoring', export: 'Data export', backups: 'Daily backups' };
+const FEATURE_NAME: Record<FeatureKey, string> = { branding: 'Custom branding', compliance: 'Data protection', automations: 'Automations', devices: 'Device monitoring', export: 'Data export', backups: 'Daily backups', risk: 'No-show protection' };
 /** Stops a paid feature up front with a clear upgrade message, instead of the database refusing it with a bare "no permission". */
 export function requireFeature(c: Ctx, f: FeatureKey): void {
   if (!hasFeatureAccess(c.tier, f)) throw new ApiError(402, `${FEATURE_NAME[f]} is part of the ${FEATURE_TIERS[f][0]!.toUpperCase()}${FEATURE_TIERS[f].slice(1)} plan and above. Upgrade to unlock it.`, 'plan_feature');

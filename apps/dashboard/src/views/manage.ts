@@ -186,6 +186,11 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
       <section class="card card-pad form-grid"><div class="row between"><div><h3>Upfront deposit</h3><p class="muted small">Customers pay this by card through Paystack to secure their slot. The money goes straight to your bank account below.</p></div><label class="switch"><input type="checkbox" id="dep" ${s.depositEnabled ? 'checked' : ''} ${dis} aria-label="Require deposit"><span></span></label></div>
         <div class="field ${s.depositEnabled ? '' : 'hidden'}" id="depf"><label for="depn">Deposit per booking ($)</label><input class="input" id="depn" type="number" min="0" value="${s.depositMinor / 100}" ${dis}></div>
         <div class="field"><label for="fx">Exchange rate (₦ per $1)</label><input class="input" id="fx" type="number" min="100" max="100000" step="0.01" value="${s.exchangeRate || ''}" ${dis}><p class="muted small">Prices and deposits are in dollars. Customers pay deposits in naira at this rate. It applies only to payments for your own business, never to ZexCore's plan prices.</p></div></section>
+      ${hasFeatureAccess(me.tenant.tier, 'risk') ? html`<section class="card card-pad form-grid"><div class="row between"><div><h3>No-show protection</h3><p class="muted small">Every booking gets a no-show risk score from that customer's history with you. When a booking scores as risky, the customer is asked for a deposit even if you do not ask everyone. Needs your payout account above.</p></div><label class="switch"><input type="checkbox" id="rd" ${s.riskDepositEnabled ? 'checked' : ''} ${dis} aria-label="Ask risky customers for a deposit"><span></span></label></div>
+        <div class="form-grid two ${s.riskDepositEnabled ? '' : 'hidden'}" id="rdf"><div class="field"><label for="rl">Ask for a deposit when risk is</label><select class="select" id="rl" ${dis}><option value="high" ${s.riskDepositLevel !== 'medium' ? 'selected' : ''}>High (60 and above)</option><option value="medium" ${s.riskDepositLevel === 'medium' ? 'selected' : ''}>Medium or high (30 and above)</option></select></div>
+        <div class="field"><label for="rdn">Deposit for risky bookings ($)</label><input class="input" id="rdn" type="number" min="1" max="5000" value="${(s.riskDepositMinor ?? 500) / 100}" ${dis}></div></div>
+        <p class="muted small">Low 0 to 29, medium 30 to 59, high 60 and above. Points come from earlier no-shows, cancellations, unpaid deposits, first-time customers and how far ahead they booked, and good history lowers the score. The reasons are shown on each booking. If you already ask everyone for a deposit, that applies instead.</p></section>`
+        : html`<section class="card card-pad"><div class="row between wrap"><div><h3>No-show protection</h3><p class="muted small">Score every booking for no-show risk and ask risky customers for a deposit automatically. Part of the Enterprise and Dedicated plans.</p></div><a class="btn btn-secondary btn-sm" href="/app/billing" data-link>${ic('lock', 'ico-sm')} See plans</a></div></section>`}
       ${canAdmin() ? html`<div><button class="btn btn-primary btn-lg" type="submit">Save changes</button></div>` : ''}
     </form>
     <section class="card card-pad stack-sm" style="margin-top:20px">
@@ -204,6 +209,8 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
     const on = (e.target as HTMLInputElement).checked;
     $('#depf', view)?.classList.toggle('hidden', !on);
   });
+
+  $('#rd', view)?.addEventListener('change', (e) => $('#rdf', view)?.classList.toggle('hidden', !(e.target as HTMLInputElement).checked));
 
   // Logo file picker & preview handling
   if (canBrand) {
@@ -287,6 +294,7 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
           exchangeRate: Number(($('#fx') as HTMLInputElement).value) || s.exchangeRate || 1350,
           depositEnabled: depChecked,
           depositMinor: depMinor,
+          ...($('#rd') ? { riskDepositEnabled: ($('#rd') as HTMLInputElement).checked, riskDepositLevel: ($('#rl') as HTMLSelectElement).value, riskDepositMinor: Math.round(Number(($('#rdn') as HTMLInputElement).value) * 100) } : {}),
           logoUrl: currentLogo,
         } });
         await loadSettings(true); toast('Settings saved', 'success');
