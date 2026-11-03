@@ -69,6 +69,7 @@ export async function checkout(req: Request, env: Env, d: Deps, headers: Record<
   const { workspaceId, tier, cycle = 'monthly', currency = 'NGN' } = body ?? {};
   if (typeof workspaceId !== 'string' || !ID_RE.test(workspaceId)) return json({ error: 'Invalid workspace' }, 400, headers);
   if (!isTier(tier)) return json({ error: 'Unknown plan' }, 400, headers);
+  if (tier === 'enterprise' || tier === 'dedicated') return json({ error: 'Enterprise and Dedicated plans are set up with our team. Please contact us at hello@zexcore.com.ng.', code: 'contact_us' }, 409, headers);
   if (cycle !== 'monthly' && cycle !== 'annual') return json({ error: 'Invalid billing cycle' }, 400, headers);
   if (currency !== 'NGN' && currency !== 'USD') return json({ error: 'Unsupported currency' }, 400, headers);
 

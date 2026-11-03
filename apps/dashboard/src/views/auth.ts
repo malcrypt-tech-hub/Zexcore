@@ -240,14 +240,18 @@ export async function renderVerify(): Promise<void> {
   const token = takeToken();
   authLayout(html`<div id="auth-body" style="text-align:center"><div class="spinner" style="margin:0 auto 14px"></div><p class="muted">Confirming your email…</p></div>`);
   const body = $('#auth-body')!;
-  const done = (ok: boolean, msg: string) => mount(body, html`
+  const done = (ok: boolean, msg: string, title = ok ? 'Email confirmed' : 'Link not valid') => mount(body, html`
     <span class="icon-tile" style="margin:0 auto 14px;background:${ok ? 'var(--success-tint)' : 'var(--primary-tint)'};color:${ok ? 'var(--success)' : 'var(--primary)'}">${ic(ok ? 'circle-check' : 'circle-alert')}</span>
-    <h1 style="font-size:1.5rem">${ok ? 'Email confirmed' : 'Link not valid'}</h1>
+    <h1 style="font-size:1.5rem">${title}</h1>
     <p class="muted" style="margin:8px 0 18px">${msg}</p>
     <a class="btn btn-primary btn-block" href="/app" data-link>${ok ? 'Continue to ZexCore' : 'Go to ZexCore'}</a>`);
   if (!token) return done(false, 'Open the link from your email again. You can request a new one from inside the app.');
   try {
     await api('/api/auth/email/verify', { method: 'POST', body: { token }, auth: false });
     done(true, 'Thanks. Your account is now confirmed.');
-  } catch (x) { done(false, x instanceof ApiError ? x.message : 'We could not confirm your email. Please try again.'); }
+  } catch (x) {
+    if (x instanceof ApiError && x.code === 'link_used') return done(false, x.message, 'This link was already used');
+    if (x instanceof ApiError && x.code === 'link_expired') return done(false, x.message, 'This link has expired');
+    done(false, x instanceof ApiError ? x.message : 'We could not confirm your email. Please try again.');
+  }
 }

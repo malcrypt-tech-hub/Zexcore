@@ -7,6 +7,7 @@
  */
 import { deleteAccount } from './routes/account';
 import { assess } from './routes/risk';
+import { createKey, revokeKey, v1Bookings, v1Customers } from './routes/apikeys';
 import { realDeps, type Ctx, type Deps, type Env } from './env';
 import { HttpError, cors, json } from './util';
 import { checkout, webhook } from './routes/billing';
@@ -60,6 +61,10 @@ const ROUTES: Record<string, Handler> = {
   'POST /api/team/remove': remove,
   'POST /api/account/delete': deleteAccount,
   'POST /api/risk/assess': assess,
+  'POST /api/keys/create': createKey,
+  'POST /api/keys/revoke': revokeKey,
+  'GET /api/v1/bookings': v1Bookings,
+  'GET /api/v1/customers': v1Customers,
 };
 
 /** Routes that take or confirm money. They stay off unless a live Paystack key is set (or the Worker is explicitly marked staging). */

@@ -374,7 +374,12 @@ describe('plan time is never lost', () => {
     const r = await call('/api/checkout', { headers: await authed(), body: checkoutBody({ tier: 'starter' }) });
     expect(r.status).toBe(409);
     expect((await r.json() as any).code).toBe('downgrade_blocked');
-    const up = await call('/api/checkout', { headers: await authed(), body: checkoutBody({ tier: 'enterprise' }) });
+    // Enterprise and Dedicated are arranged with the team, never started online
+    const big = await call('/api/checkout', { headers: await authed(), body: checkoutBody({ tier: 'enterprise' }) });
+    expect(big.status).toBe(409);
+    expect((await big.json() as any).code).toBe('contact_us');
+    seedDoc(`workspaces/${WID}`, { name: 'Sade Salon', plan: 'starter', ownerUid: 'owner1', slug: 'sade-salon', planExpiresAt: new Date(NOW.getTime() + 20 * day) });
+    const up = await call('/api/checkout', { headers: await authed(), body: checkoutBody({ tier: 'agency' }) });
     expect(up.status).toBe(201);
   });
 });
@@ -750,5 +755,85 @@ describe('no-show risk', () => {
     const no = await call('/api/risk/assess', { body: JSON.stringify({ workspaceId: RW, bookingId: BK }), headers: await authed() });
     expect(no.status).toBe(402);
     expect(((await no.json()) as { code: string }).code).toBe('plan_feature');
+  });
+});
+
+describe('read-only API keys', () => {
+  const KW = 'wskeys00000000000001';
+  const setup = (plan = 'enterprise') => {
+    seedDoc(`workspaces/${KW}`, { name: 'Keys Salon', plan, planExpiresAt: new Date(NOW.getTime() + 20 * 86_400_000), ownerUid: 'owner1', slug: 'keys-salon' });
+    seedDoc(`workspaces/${KW}/members/owner1`, { role: 'owner', email: 'sade@example.com' });
+    seedDoc(`workspaces/${KW}/members/ed1`, { role: 'editor', email: 'ed@example.com' });
+    seedDoc(`workspaces/${KW}/services/s_0`, { name: 'Braids', priceMinor: 2000 });
+    seedDoc(`workspaces/${KW}/bookings/202611_1`, { status: 'completed', serviceId: 's_0', customerName: 'Ada', customerPhone: '+2348011112222', customerEmail: 'ada@example.com', notes: 'private note', startsAt: new Date('2026-11-01T10:00:00Z'), endsAt: new Date('2026-11-01T11:00:00Z') });
+    seedDoc(`workspaces/${KW}/bookings/202611_2`, { status: 'no_show', serviceId: 's_0', customerName: 'Ada', customerPhone: '+2348011112222', startsAt: new Date('2026-11-05T10:00:00Z'), endsAt: new Date('2026-11-05T11:00:00Z') });
+    seedDoc(`workspaces/${KW}/bookings/202611_3`, { status: 'confirmed', serviceId: 's_0', customerName: 'Tunde', customerPhone: '+2348033334444', startsAt: new Date('2026-11-09T10:00:00Z'), endsAt: new Date('2026-11-09T11:00:00Z') });
+  };
+  const make = async (name = 'Accountant sheet', as = 'owner1') => call('/api/keys/create', { body: JSON.stringify({ workspaceId: KW, name }), headers: await authed({ sub: as }) });
+  const get = (path: string, key?: string) => call(path, { method: 'GET', headers: key ? { authorization: `Bearer ${key}` } : {} });
+  const keyDocs = () => [...store.keys()].filter((k) => k.startsWith(`workspaces/${KW}/apiKeys/`));
+
+  it('owners and admins make keys on Enterprise; the secret is shown once and only its fingerprint is stored', async () => {
+    setup();
+    const r = await make();
+    expect(r.status).toBe(201);
+    const { key } = (await r.json()) as { key: string };
+    expect(key).toMatch(new RegExp(`^zxk_${KW}\\.[a-f0-9]{48}$`));
+    const secret = key.split('.')[1]!;
+    expect(JSON.stringify([...store.entries()].filter(([k]) => k.startsWith(`workspaces/${KW}/apiKeys/`)))).not.toContain(secret);
+    expect([...store.entries()].some(([k, d]) => k.includes('/auditChain/') && fromFs(d.fields.action) === 'apikey.create')).toBe(true);
+    expect((await make('x', 'ed1')).status).toBe(403);                     // editors cannot
+    setup('growth'); expect((await make()).status).toBe(402);              // other plans cannot
+    setup(); expect((await make('a')).status).toBe(400);                   // needs a real name
+  });
+
+  it('at most five keys at a time', async () => {
+    setup();
+    for (let i = 0; i < 5; i++) expect((await make(`Key ${i + 1}`)).status).toBe(201);
+    expect((await make('Sixth')).status).toBe(409);
+  });
+
+  it('reads bookings and customers with a key, and never exposes notes', async () => {
+    setup();
+    const { key } = (await (await make()).json()) as { key: string };
+    const b = await get('/api/v1/bookings', key);
+    expect(b.status).toBe(200);
+    const body = (await b.json()) as { data: Record<string, any>[]; nextCursor: string | null };
+    expect(body.data).toHaveLength(3);
+    expect(body.data[0]).toMatchObject({ id: '202611_1', status: 'completed', service: { id: 's_0', name: 'Braids' }, customerName: 'Ada', startsAt: '2026-11-01T10:00:00.000Z' });
+    expect(JSON.stringify(body)).not.toContain('private note');
+    expect(body.nextCursor).toBeNull();
+    const c = (await (await get('/api/v1/customers', key)).json()) as { data: Record<string, any>[]; truncated: boolean };
+    expect(c.truncated).toBe(false);
+    expect(c.data.find((x) => x.phone === '+2348011112222')).toMatchObject({ name: 'Ada', email: 'ada@example.com', bookings: 2, completed: 1, noShows: 1 });
+    expect(c.data).toHaveLength(2);
+    expect((await get('/api/v1/bookings?status=bogus', key)).status).toBe(400);
+    expect(keyDocs().some((k) => fromFs(store.get(k)!.fields.lastUsedAt) instanceof Date)).toBe(true);
+  });
+
+  it('bad, missing, foreign and revoked keys all get the same refusal; the plan is checked on every call', async () => {
+    setup();
+    const { key } = (await (await make()).json()) as { key: string };
+    for (const k of [undefined, 'zxk_nonsense', key.slice(0, -1) + (key.endsWith('0') ? '1' : '0'), key.replace(KW, 'otherwsid0000000000')]) {
+      const r = await get('/api/v1/bookings', k);
+      expect(r.status).toBe(401);
+      expect(((await r.json()) as { code: string }).code).toBe('invalid_key');
+    }
+    setup('growth'); expect((await get('/api/v1/bookings', key)).status).toBe(402);   // downgraded: the key stops working
+    setup();
+    const id = keyDocs()[0]!.split('/').pop()!;
+    expect((await call('/api/keys/revoke', { body: JSON.stringify({ workspaceId: KW, id }), headers: await authed() })).status).toBe(200);
+    expect((await get('/api/v1/bookings', key)).status).toBe(401);
+  });
+
+  it('a key can only read: there is no way to write with it', async () => {
+    setup();
+    const { key } = (await (await make()).json()) as { key: string };
+    for (const [m, p] of [['POST', '/api/v1/bookings'], ['PUT', '/api/v1/bookings'], ['DELETE', '/api/v1/bookings'], ['GET', '/api/v1/payments']] as const) {
+      const r = await handle(new Request(`https://pay.example.workers.dev${p}`, { method: m, headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' }, body: m === 'GET' ? undefined : '{}' }), env, { fetch: mockFetch(), now: () => NOW });
+      expect(r.status).toBe(404);
+    }
+    // and a key is not a sign-in: member routes refuse it
+    expect((await call('/api/backups/run', { body: JSON.stringify({ workspaceId: KW }), headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' } })).status).toBe(401);
   });
 });

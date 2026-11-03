@@ -25,6 +25,7 @@ export function renderMore(view: HTMLElement): void {
     { href: '/app/billing', icon: 'credit-card', t: 'Plan & billing', s: 'Your subscription and payments' },
     { href: '/app/security', icon: 'shield-check', t: 'Security', s: 'Password and signed-in devices' },
     { href: '/app/backups', icon: 'database', t: 'Backups', s: 'Encrypted daily copies and certificates' },
+    { href: '/app/api-keys', icon: 'key-round', t: 'API keys', s: 'Read-only access for other systems' },
     { href: '/app/export', icon: 'download', t: 'Export data', s: 'CSV and JSON downloads of your records' },
     { href: '/app/audit', icon: 'history', t: 'Audit log', s: 'Tamper-evident record of changes' },
     { href: '/app/settings', icon: 'settings', t: 'Settings', s: 'Hours, deposits and business details' },

@@ -26,7 +26,7 @@ export async function renderBilling(view: HTMLElement): Promise<void> {
     <div class="chips"><button class="chip-btn" data-c="monthly" aria-pressed="true">Monthly</button><button class="chip-btn" data-c="annual" aria-pressed="false">Annual · 2 months free</button></div></div>
     <div id="usage"></div>
     <div id="plans" class="stack" style="grid-template-columns:repeat(auto-fill,minmax(min(100%,230px),1fr))"></div>
-    <p class="muted small" style="margin-top:12px">Prices are in US dollars. Payments are processed securely via Paystack.</p>
+    <p class="muted small" style="margin-top:12px">Prices are in US dollars. Payments are processed securely via Paystack. Enterprise and Dedicated are set up with our team: press Contact us and we will arrange it with you.</p>
     <h3 style="margin:28px 0 12px">Payment history</h3><div class="card" id="pay"></div>`);
   let plans: PlanList;
   try { plans = await api<PlanList>('/api/billing/plans', { auth: false }); }
@@ -46,7 +46,9 @@ export async function renderBilling(view: HTMLElement): Promise<void> {
           ${limitLines(p.limits, plans.limitLabels).map((l) => html`<li>${ic('check', 'ico-sm')} ${l}</li>`)}
           ${extras.map((ex) => html`<li>${ic('check', 'ico-sm')} <b>${ex}</b></li>`)}
         </ul>
-        ${canAdmin() ? html`<button class="btn ${cur ? 'btn-secondary' : 'btn-primary'} btn-block" data-buy="${p.tier}" ${cur ? 'disabled' : ''}>${cur ? 'Your plan' : 'Choose plan'}</button>` : ''}</section>`;
+        ${canAdmin() ? (p.tier === 'enterprise' || p.tier === 'dedicated'
+          ? (cur ? html`<button class="btn btn-secondary btn-block" disabled>Your plan</button>` : html`<a class="btn btn-primary btn-block" href="mailto:hello@zexcore.com.ng?subject=${encodeURIComponent(`${p.tier[0]!.toUpperCase()}${p.tier.slice(1)} plan for ${me.tenant.name}`)}">Contact us</a>`)
+          : html`<button class="btn ${cur ? 'btn-secondary' : 'btn-primary'} btn-block" data-buy="${p.tier}" ${cur ? 'disabled' : ''}>${cur ? 'Your plan' : 'Choose plan'}</button>`) : ''}</section>`;
     })}`);
     $$('[data-buy]', view).forEach((b) => b.addEventListener('click', () => void checkout(b.dataset.buy!, b as HTMLButtonElement)));
   };

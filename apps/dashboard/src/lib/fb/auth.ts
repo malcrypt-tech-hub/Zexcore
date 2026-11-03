@@ -245,7 +245,33 @@ export async function reset(token: string, password: string): Promise<void> {
   if (String(password).length < 10) throw new ApiError(400, 'Use at least 10 characters for your password.');
   try { await confirmPasswordReset(fb().auth, token, password); } catch (e) { throw authMessage(e); }
 }
-export async function verifyEmail(token: string): Promise<void> { try { await applyActionCode(fb().auth, token); clearCtx(); } catch (e) { throw authMessage(e); } }
+/**
+ * Confirms an email address from the link. The link works once, and mail apps, security scanners and a second tab can use
+ * it before the person does, so "already used" is NOT the same as "broken": if this browser is signed in, ask Firebase whether
+ * the address is confirmed and say so. Otherwise report it as used, never as invalid.
+ */
+const verifying = new Map<string, Promise<void>>();
+export function verifyEmail(token: string): Promise<void> {
+  const hit = verifying.get(token);
+  if (hit) return hit;   // the page can render twice; the code must only be used once
+  const p = (async () => {
+    const { auth } = fb();
+    try { await applyActionCode(auth, token); }
+    catch (e) {
+      const code = (e as { code?: string })?.code ?? '';
+      if (code === 'auth/expired-action-code') throw new ApiError(400, 'This confirmation link has expired. Sign in and ask for a new one.', 'link_expired');
+      if (code !== 'auth/invalid-action-code') throw authMessage(e);
+      const u = auth.currentUser;
+      if (u) { try { await u.reload(); } catch { /* offline */ } }
+      if (!u?.emailVerified) throw new ApiError(400, 'This link was already used. If you have confirmed your email, sign in to continue. If not, sign in and ask for a new link.', 'link_used');
+    }
+    const u = auth.currentUser;
+    if (u) { try { await u.reload(); await u.getIdToken(true); } catch { /* the app re-checks on its next load */ } }
+    clearCtx();
+  })();
+  verifying.set(token, p);
+  return p;
+}
 /** Re-reads the account from Firebase (the verification link is opened elsewhere) and refreshes the sign-in token so the Worker sees it. */
 export async function emailStatus(): Promise<{ verified: boolean }> {
   const u = fb().auth.currentUser;
