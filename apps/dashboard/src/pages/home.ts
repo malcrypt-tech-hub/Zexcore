@@ -7,7 +7,7 @@ const STARTER = PRICES.starter.monthlyUsd;
 
 export function renderHomePage(): string {
   const hero = `<section class="rp-hero" id="home-flagship-hero"><div class="site-container"><div class="rp-hero-copy">
-    <h1 class="rp-hero-title">Take bookings. Collect deposits.<br /><span class="rp-hero-red">Stop chasing customers.</span></h1>
+   <h1 class="rp-hero-title">Take bookings. Collect deposits.<br /><span class="rp-hero-red">Get paid before they arrive.</span></h1>
     <p class="rp-hero-desc" style="font-weight:600">A booking page, customer records and a WhatsApp inbox in one place, for salons, clinics, studios and workshops. Customers can pay a deposit by card through Paystack, straight to your bank account.</p>
     <div class="rp-hero-actions">
       <a href="/signup" data-link class="btn btn-primary btn-lg" id="btn-hero-primary">Start free</a>
