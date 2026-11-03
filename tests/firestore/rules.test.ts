@@ -252,6 +252,11 @@ describe('team roles', () => {
     const ad = asRole('admin1');
     await assertSucceeds(updateDoc(doc(ad, 'workspaces', W), { name: 'Renamed' }));
     await assertSucceeds(getDoc(doc(ad, 'workspaces', W, 'invites', 'x')));
+    // API key fingerprints: admins can list them, nobody can write them from a browser, editors and viewers cannot see them
+    await assertSucceeds(getDocs(collection(ad, 'workspaces', W, 'apiKeys')));
+    await assertFails(setDoc(doc(ad, 'workspaces', W, 'apiKeys', 'k1'), { name: 'x' }));
+    await assertFails(getDocs(collection(asRole('editor1'), 'workspaces', W, 'apiKeys')));
+    await assertFails(getDocs(collection(asRole('viewer1'), 'workspaces', W, 'apiKeys')));
     await assertFails(setDoc(doc(ad, 'workspaces', W, 'invites', 'x'), { email: 'x@example.com' }));
     await assertFails(setDoc(doc(ad, 'workspaces', W, 'members', 'newbie'), { role: 'admin' }));
     await assertFails(setDoc(doc(other(), 'workspaces', W, 'services', 's_0'), svc()));

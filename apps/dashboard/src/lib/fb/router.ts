@@ -13,6 +13,7 @@ import * as bill from './billing';
 import * as appt from './appointments';
 import * as payout from './payout';
 import * as team from './team';
+import * as keys from './apikeys';
 import { getLiveNgnRate } from '../fx';
 
 type Params = string[];
@@ -94,6 +95,9 @@ on('GET', '/api/team', () => team.listTeam());
 on('POST', '/api/team/invite', ({ body }) => team.invite(body));
 on('POST', '/api/team/revoke', ({ body }) => team.revokeInvite(String(body.id)));
 on('POST', '/api/team/role', ({ body }) => team.setRole(String(body.uid), String(body.role)));
+on('GET', '/api/keys', async () => ({ keys: await keys.listKeys() }));
+on('POST', '/api/keys', ({ body }) => keys.createKey(String(body.name ?? '')));
+on('POST', '/api/keys/revoke', async ({ body }) => { await keys.revokeKey(String(body.id)); return { ok: true }; });
 on('POST', '/api/team/remove', ({ body }) => team.removeMember(String(body.uid)));
 
 // ── calendar appointments ──
