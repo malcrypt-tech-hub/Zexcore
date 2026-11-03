@@ -8,7 +8,7 @@ export { ApiError };
 export const unavailable = (what: string): ApiError => new ApiError(501, `${what} is not part of this release yet.`, 'unavailable');
 
 export interface WorkspaceSettings {
-  businessType: string; publicName: string | null; phone: string | null; address: string | null; currency: string; exchangeRate: number;
+  businessType: string; businessSubtype?: string | null; publicName: string | null; phone: string | null; address: string | null; currency: string; exchangeRate: number;
   depositEnabled: boolean; depositMinor: number; openMinutes: number; closeMinutes: number; slotMinutes: number;
   daysOpen: number[]; utcOffsetMinutes: number; leadMinutes: number; maxDaysAhead: number; onboarded: boolean;
   logoUrl?: string | null; rules?: any[];

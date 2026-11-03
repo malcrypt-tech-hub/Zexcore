@@ -1,37 +1,21 @@
 import { html, mount, $, $$ } from '../lib/html';
-import { ic, type IconName } from '../lib/icons';
+import { ic } from '../lib/icons';
 import { api, ApiError } from '../lib/api';
 import { current } from '../lib/session';
 import { navigate } from '../router';
 import { busy, toast } from '../lib/ui';
 import { loadSettings, tenantSlug, SITE_URL } from '../lib/store';
 import { minutesToTime, timeToMinutes } from '../lib/format';
-
-type BizType = 'clinic' | 'real_estate' | 'salon' | 'delivery' | 'retail' | 'other';
-const TYPES: { key: BizType; icon: IconName; title: string; text: string; popular?: boolean }[] = [
-  { key: 'clinic', icon: 'stethoscope', title: 'Clinic or pharmacy', text: 'Patient consultations, test follow-ups and vaccinations.', popular: true },
-  { key: 'real_estate', icon: 'building-2', title: 'Property & real estate', text: 'Property viewings, tenant inspections and short-let bookings.' },
-  { key: 'salon', icon: 'scissors', title: 'Salon & spa', text: 'Hair, nails and spa sessions with upfront slot deposits.' },
-  { key: 'delivery', icon: 'truck', title: 'Delivery & logistics', text: 'Pickup bookings and dispatch slots.' },
-  { key: 'retail', icon: 'shopping-bag', title: 'Shop or retail store', text: 'Fittings, pickups and in-store appointments.' },
-  { key: 'other', icon: 'sparkles', title: 'Something else', text: 'Consultants, event planners, creators and coaches.' },
-];
-// Starting points only. The owner edits or removes them before anything is saved.
-const SUGGEST: Record<BizType, { name: string; min: number; ngn: number }[]> = {
-  clinic: [{ name: 'General consultation', min: 30, ngn: 10 }, { name: 'Follow-up visit', min: 20, ngn: 5 }, { name: 'Lab test', min: 45, ngn: 7 }],
-  real_estate: [{ name: 'Property viewing', min: 45, ngn: 0 }, { name: 'Tenant inspection', min: 60, ngn: 0 }],
-  salon: [{ name: 'Haircut & styling', min: 60, ngn: 5 }, { name: 'Manicure', min: 45, ngn: 3 }],
-  delivery: [{ name: 'Parcel pickup', min: 30, ngn: 0 }],
-  retail: [{ name: 'Store appointment', min: 30, ngn: 0 }],
-  other: [{ name: 'Consultation', min: 30, ngn: 0 }],
-};
+import { INDUSTRIES, industryOf } from '../lib/industries';
 
 export async function renderOnboarding(): Promise<void> {
   const root = document.getElementById('app')!;
   const me = current()!;
   const s = await loadSettings(true);
-  let type: BizType = (s.businessType as BizType) in SUGGEST && s.businessType !== 'other' ? (s.businessType as BizType) : 'clinic';
-  let rows = SUGGEST[type].map((x) => ({ ...x }));
+  let type = s.businessType && s.businessType !== 'other' ? industryOf(s.businessType).key : 'healthcare';
+  let subtype = '';
+  const starter = (k: string) => industryOf(k).services.map((x) => ({ name: x.name, min: x.min, ngn: x.usd }));
+  let rows = starter(type);
   let team: string[] = [];
   let step = 1;
 
@@ -41,8 +25,9 @@ export async function renderOnboarding(): Promise<void> {
       <div class="progress" style="margin-bottom:24px"><i style="width:${step * 50}%"></i></div>
       ${step === 1 ? html`
         <h1 style="font-size:1.75rem">What do you do?</h1>
-        <p class="muted" style="margin:6px 0 18px">Pick your business type so we can suggest services and booking rules. You can change everything later.</p>
-        <div class="stack-sm" role="radiogroup" aria-label="Business type">${TYPES.map((t) => html`<button class="option-card" role="radio" aria-checked="${t.key === type}" data-type="${t.key}"><span class="icon-tile">${ic(t.icon)}</span><span class="grow"><b>${t.title}</b>${t.popular ? html` <span class="badge badge-primary" style="margin-left:6px">Popular</span>` : ''}<br><span class="muted small">${t.text}</span></span><span class="radio-dot">${ic('check')}</span></button>`)}</div>
+        <p class="muted" style="margin:6px 0 18px">Tell us what kind of business you run so we can configure the right tools, workflows and features for you. Every tool stays available, and you can change everything later.</p>
+        <div class="stack-sm" role="radiogroup" aria-label="Industry">${INDUSTRIES.map((t) => html`<button class="option-card" role="radio" aria-checked="${t.key === type}" data-type="${t.key}"><span class="icon-tile">${ic(t.icon)}</span><span class="grow"><b>${t.title}</b>${t.popular ? html` <span class="badge badge-primary" style="margin-left:6px">Popular</span>` : ''}<br><span class="muted small">${t.text}</span></span><span class="radio-dot">${ic('check')}</span></button>`)}</div>
+        ${industryOf(type).subtypes.length ? html`<div class="field" style="margin-top:16px"><label>Which best describes you? <span class="faint">(optional)</span></label><div class="row wrap" style="gap:8px">${industryOf(type).subtypes.map((st) => html`<button type="button" class="btn btn-sm ${st === subtype ? 'btn-primary' : 'btn-secondary'}" data-sub="${st}" aria-pressed="${st === subtype}">${st}</button>`)}</div></div>` : ''}
         <button class="btn btn-primary btn-lg btn-block" style="margin-top:20px" data-next>Continue ${ic('arrow-right', 'ico-sm')}</button>` : html`
         <h1 style="font-size:1.75rem">Set up your workspace</h1>
         <p class="muted" style="margin:6px 0 18px">This creates your public booking page.</p>
@@ -74,7 +59,8 @@ export async function renderOnboarding(): Promise<void> {
     </div></div>`);
 
     if (step === 1) {
-      $$('[data-type]').forEach((b) => b.addEventListener('click', () => { type = b.dataset.type as BizType; rows = SUGGEST[type].map((x) => ({ ...x })); draw(); }));
+      $$('[data-type]').forEach((b) => b.addEventListener('click', () => { type = b.dataset.type!; subtype = ''; rows = starter(type); keepScrollDraw(); }));
+      $$('[data-sub]').forEach((b) => b.addEventListener('click', () => { subtype = subtype === b.dataset.sub ? '' : b.dataset.sub!; keepScrollDraw(); }));
       $('[data-next]')!.addEventListener('click', () => { step = 2; draw(); });
       return;
     }
@@ -107,7 +93,7 @@ export async function renderOnboarding(): Promise<void> {
         const depOn = ($('#dep') as HTMLInputElement).checked;
         const depMinor = Math.round((Number(($('#depn') as HTMLInputElement).value) || 0) * 100);
         try {
-          await api('/api/bookings/settings', { method: 'PUT', body: { businessType: type, publicName: ($('#pn') as HTMLInputElement).value.trim(), phone: ($('#ph') as HTMLInputElement).value.trim(), openMinutes: open, closeMinutes: close, daysOpen: days, depositEnabled: depOn && depMinor > 0, depositMinor: depOn ? depMinor : 0, onboarded: true } });
+          await api('/api/bookings/settings', { method: 'PUT', body: { businessType: type, businessSubtype: subtype, publicName: ($('#pn') as HTMLInputElement).value.trim(), phone: ($('#ph') as HTMLInputElement).value.trim(), openMinutes: open, closeMinutes: close, daysOpen: days, depositEnabled: depOn && depMinor > 0, depositMinor: depOn ? depMinor : 0, onboarded: true } });
           const existing = await api<{ services: unknown[] }>('/api/bookings/services');
           if (!existing.services.length) for (const r of svcs) await api('/api/bookings/services', { method: 'POST', body: { name: r.name.trim(), durationMin: Math.min(480, Math.max(5, r.min)), priceMinor: Math.round(r.ngn * 100) } });
           for (const n of team) await api('/api/bookings/staff', { method: 'POST', body: { name: n } });

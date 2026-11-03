@@ -104,6 +104,7 @@ export async function putSettings(b: Record<string, unknown>): Promise<{ setting
   if (c.role !== 'owner') throw new ApiError(403, 'Only the workspace owner can change these settings.', 'forbidden');
   const s: WorkspaceSettings = { ...DEFAULT_SETTINGS, ...c.settings };
   if (b.businessType !== undefined) s.businessType = String(b.businessType).slice(0, 40);
+  if (b.businessSubtype !== undefined) s.businessSubtype = String(b.businessSubtype ?? '').slice(0, 40) || null;
   if (b.publicName !== undefined) { const n = String(b.publicName ?? '').trim(); if (n.length > 120) throw new ApiError(400, 'Business name is too long.'); s.publicName = n || null; }
   if (b.phone !== undefined) s.phone = String(b.phone ?? '').trim().slice(0, 32) || null;
   if (b.address !== undefined) s.address = String(b.address ?? '').trim().slice(0, 200) || null;
