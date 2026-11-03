@@ -26,11 +26,11 @@ function shell(path: string, body: Raw): void {
     </header>
     <main id="main">${body}</main>
     <footer class="site-footer"><div class="container">
-      <div class="foot-grid"><div>${brand()}<p style="margin-top:12px;max-width:300px;font-size:.9rem">Bookings, deposits and customer conversations for businesses in Nigeria and beyond. Built by Zexlabs in Akure.</p></div>
+      <div class="foot-grid"><div>${brand()}<p style="margin-top:12px;max-width:300px;font-size:.9rem">Bookings, deposits and customer conversations for businesses in Nigeria and beyond. A product of Zexlabs.</p></div>
         <div><h4>Product</h4><ul><li><a href="/product" data-link>Features</a></li><li><a href="/pricing" data-link>Pricing</a></li><li><a href="/security" data-link>Security</a></li></ul></div>
         <div><h4>Company</h4><ul><li><a href="/contact" data-link>Contact</a></li><li><a href="mailto:${EMAIL}">${EMAIL}</a></li></ul></div>
         <div><h4>Legal</h4><ul><li><a href="/privacy" data-link>Privacy</a></li><li><a href="/terms" data-link>Terms</a></li></ul></div></div>
-      <div class="foot-bottom"><span>© ${new Date().getFullYear()} Zexlabs. All rights reserved.</span><span>Akure, Nigeria</span></div></div></footer></div>`);
+      <div class="foot-bottom"><span>© ${new Date().getFullYear()} Zexlabs. All rights reserved.</span><span>ZexCore, a product of Zexlabs</span></div></div></footer></div>`);
   $('[data-burger]')?.addEventListener('click', (e) => { const mm = $('[data-mm]')!; const open = mm.classList.toggle('hidden') === false; (e.currentTarget as HTMLElement).setAttribute('aria-expanded', String(open)); });
   window.scrollTo(0, 0);
 }
