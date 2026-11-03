@@ -5,7 +5,7 @@ import { money, timeOf, longDate } from '../lib/format';
 import { errorState, skeletonRows, copyText } from '../lib/ui';
 import { current } from '../lib/session';
 import { loadSettings, bookingUrl, type Booking } from '../lib/store';
-import { termsFor } from '../lib/bizTerms';
+import { termsFor } from '../lib/industries';
 import { statusBadge, depositBadge, openNewBooking } from './bookings';
 
 interface Summary {
