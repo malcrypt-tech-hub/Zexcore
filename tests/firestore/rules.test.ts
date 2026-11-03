@@ -84,6 +84,7 @@ describe('workspace creation and plan fields', () => {
     b.set(doc(db, 'users', 'owner1'), { name: 'Sade', email: 'sade@example.com', workspaceIds: [W], createdAt: serverTimestamp() });
     await assertSucceeds(b.commit());
     await assertSucceeds(updateDoc(doc(owner(), 'slugs', SLUG), { bookingCap: 200 }));
+    await assertSucceeds(updateDoc(doc(owner(), 'slugs', SLUG), { riskDeposit: true }));
     await assertFails(updateDoc(doc(other(), 'slugs', SLUG), { bookingCap: 999999 }));
     await assertFails(updateDoc(doc(owner(), 'slugs', SLUG), { plan: 'enterprise' }));
   });

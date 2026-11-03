@@ -6,6 +6,7 @@
  * tiers, plans or identities sent by a browser or found in webhook metadata.
  */
 import { deleteAccount } from './routes/account';
+import { assess } from './routes/risk';
 import { realDeps, type Ctx, type Deps, type Env } from './env';
 import { HttpError, cors, json } from './util';
 import { checkout, webhook } from './routes/billing';
@@ -58,6 +59,7 @@ const ROUTES: Record<string, Handler> = {
   'POST /api/team/role': setRole,
   'POST /api/team/remove': remove,
   'POST /api/account/delete': deleteAccount,
+  'POST /api/risk/assess': assess,
 };
 
 /** Routes that take or confirm money. They stay off unless a live Paystack key is set (or the Worker is explicitly marked staging). */

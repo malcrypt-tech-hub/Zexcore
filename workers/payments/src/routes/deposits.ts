@@ -18,6 +18,7 @@ import { ownerContact } from '../automation';
 import { sendFormal } from '../mail';
 import { HttpError, ID_RE, firstName, json, randomRef, readJson } from '../util';
 import { getLiveNgnRate } from '../rates';
+import { assessBooking } from './risk';
 
 const PAYSTACK = 'https://api.paystack.co';
 const BOOKING_RE = /^\d{6}_\d{1,6}$/;
@@ -71,14 +72,22 @@ export async function payoutSetup(c: Ctx): Promise<Response> {
   return json({ ok: true, accountName, last4: accountNumber.slice(-4) }, 200, c.headers);
 }
 
-interface Plan { wid: string; slug: string; bookingId: string; amountMinor: number; usdMinor: number; rate: number; subaccount: string; email: string }
+interface Plan { wid: string; slug: string; bookingId: string; amountMinor: number; usdMinor: number; rate: number; subaccount: string; email: string; risk: boolean }
 
 async function planDeposit(c: Ctx, wid: string, slug: string, bookingId: string, emailIn: unknown, opts: { requireFresh: boolean }): Promise<Plan> {
   if (!BOOKING_RE.test(bookingId)) throw new HttpError(400, 'Invalid booking');
   const [ws, booking, payout] = await Promise.all([fsGet(c.env, c.d, `workspaces/${wid}`), fsGet(c.env, c.d, `workspaces/${wid}/bookings/${bookingId}`), fsGet(c.env, c.d, `workspaces/${wid}/payout/main`)]);
   const st = (ws?.data.settings ?? {}) as Record<string, any>;
   if (!ws || !booking) throw new HttpError(404, 'Booking not found');
-  if (st.depositEnabled !== true || !(Number(st.depositMinor) > 0)) throw new HttpError(409, 'This business does not take deposits online.', 'deposits_off');
+  // A deposit is due when the business takes deposits from everyone, or (Enterprise) when this booking's no-show risk is high enough.
+  const everyone = st.depositEnabled === true && Number(st.depositMinor) > 0;
+  let baseUsd = Number(st.depositMinor); let risk = false;
+  if (!everyone) {
+    const r = st.riskDepositEnabled === true ? await assessBooking(c, wid, bookingId) : null;
+    const need = st.riskDepositLevel === 'medium' ? 30 : 60;
+    if (!r || r.score < need || !(Number(st.riskDepositMinor) > 0)) throw new HttpError(409, 'This business does not take deposits online.', 'deposits_off');
+    baseUsd = Number(st.riskDepositMinor); risk = true;
+  }
   if (!payout?.data.subaccountCode) throw new HttpError(409, 'This business has not finished setting up payouts yet.', 'payout_missing');
   if (booking.data.status === 'cancelled') throw new HttpError(409, 'This booking was cancelled.');
   if (booking.data.depositStatus === 'paid') throw new HttpError(409, 'The deposit is already paid.', 'already_paid');
@@ -89,7 +98,7 @@ async function planDeposit(c: Ctx, wid: string, slug: string, bookingId: string,
   const svc = await fsGet(c.env, c.d, `workspaces/${wid}/services/${String(booking.data.serviceId)}`);
   const price = Number(svc?.data.priceMinor ?? 0);
   // Prices and deposits are US-dollar cents; the business sets its own exchange rate and Paystack charges naira (kobo).
-  const usdMinor = price > 0 ? Math.min(Number(st.depositMinor), price) : Number(st.depositMinor);
+  const usdMinor = price > 0 ? Math.min(baseUsd, price) : baseUsd;
   let rate = Number(st.exchangeRate);
   if (!Number.isFinite(rate) || rate < 100 || st.exchangeRateMode === 'auto') {
     rate = await getLiveNgnRate(c.env, c.d);
@@ -97,12 +106,16 @@ async function planDeposit(c: Ctx, wid: string, slug: string, bookingId: string,
   const amountMinor = Math.round(usdMinor * rate);
   const email = String(emailIn || booking.data.customerEmail || `pay+${bookingId.replace('_', '')}@zexcore.com.ng`).trim();
   if (!EMAIL_RE.test(email)) throw new HttpError(400, 'Enter a valid email address for your receipt.');
-  return { wid, slug, bookingId, amountMinor, usdMinor, rate, subaccount: String(payout.data.subaccountCode), email };
+  return { wid, slug, bookingId, amountMinor, usdMinor, rate, subaccount: String(payout.data.subaccountCode), email, risk };
 }
 
 async function startPayment(c: Ctx, p: Plan, by: string): Promise<{ reference: string; authorizationUrl: string; amountMinor: number }> {
   const reference = randomRef(p.wid);
-  await fsCommit(c.env, c.d, [{ path: `workspaces/${p.wid}/depositPayments/${reference}`, fields: { reference, bookingId: p.bookingId, amountMinor: p.amountMinor, usdMinor: p.usdMinor, rate: p.rate, currency: 'NGN', status: 'pending', createdAt: c.d.now(), createdBy: by }, precondition: { exists: false } }]);
+  await fsCommit(c.env, c.d, [
+    { path: `workspaces/${p.wid}/depositPayments/${reference}`, fields: { reference, bookingId: p.bookingId, amountMinor: p.amountMinor, usdMinor: p.usdMinor, rate: p.rate, currency: 'NGN', status: 'pending', createdAt: c.d.now(), createdBy: by }, precondition: { exists: false } },
+    // A risk-based deposit is not in the business's settings, so the booking itself records that one is owed.
+    ...(p.risk ? [{ path: `workspaces/${p.wid}/bookings/${p.bookingId}`, fields: { depositStatus: 'unpaid', depositMinor: p.usdMinor, riskDeposit: true }, mask: ['depositStatus', 'depositMinor', 'riskDeposit'], precondition: { exists: true } }] : []),
+  ]);
   const fee = Math.max(0, Math.min(Number(c.env.DEPOSIT_FEE_MINOR ?? 0) || 0, Math.floor(p.amountMinor / 2)));
   const r = await ps(c.env, c.d, '/transaction/initialize', { method: 'POST', body: JSON.stringify({
     email: p.email, amount: p.amountMinor, currency: 'NGN', reference, subaccount: p.subaccount, bearer: 'subaccount', ...(fee ? { transaction_charge: fee } : {}),
