@@ -45,7 +45,7 @@ ${rows}${button}
 ${spec.note ? `<p style="margin:16px 0 0;font-size:13px;line-height:1.6;color:#6b7280">${e(spec.note)}</p>` : ''}
 </td></tr>
 <tr><td style="padding:24px 28px 28px"><hr style="border:none;border-top:1px solid #e5e7eb;margin:0 0 16px">
-<p style="margin:0;font-size:12px;line-height:1.6;color:#9ca3af">Sent by ZexCore, a product of Zexlabs, Akure, Nigeria. Questions? Reply to this email or write to <a href="mailto:${REPLY_TO}" style="color:#6b7280">${REPLY_TO}</a>.</p>
+<p style="margin:0;font-size:12px;line-height:1.6;color:#9ca3af">Sent by ZexCore, a product of Zexlabs. Questions? Reply to this email or write to <a href="mailto:${REPLY_TO}" style="color:#6b7280">${REPLY_TO}</a>.</p>
 </td></tr></table></td></tr></table></body></html>`;
   return { text, html };
 }

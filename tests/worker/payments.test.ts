@@ -374,7 +374,12 @@ describe('plan time is never lost', () => {
     const r = await call('/api/checkout', { headers: await authed(), body: checkoutBody({ tier: 'starter' }) });
     expect(r.status).toBe(409);
     expect((await r.json() as any).code).toBe('downgrade_blocked');
-    const up = await call('/api/checkout', { headers: await authed(), body: checkoutBody({ tier: 'enterprise' }) });
+    // Enterprise and Dedicated are arranged with the team, never started online
+    const big = await call('/api/checkout', { headers: await authed(), body: checkoutBody({ tier: 'enterprise' }) });
+    expect(big.status).toBe(409);
+    expect((await big.json() as any).code).toBe('contact_us');
+    seedDoc(`workspaces/${WID}`, { name: 'Sade Salon', plan: 'starter', ownerUid: 'owner1', slug: 'sade-salon', planExpiresAt: new Date(NOW.getTime() + 20 * day) });
+    const up = await call('/api/checkout', { headers: await authed(), body: checkoutBody({ tier: 'agency' }) });
     expect(up.status).toBe(201);
   });
 });
