@@ -130,7 +130,8 @@ service cloud.firestore {
       match /invites/{id} { allow read: if isAdmin(wid); allow write: if false; }
 
       match /members/{uid} {
-        allow read: if isMember(wid);
+        allow get: if isMember(wid);
+        allow list: if isMember(wid) && !isViewer(wid);   // read-only logins see their own row, not the team
         // only the founding owner row, written in the same batch as the workspace
         allow create: if signedIn() && uid == request.auth.uid && request.resource.data.role == 'owner'
           && !exists(wsPath(wid))

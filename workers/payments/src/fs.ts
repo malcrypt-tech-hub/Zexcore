@@ -52,6 +52,8 @@ export interface FsWrite {
   mask?: string[];
   delete?: boolean;
   precondition?: { exists: boolean } | { updateTime: string };
+  /** Fields Google's servers stamp with the commit time (REQUEST_TIME), so the value cannot come from any client or from this Worker's clock. */
+  serverTime?: string[];
 }
 export class FsConflict extends Error {}
 export async function fsCommit(env: Env, d: Deps, writes: FsWrite[]): Promise<void> {
@@ -63,6 +65,7 @@ export async function fsCommit(env: Env, d: Deps, writes: FsWrite[]): Promise<vo
         : {
           update: { name: fsName(env, w.path), fields: Object.fromEntries(Object.entries(w.fields ?? {}).map(([k, v]) => [k, toFs(v)])) },
           ...(w.mask ? { updateMask: { fieldPaths: w.mask } } : {}),
+          ...(w.serverTime?.length ? { updateTransforms: w.serverTime.map((f) => ({ fieldPath: f, setToServerValue: 'REQUEST_TIME' })) } : {}),
           ...(w.precondition ? { currentDocument: w.precondition } : {}),
         }),
     }),

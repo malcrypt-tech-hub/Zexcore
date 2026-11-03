@@ -103,7 +103,7 @@ function googleSignupStep(o: Extract<GoogleOutcome, { kind: 'needs-signup' }>): 
       try {
         await googleExchange(o.credential, { tenantName: ($('#biz') as HTMLInputElement).value.trim() });
         navigate('/app/onboarding', true);
-      } catch (x) { const g = $('#gerr')!; g.textContent = x instanceof ApiError ? x.message : 'Could not create workspace'; g.classList.remove('hidden'); }
+      } catch (x) { const g = $('#gerr')!; g.textContent = x instanceof ApiError ? x.message : `Could not create the workspace${(x as { code?: string })?.code ? ` (${(x as { code?: string }).code})` : ''}. Please try again.`; g.classList.remove('hidden'); }
     });
   });
 }

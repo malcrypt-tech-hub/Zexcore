@@ -65,7 +65,16 @@ export async function payments(): Promise<{ payments: unknown[] }> {
 export async function auditLog(): Promise<{ entries: unknown[] }> {
   const c = await loadCtx(); requireAdmin(c);
   const s = await getDocs(query(wsCol(c, 'auditChain'), orderBy('seq', 'desc'), qLimit(100)));
-  return { entries: s.docs.map((d) => { const x = d.data(); const [entity, ...id] = String(x.target ?? '').split(':'); return { seq: x.seq, action: x.action, entity: entity || null, entity_id: id.join(':') || null, principal_type: 'user', created_at: iso(x.at) ?? new Date().toISOString(), hash: x.hash ?? '' }; }) };
+  // Who did it: member rows give emails. Read-only logins cannot list the team, so they see a short id instead.
+  const who = new Map<string, string>();
+  if (c.role !== 'viewer') { try { (await getDocs(wsCol(c, 'members'))).forEach((m) => who.set(m.id, String(m.data().email ?? m.data().name ?? ''))); } catch { /* names are a courtesy */ } }
+  return { entries: s.docs.map((d) => {
+    const x = d.data(); const [entity, ...id] = String(x.target ?? '').split(':');
+    const actor = String(x.actor ?? '');
+    // committedAt is stamped by Google's servers when the entry is saved; entries from before that existed carry the ZexCore server clock.
+    return { seq: x.seq, action: x.action, entity: entity || null, entity_id: id.join(':') || null, actor: who.get(actor) || (actor ? `user ${actor.slice(0, 6)}…` : 'system'), detail: String(x.detail ?? ''),
+      created_at: iso(x.committedAt) ?? iso(x.at) ?? new Date().toISOString(), google_time: !!x.committedAt, hash: x.hash ?? '' };
+  }) };
 }
 
 export async function verifyAuditLog(): Promise<unknown> {

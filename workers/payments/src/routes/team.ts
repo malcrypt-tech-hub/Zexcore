@@ -9,6 +9,7 @@
  */
 import type { Ctx } from '../env';
 import { requireMember, verifyFirebaseIdToken } from '../auth';
+import { appendAudit } from './audit';
 import { FsConflict, fsCommit, fsGet, fsQuery } from '../fs';
 import { sendFormal } from '../mail';
 import { RANK, activePlan } from './billing';
@@ -38,6 +39,11 @@ async function seatLimit(c: Ctx, wid: string): Promise<number> {
 async function requireViewerPlan(c: Ctx, wid: string): Promise<void> {
   const ws = await fsGet(c.env, c.d, `workspaces/${wid}`);
   if ((RANK[activePlan(ws?.data, c.d.now()).tier] ?? 0) < (RANK.enterprise ?? 4)) throw new HttpError(402, 'Read-only viewer logins are part of the Enterprise and Dedicated plans.', 'plan_feature');
+}
+
+/** Admin activity is written to the tamper-evident log. A busy log must not undo a change that already happened, so a failure here is reported, not thrown. */
+async function logAdmin(c: Ctx, wid: string, actor: string, action: string, target: string, detail: string): Promise<void> {
+  try { await appendAudit(c, wid, actor, action, target, detail); } catch (e) { console.error('audit append failed', action, e instanceof Error ? e.message : e); }
 }
 
 async function setUserWorkspaces(c: Ctx, uid: string, edit: (ids: string[]) => string[]): Promise<void> {
@@ -71,6 +77,7 @@ export async function invite(c: Ctx): Promise<Response> {
   await fsCommit(c.env, c.d, [{ path: `workspaces/${wid}/invites/${id}`, precondition: { exists: false }, fields: {
     email, role, invitedBy: caller.uid, invitedByEmail: caller.email ?? null, createdAt: now, expiresAt: new Date(now.getTime() + INVITE_DAYS * 86_400_000),
   } }]);
+  await logAdmin(c, wid, caller.uid, 'team.invite', `invite:${id.slice(0, 12)}`, `${email} as ${role}`);
   const ws = await fsGet(c.env, c.d, `workspaces/${wid}`);
   const link = `${c.env.APP_URL.replace(/\/$/, '')}/accept-invite?w=${wid}&t=${token}`;
   const wsName = String(ws?.data.name ?? 'a workspace');
@@ -125,15 +132,18 @@ export async function accept(c: Ctx): Promise<Response> {
     ]);
   } catch (e) { if (e instanceof FsConflict) throw new HttpError(409, 'That invitation was already used.', 'invite_gone'); throw e; }
   await setUserWorkspaces(c, caller.uid, (cur) => (cur.includes(wid) ? cur : [...cur, wid]));
+  await logAdmin(c, wid, caller.uid, 'team.join', `member:${caller.uid}`, `${caller.email.toLowerCase()} joined as ${inv.data.role}`);
   return json({ ok: true, wid, role: inv.data.role }, 200, c.headers);
 }
 
 // POST /api/team/revoke  { wid, id }
 export async function revoke(c: Ctx): Promise<Response> {
   const b = await readJson(c.req);
-  const { wid } = await requireMember(c, b.wid, ['owner', 'admin']);
+  const { caller, wid } = await requireMember(c, b.wid, ['owner', 'admin']);
   if (typeof b.id !== 'string' || !/^[a-f0-9]{64}$/.test(b.id)) throw new HttpError(400, 'Invalid invitation');
+  const inv = await fsGet(c.env, c.d, `workspaces/${wid}/invites/${b.id}`);
   await fsCommit(c.env, c.d, [{ path: `workspaces/${wid}/invites/${b.id}`, delete: true }]);
+  await logAdmin(c, wid, caller.uid, 'team.revoke', `invite:${b.id.slice(0, 12)}`, String(inv?.data.email ?? ''));
   return json({ ok: true }, 200, c.headers);
 }
 
@@ -148,11 +158,12 @@ async function target(c: Ctx, wid: string, uid: unknown) {
 // POST /api/team/role  { wid, uid, role }   owner only (admins are the owner's call)
 export async function setRole(c: Ctx): Promise<Response> {
   const b = await readJson(c.req);
-  const { wid } = await requireMember(c, b.wid, ['owner']);
+  const { caller, wid } = await requireMember(c, b.wid, ['owner']);
   if (b.role !== 'admin' && b.role !== 'editor' && b.role !== 'viewer') throw new HttpError(400, 'Choose a role: admin, editor or viewer.');
   if (b.role === 'viewer') await requireViewerPlan(c, wid);
   const m = await target(c, wid, b.uid);
   await fsCommit(c.env, c.d, [{ path: m.path, fields: { role: b.role }, mask: ['role'], precondition: { exists: true } }]);
+  await logAdmin(c, wid, caller.uid, 'team.role', `member:${m.id}`, `${String(m.data.email ?? '')} ${String(m.data.role)} to ${b.role}`);
   return json({ ok: true }, 200, c.headers);
 }
 
@@ -166,5 +177,6 @@ export async function remove(c: Ctx): Promise<Response> {
   if (!self && me === 'admin' && m.data.role !== 'editor') throw new HttpError(403, 'Only the owner can remove an admin.', 'forbidden');
   await fsCommit(c.env, c.d, [{ path: m.path, delete: true, precondition: { exists: true } }]);
   await setUserWorkspaces(c, m.id, (cur) => cur.filter((x) => x !== wid));
+  await logAdmin(c, wid, caller.uid, self ? 'team.leave' : 'team.remove', `member:${m.id}`, `${String(m.data.email ?? '')} (${String(m.data.role)})`);
   return json({ ok: true }, 200, c.headers);
 }

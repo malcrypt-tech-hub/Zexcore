@@ -95,15 +95,17 @@ export async function renderBilling(view: HTMLElement): Promise<void> {
   } catch (e) { mount(ph, errorState(e instanceof ApiError ? e.message : 'Could not load payments', false)); }
 }
 
-interface Entry { seq: number; action: string; entity: string; entity_id: string | null; principal_type: string; created_at: string; hash: string }
+interface Entry { seq: number; action: string; entity: string; entity_id: string | null; actor: string; detail: string; created_at: string; google_time: boolean; hash: string }
+const stamp = (iso: string): string => new Date(iso).toLocaleString('en-NG', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZoneName: 'short' });
 export async function renderAudit(view: HTMLElement): Promise<void> {
   mount(view, html`<div class="page-head"><div><h1>Audit log</h1><p>Every important change is recorded in a hash-chained log that cannot be edited.</p></div><button class="btn btn-secondary" data-verify>${ic('shield-check', 'ico-sm')} Verify integrity</button></div>
-    <div id="vr" class="hidden" style="margin-bottom:16px"></div><div class="card" id="al"></div>`);
+    <div id="vr" class="hidden" style="margin-bottom:16px"></div><div class="card" id="al"></div>
+    <p class="muted small" style="margin-top:12px">Each entry's date and time is stamped by Google's servers at the moment it is saved, so it cannot be set or changed from anyone's device. Entries saved before 3 Nov 2026 carry the ZexCore server's clock instead.</p>`);
   const host = $('#al', view)!;
   mount(host, skeletonRows(4));
   try {
     const { entries } = await api<{ entries: Entry[] }>('/api/audit-log?limit=100');
-    mount(host, entries.length === 0 ? emptyState({ icon: 'history', title: 'Nothing recorded yet', text: 'Actions like signups, settings changes and payments appear here.' }) : html`<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Action</th><th>Entity</th><th>Actor</th><th>When</th></tr></thead><tbody>${entries.map((e) => html`<tr><td class="mono muted">${e.seq}</td><td><b>${e.action}</b></td><td class="muted">${e.entity}${e.entity_id ? html` <span class="mono">${String(e.entity_id).slice(0, 12)}</span>` : ''}</td><td class="muted">${e.principal_type}</td><td class="muted">${ago(e.created_at)}</td></tr>`)}</tbody></table></div>`);
+    mount(host, entries.length === 0 ? emptyState({ icon: 'history', title: 'Nothing recorded yet', text: 'Actions like signups, settings changes and payments appear here.' }) : html`<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Action</th><th>Details</th><th>By</th><th>Date and time</th></tr></thead><tbody>${entries.map((e) => html`<tr><td class="mono muted">${e.seq}</td><td><b>${e.action}</b></td><td class="muted">${e.detail ? e.detail : html`${e.entity}${e.entity_id ? html` <span class="mono">${String(e.entity_id).slice(0, 12)}</span>` : ''}`}</td><td class="muted">${e.actor}</td><td class="muted" style="white-space:nowrap" title="${e.google_time ? 'Stamped by Google servers' : 'Stamped by the ZexCore server'}">${stamp(e.created_at)}</td></tr>`)}</tbody></table></div>`);
   } catch (e) { mount(host, errorState(e instanceof ApiError ? e.message : 'Could not load the audit log')); }
   $('[data-verify]', view)!.addEventListener('click', (ev) => void busy(ev.currentTarget as HTMLButtonElement, async () => {
     const box = $('#vr', view)!;

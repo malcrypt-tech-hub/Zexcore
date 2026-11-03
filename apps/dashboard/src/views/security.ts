@@ -3,7 +3,9 @@ import { ic } from '../lib/icons';
 import { api, ApiError, setToken } from '../lib/api';
 import { ago } from '../lib/format';
 import { toast, emptyState, errorState, skeletonRows, confirmDialog } from '../lib/ui';
-import { current } from '../lib/session';
+import { current, resetSession } from '../lib/session';
+import { clearStore } from '../lib/store';
+import { navigate } from '../router';
 import { formModal } from './shared';
 import { inp } from './shared';
 
@@ -26,6 +28,9 @@ export async function renderSecurity(view: HTMLElement): Promise<void> {
           ${me.user.emailVerified === false ? html`<div class="row"><span class="badge badge-warning">Not confirmed</span><button class="btn btn-secondary btn-sm" data-resend>Resend link</button></div>` : html`<span class="badge badge-success">${ic('check', 'ico-sm')} Confirmed</span>`}</div>
         <div class="divider"></div>
         <div class="row between"><div><b>Password</b><div class="muted small">Changing it signs you out of your other devices.</div></div><button class="btn btn-secondary btn-sm" data-pw>${ic('key-round', 'ico-sm')} Change</button></div>
+      </section>
+      <section class="card card-pad stack" style="border-color:var(--danger,#c0392b)">
+        <div class="row between"><div><b>Delete account</b><div class="muted small">Permanently deletes your sign-in${me.role === 'owner' ? ` and closes ${me.tenant.name}, erasing its bookings, customers, payments and messages` : ' and removes you from the workspaces you joined'}. The deletion is recorded in the audit log.</div></div><button class="btn btn-soft-danger btn-sm" data-del>${ic('trash-2', 'ico-sm')} Delete account</button></div>
       </section>
       <section class="card">
         <div class="card-head"><div><b>Devices signed in</b><div class="muted small">If you do not recognise one, sign it out and change your password.</div></div><button class="btn btn-soft-danger btn-sm hidden" data-others>Sign out others</button></div>
@@ -52,6 +57,22 @@ export async function renderSecurity(view: HTMLElement): Promise<void> {
       void load();
     },
   }));
+
+  $('[data-del]', view)!.addEventListener('click', async () => {
+    const { method } = await api<{ method: 'password' | 'google' }>('/api/account/method');
+    formModal({
+      title: 'Delete your account?', subtitle: 'This cannot be undone.', submitLabel: 'Delete everything',
+      body: html`<div class="alert alert-error">${ic('triangle-alert', 'ico-sm')}<span>Every workspace you own is closed and its data erased for good, and your team loses access. Workspaces you only joined just lose you. Download an export or backup first if you need your records.</span></div>
+        <div class="field"><label for="dc">Type your email (${me.user.email ?? ''}) to confirm</label><input class="input" id="dc" autocomplete="off" required></div>
+        ${method === 'password' ? html`<div class="field"><label for="dp">Password</label><input class="input" id="dp" type="password" autocomplete="current-password" required></div>` : html`<p class="muted small">You will be asked to confirm with Google.</p>`}`,
+      submit: async (el) => {
+        const confirm = inp(el, '#dc');
+        if (!confirm) throw new ApiError(0, 'Type your email to confirm.');
+        await api('/api/account/delete', { method: 'POST', body: { confirm, password: method === 'password' ? inp(el, '#dp') : undefined } });
+        clearStore(); resetSession(); toast('Your account was deleted.', 'success'); navigate('/', true);
+      },
+    });
+  });
 
   const host = $('#ss', view)!;
   async function load(): Promise<void> {
