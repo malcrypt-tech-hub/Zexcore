@@ -3,7 +3,7 @@ import { LIMITS, PRICES } from '../lib/fb/plan';
 import { block, cards, cta, shell, steps } from './ref';
 
 const FREE_BOOKINGS = LIMITS.free.bookingsPerMonth;
-const STARTER = PRICES.starter.monthlyNgn.toLocaleString('en-NG');
+const STARTER = PRICES.starter.monthlyUsd;
 
 export function renderHomePage(): string {
   const hero = `<section class="rp-hero" id="home-flagship-hero"><div class="site-container"><div class="rp-hero-copy">
@@ -47,7 +47,7 @@ export function renderHomePage(): string {
 
     block('Questions owners ask first', '', cards([
       { title: 'How do deposits reach my bank?', text: 'You add your bank account once in Settings and ZexCore checks the account name with your bank. Each deposit is paid by card through Paystack and settled to that account on Paystack\'s normal schedule. ZexCore does not hold your customers\' money.' },
-      { title: 'What does it cost?', text: `Free for up to ${FREE_BOOKINGS} bookings a month. Paid plans start at ₦${STARTER} a month, billed in naira. Paystack\'s own card fee comes out of each deposit.` },
+      { title: 'What does it cost?', text: `Free for up to ${FREE_BOOKINGS} bookings a month. Paid plans start at $${STARTER} a month and are charged in naira at the day\'s rate. Paystack\'s own card fee comes out of each deposit.` },
       { title: 'Do my customers need an account?', text: 'No. They pick a service and a time on your booking page and enter their name and phone number.' },
       { title: 'Can my team log in?', text: 'Yes. Invite people by email as admins or editors. Editors handle bookings, customers, messages, services and website pages; admins also manage settings and the team. The number of logins depends on your plan, and the Free plan is the owner only.' },
       { title: 'What if I stop paying?', text: 'You get a 3-day grace period, then the workspace returns to Free. Nothing is deleted; the Free limits apply to new records.' },

@@ -2,7 +2,7 @@
 import { LIMITS, PRICES, hasFeatureAccess, type Tier } from '../lib/fb/plan';
 import { block, cta, intro, shell, table } from './ref';
 
-const ngn = (amount: number): string => '₦' + amount.toLocaleString('en-NG');
+const usd = (amount: number): string => '$' + amount.toLocaleString('en-US');
 const lim = (n: number | null, t?: Tier): string => (n === null ? (t === 'dedicated' ? 'Custom' : 'Unlimited (fair use)') : t === 'dedicated' ? 'Custom' : n.toLocaleString('en-US'));
 const NAMES: Record<Tier, string> = { free: 'Free', starter: 'Starter', growth: 'Growth', agency: 'Agency', enterprise: 'Enterprise', dedicated: 'Dedicated' };
 const BLURB: Record<Tier, string> = {
@@ -15,8 +15,8 @@ export function renderPricingPage(): string {
   const plan = (t: Tier): string => {
     const contact = t === 'enterprise' || t === 'dedicated';
     const pr = t === 'free' || contact ? null : PRICES[t as keyof typeof PRICES];
-    const price = contact ? 'Contact us' : pr ? ngn(pr.monthlyNgn) : '₦0';
-    const annual = pr ? `<div class="rp-note" style="margin:10px 0 0;padding:8px 12px">${ngn(pr.annualNgn)} a year, two months free · about $${pr.approxUsd} a month</div>` : '';
+    const price = contact ? 'Contact us' : pr ? usd(pr.monthlyUsd) : '$0';
+    const annual = pr ? `<div class="rp-note" style="margin:10px 0 0;padding:8px 12px">${usd(pr.annualUsd)} a year, two months free</div>` : '';
     const featured = t === 'growth';
     return `<div class="rp-card" style="${featured ? 'border-color:#E50920;box-shadow:0 8px 30px rgba(229,9,32,.12)' : ''}">
       ${featured ? '<span class="rp-tag">MOST POPULAR</span>' : ''}<h3>${NAMES[t]}</h3>
@@ -31,7 +31,7 @@ export function renderPricingPage(): string {
       <a href="${t === 'enterprise' || t === 'dedicated' ? '/contact' : '/signup'}" data-link class="btn ${featured ? 'btn-primary' : 'btn-secondary'}" style="width:100%;justify-content:center">${t === 'enterprise' || t === 'dedicated' ? 'Talk to us' : t === 'free' ? 'Start free' : 'Choose ' + NAMES[t]}</a></div>`;
   };
   return shell('pricing',
-    intro('PRICING', 'Simple Plans. No Surprises.', 'Start free. Upgrade when you outgrow it. Prices are in naira and paid securely through Paystack. Enterprise and Dedicated are set up with our team.'),
+    intro('PRICING', 'Simple Plans. No Surprises.', 'Start free. Upgrade when you outgrow it. Prices are in USD; card payments are charged in naira at the day's rate through Paystack. Enterprise and Dedicated are set up with our team.'),
     block('Choose a plan', 'Every plan includes online booking, customers and your public booking page.', `<div class="rp-grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr))">${tiers.map(plan).join('')}</div>`, true),
     block('Compare Plans', 'Every limit is enforced by the platform — not just the interface.', table(
       ['', ...tiers.map((t) => NAMES[t])],
