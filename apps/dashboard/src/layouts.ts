@@ -11,7 +11,7 @@ import { hasFeatureAccess, type FeatureKey } from './lib/fb/plan';
 
 const root = (): HTMLElement => document.getElementById('app')!;
 
-const NAV: { label?: string; items: { href: string; icon: IconName; text: string; key?: string; feature?: FeatureKey }[] }[] = [
+const NAV: { label?: string; items: { href?: string; icon: IconName; text: string; key?: string; feature?: FeatureKey; comingSoon?: boolean }[] }[] = [
   { items: [
     { href: '/app', icon: 'house', text: 'Home' },
     { href: '/app/bookings', icon: 'calendar-check', text: 'Bookings', key: 'bk' },
@@ -34,7 +34,7 @@ const NAV: { label?: string; items: { href: string; icon: IconName; text: string
   ] },
   { label: 'Account', items: [
     { href: '/app/billing', icon: 'credit-card', text: 'Plan & billing' },
-    { href: '/app/license', icon: 'server', text: 'Cluster & license' },
+    { icon: 'server', text: 'Cluster & license', comingSoon: true },
     { href: '/app/security', icon: 'shield-check', text: 'Security' },
     { href: '/app/audit', icon: 'history', text: 'Audit log' },
     { href: '/app/settings', icon: 'settings', text: 'Settings' },
@@ -105,8 +105,15 @@ export async function appLayout(path: string, onNew: () => void): Promise<HTMLEl
           ${NAV.map((g) => html`
             ${g.label ? html`<div class="nav-label">${g.label}</div>` : ''}
             ${g.items.filter((i) => !(me.role === 'viewer' && i.href === '/app/access')).map((i) => {
+              if (i.comingSoon) {
+                return html`<div class="nav-link nav-link-disabled" style="cursor:default;opacity:0.75" aria-disabled="true" title="Coming soon">
+                  ${ic(i.icon)}
+                  <span>${i.text}</span>
+                  <span class="badge" style="margin-left:auto;font-size:0.6875rem;padding:2px 7px;font-weight:600;letter-spacing:0;background:var(--canvas,#f1f5f9);color:var(--muted,#64748b);border-color:var(--border,#cbd5e1)">Coming soon</span>
+                </div>`;
+              }
               const locked = i.feature && !hasFeatureAccess(me.tenant.tier, i.feature);
-              return html`<a class="nav-link" href="${i.href}" data-link data-nav="${i.href}">
+              return html`<a class="nav-link" href="${i.href!}" data-link data-nav="${i.href!}">
                 ${ic(i.icon)}
                 <span>${i.text}</span>
                 ${locked ? html`<span class="nav-lock" title="Plan upgrade required" style="margin-left:auto;opacity:0.6;display:inline-flex">${ic('lock', 'ico-xs')}</span>` : ''}
