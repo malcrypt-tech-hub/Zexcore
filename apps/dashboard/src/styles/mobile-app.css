@@ -1,11 +1,238 @@
-/* Phone ergonomics for the sign-in screens and the signed-in app: 44px touch targets, no iOS zoom on focus. */
-@media (max-width: 640px) {
-  .btn { min-height: 44px; }
-  .btn-icon { min-width: 44px; min-height: 44px; }
-  .auth-card a, .auth-card .link { display: inline-block; padding: 10px 2px; }
-  .input, .textarea, .select { font-size: 16px; min-height: 44px; } /* 16px stops iOS Safari zooming the page on focus */
-  .chip-btn { min-height: 40px; }
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE-APP.CSS — ZexCore dashboard mobile optimisation
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Prevent horizontal overflow globally ── */
+html, body { max-width: 100%; overflow-x: hidden; }
+*, *::before, *::after { box-sizing: border-box; }
+
+/* ── Touch target hygiene ── */
+a, button, input, select, textarea, label { touch-action: manipulation; }
+
+/* ── The logo has a white background; multiply blends it cleanly on light surfaces. ── */
+.brand-lockup { mix-blend-mode: multiply; }
+
+/* ── Topbar: hide bulky desktop-only links on small screens ── */
+@media (max-width: 1023px) {
+  /* "Back to website" btn takes up precious header space — hidden on mobile */
+  .topbar > a.btn { display: none; }
+}
+@media (max-width: 479px) {
+  /* Notifications icon pushed by biz chip — keep it but tighten gap */
+  .topbar { gap: 6px; padding: 0 10px; }
+  .biz-chip { max-width: 120px; }
+  /* Icon circle is hidden on tiny screens per existing rule, so just ensure New btn fits */
+  .topbar [data-new] { padding: 0 12px; }
 }
 
-/* The logo file has a white background; on the light-grey auth screens that showed as a white box around it. */
-.brand-lockup { mix-blend-mode: multiply; }
+/* ── Bottom nav: 5-column grid with icons + labels + badge ── */
+.bottom-nav {
+  grid-template-columns: repeat(5, 1fr);
+}
+.bottom-nav a {
+  gap: 3px;
+  font-size: .625rem;
+  padding: 4px 2px;
+  position: relative;
+}
+/* Bookings badge in bottom nav */
+.bottom-nav .badge-n {
+  position: absolute;
+  top: 4px;
+  left: calc(50% + 8px);
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: .625rem;
+}
+
+/* ── Phone ergonomics: 44 px touch targets, no iOS zoom on focus ── */
+@media (max-width: 640px) {
+  .btn:not(.btn-sm):not(.btn-icon) { min-height: 44px; }
+  .btn-icon { min-width: 44px; min-height: 44px; }
+  .btn-sm { min-height: 36px; }
+  .btn-lg { min-height: 52px; font-size: 1rem; }
+  .auth-card a, .auth-card .link { display: inline-block; padding: 10px 2px; }
+  /* 16px stops iOS Safari zooming the page on focus */
+  .input, .textarea, .select { font-size: 16px !important; min-height: 44px; }
+  .chip-btn { min-height: 40px; padding: 0 12px; }
+}
+
+/* ── Page header: stack title + action button on small screens ── */
+@media (max-width: 540px) {
+  .page-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .page-head > .btn,
+  .page-head > button {
+    width: 100%;
+  }
+  .page-head h1 { font-size: 1.375rem; }
+}
+
+/* ── Cards: reduce inner padding on small screens ── */
+@media (max-width: 540px) {
+  .card-pad { padding: 14px; }
+  .card-head { padding: 14px 16px; }
+  .modal-body { padding: 10px 16px 6px; }
+  .modal-head { padding: 18px 18px 4px; }
+  .modal-foot { padding: 12px 18px 18px; gap: 8px; }
+}
+
+/* ── Messages split-pane: mobile single-column with JS-driven panel toggle ── */
+@media (max-width: 1023px) {
+  .split { display: block; gap: 0; }
+  .split .conv-list { border-radius: var(--r-lg) var(--r-lg) 0 0; border-bottom: none; }
+
+  /* When thread is active on mobile: hide conv-list, show thread */
+  .split.thread-active .conv-list { display: none; }
+  .split.thread-active .conv-thread { display: flex; flex-direction: column; }
+
+  /* When no thread active: show conv-list, hide thread placeholder */
+  .split:not(.thread-active) .conv-thread { display: none; }
+
+  /* Thread takes remaining viewport so compose stays at bottom */
+  .conv-thread {
+    position: fixed;
+    inset: var(--nav-h) 0 calc(var(--bottom-nav-h) + var(--safe-b)) 0;
+    z-index: 10;
+    background: var(--surface);
+    overflow: hidden;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  /* Back button that sits above thread header */
+  .thread-back-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+  .thread-back-bar button { min-height: 36px; min-width: 36px; padding: 0 10px; }
+  /* Scrollable message area fills available space */
+  .conv-thread #msgs { flex: 1; max-height: none !important; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  /* Compose bar sticks to bottom inside thread */
+  .conv-thread .compose { position: sticky; bottom: 0; }
+  .conv-thread .hint { padding: 4px 14px 8px; font-size: .75rem; }
+}
+
+/* ── Booking cards: single column on small mobile ── */
+@media (max-width: 540px) {
+  .booking-card .row:last-of-type { gap: 6px; }
+  .booking-card .row:last-of-type .btn { flex: 1; font-size: .8125rem; }
+}
+
+/* ── Calendar: tighter cells on tiny screens ── */
+@media (max-width: 480px) {
+  .cal-head { font-size: .625rem; padding: 4px 0; }
+  .cal-cell { min-height: 48px; padding: 4px 2px; }
+  .cal-cell b { width: 20px; height: 20px; font-size: .6875rem; }
+  .cal-count { font-size: .5625rem; }
+}
+
+/* ── Tables: horizontal scroll with momentum on mobile ── */
+@media (max-width: 767px) {
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table th, .table td { white-space: nowrap; padding: 10px 14px; }
+}
+
+/* ── Chips / filter tabs: scroll horizontally without wrapping ── */
+.chips { -webkit-overflow-scrolling: touch; }
+
+/* ── Copy-box: prevent overflow on narrow screens ── */
+.copy-box { min-width: 0; overflow: hidden; }
+.copy-box code { font-size: .8rem; }
+
+/* ── Link-card: stack on small screens ── */
+@media (max-width: 540px) {
+  .link-card .row.between { flex-direction: column; align-items: flex-start; gap: 8px; }
+}
+
+/* ── Compose bar: bigger tap target for the Send button ── */
+@media (max-width: 767px) {
+  .compose .btn-icon { min-width: 48px; min-height: 48px; }
+  .compose .input { font-size: 16px; }
+}
+
+/* ── Home hero stat grid: 2-col on mobile, 4-col on desktop ── */
+@media (max-width: 540px) {
+  .stat-grid { grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+  .stat-tile { padding: 10px 12px; }
+  .stat-tile .v { font-size: 1.35rem; }
+}
+
+/* ── Verify banner: wrap nicely on tiny screens ── */
+@media (max-width: 480px) {
+  .verify-banner { gap: 8px; padding: 8px 12px; font-size: .8125rem; }
+  .verify-banner > svg { flex: none; }
+}
+
+/* ── Scrollable modal on tiny phones ── */
+@media (max-width: 400px) {
+  .modal { max-height: 96dvh; }
+  .modal-head, .modal-body, .modal-foot { padding-left: 14px; padding-right: 14px; }
+}
+
+/* ── Public booking page: slot grid 3→2 columns on small mobile ── */
+@media (max-width: 400px) {
+  .slot-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ── Form grids: always single column on mobile ── */
+@media (max-width: 540px) {
+  .form-grid.two { grid-template-columns: 1fr; }
+}
+
+/* ── Bottom nav icon sizing ── */
+.bottom-nav a .ico { width: 22px; height: 22px; }
+
+/* ── Ensure main content doesn't sit under bottom nav ── */
+.main { padding-bottom: calc(var(--bottom-nav-h) + 24px + var(--safe-b)); }
+@media (min-width: 1024px) {
+  .main { padding-bottom: 48px; }
+}
+
+/* ── Toasts above bottom nav on mobile ── */
+@media (max-width: 1023px) {
+  .toasts { bottom: calc(var(--bottom-nav-h) + 12px + var(--safe-b)); right: 12px; left: 12px; }
+  .toast { max-width: 100%; }
+}
+
+/* ── Safe-area padding for bottom nav (notched phones) ── */
+.bottom-nav { padding-bottom: var(--safe-b); height: calc(var(--bottom-nav-h) + var(--safe-b)); }
+
+/* ── Back button bar: hidden on desktop ── */
+@media (min-width: 1024px) {
+  .thread-back-bar { display: none; }
+  .split { display: grid !important; }
+  .split .conv-list { display: block !important; }
+  .split .conv-thread { display: flex !important; position: static !important; inset: auto !important; overflow: visible !important; border-radius: var(--r-lg) !important; }
+  .split .conv-thread #msgs { max-height: calc(100dvh - 300px) !important; }
+  .conv-thread .hint { padding: 0 14px 12px; }
+}
+
+/* ── Option-cards (service picker, action menu): full-width on mobile ── */
+@media (max-width: 600px) {
+  .option-card { padding: 14px 12px; }
+}
+
+/* ── Fix any remaining min-width issues inside the app ── */
+.main > * { min-width: 0; }
+.card, .panel { min-width: 0; overflow: hidden; }
+
+/* ── Prevent long words / urls blowing out layout ── */
+.card, .list-item, .booking-card, .msg, .msg-sys, .msg-pay,
+.attn-item, .sched-item {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+

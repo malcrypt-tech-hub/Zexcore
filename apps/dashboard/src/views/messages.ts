@@ -10,6 +10,9 @@ import { canManage, current } from '../lib/session';
 interface Conv { phone: string; name: string; lastBody: string; lastKind: string; lastDirection: string; lastAt: string; unread: number; nextSlot: string | null; nextStatus: string | null; nextRef: string | null }
 interface Msg { id: string; direction: 'in' | 'out'; kind: 'text' | 'system' | 'payment'; body: string; createdAt: string }
 
+/** True when the viewport is narrower than the split breakpoint (1024px desktop). */
+const isMobile = (): boolean => window.innerWidth < 1024;
+
 export async function renderMessages(view: HTMLElement, phoneParam?: string | null): Promise<void> {
   if (current()?.role === 'viewer') { mount(view, html`<div class="page-head"><div><h1>Messages</h1></div></div><div class="alert alert-info">Customer chats are private to the team. Your read-only login does not include them.</div>`); return; }
   await loadSettings();
@@ -18,8 +21,19 @@ export async function renderMessages(view: HTMLElement, phoneParam?: string | nu
 
   mount(view, html`
     <div class="page-head"><div><h1>Messages</h1><p>Customer enquiries and automatic booking updates in one inbox.</p></div>${canManage() ? html`<button class="btn btn-primary" data-new-chat>${ic('plus', 'ico-sm')} New message</button>` : ''}</div>
-    <div class="split"><div class="card conv-list" id="convs"></div><div class="card" id="thread" style="min-height:360px"></div></div>`);
+    <div class="split" id="msg-split"><div class="card conv-list" id="convs"></div><div class="card conv-thread" id="thread" style="min-height:360px"></div></div>`);
   $('[data-new-chat]', view)?.addEventListener('click', openNewChat);
+
+  const split = $('#msg-split', view)!;
+
+  /** Show or hide the panes according to whether a thread is active on mobile. */
+  function syncPanes(): void {
+    if (isMobile()) {
+      split.classList.toggle('thread-active', active !== null);
+    } else {
+      split.classList.remove('thread-active');
+    }
+  }
 
   async function loadConvs(): Promise<void> {
     const host = $('#convs', view)!;
@@ -40,19 +54,38 @@ export async function renderMessages(view: HTMLElement, phoneParam?: string | nu
 
   async function loadThread(): Promise<void> {
     const host = $('#thread', view)!;
-    if (!active) { mount(host, emptyState({ icon: 'message-square', title: 'Select a conversation', text: 'Pick a customer on the left to read and reply.' })); return; }
+    if (!active) {
+      syncPanes();
+      mount(host, emptyState({ icon: 'message-square', title: 'Select a conversation', text: 'Pick a customer on the left to read and reply.' }));
+      return;
+    }
+    syncPanes();
     mount(host, skeletonRows(2));
     try {
       const r = await api<{ phone: string; messages: Msg[]; bookings: { ref: string; serviceName: string; startsAt: string; status: string; depositStatus: string; depositMinor: number; currency: string; customerName: string }[] }>(`/api/bookings/conversation?phone=${encodeURIComponent(active)}`);
       const b = r.bookings.find((x) => x.status === 'pending' || x.status === 'confirmed') ?? r.bookings[0];
       const name = b?.customerName ?? '';
+
+      // Back button bar (only shown on mobile via CSS)
+      const backBar = html`<div class="thread-back-bar">
+        <button class="btn btn-ghost btn-sm btn-icon" id="thread-back" aria-label="Back to conversations">${ic('arrow-left', 'ico-sm')}</button>
+        <span class="avatar" style="width:28px;height:28px;font-size:.6875rem">${initials(name || r.phone)}</span>
+        <b class="truncate" style="flex:1">${name || r.phone}</b>
+        <a class="btn btn-secondary btn-sm btn-icon" href="tel:${r.phone}" aria-label="Call">${ic('phone', 'ico-sm')}</a>
+      </div>`;
+
       mount(host, html`
+        ${backBar}
         <div class="card-head"><div class="row"><span class="avatar">${initials(name || r.phone)}</span><div><b>${name || r.phone}</b><div class="muted small mono">${r.phone}</div></div></div>
           ${matchMedia('(pointer: coarse)').matches ? html`<a class="btn btn-secondary btn-sm btn-icon" href="tel:${r.phone}" aria-label="Call ${r.phone}">${ic('phone', 'ico-sm')}</a>` : html`<button class="btn btn-secondary btn-sm btn-icon" data-copy-phone aria-label="Copy phone number" title="Copy phone number">${ic('copy', 'ico-sm')}</button>`}</div>
         ${b ? html`<div class="row between wrap" style="padding:12px 20px;background:var(--canvas);border-bottom:1px solid var(--border);gap:16px"><div><div class="faint small" style="text-transform:uppercase;letter-spacing:.06em">Next slot</div><b>${whenLabel(b.startsAt, offset())}</b></div><div><div class="faint small" style="text-transform:uppercase;letter-spacing:.06em">Deposit</div><b class="mono">${b.depositMinor ? `${money(b.depositMinor, b.currency)} ${b.depositStatus}` : 'None'}</b></div></div>` : ''}
-        <div class="thread" id="msgs" style="max-height:52vh;overflow:auto">${r.messages.length === 0 ? html`<p class="muted small" style="text-align:center">No messages yet.</p>` : r.messages.map((m) => m.kind === 'system' ? html`<div class="msg-sys">${m.body}</div>` : m.kind === 'payment' ? html`<div class="msg-pay"><span class="icon-tile" style="background:var(--success);color:#fff;border-radius:50%">${ic('shield-check')}</span><div><b>Payment received</b><div class="muted small mono">${m.body}</div></div></div>` : html`<div class="msg ${m.direction}">${m.body}<span class="ts">${timeOf(m.createdAt, offset())}</span></div>`)}</div>
+        <div class="thread" id="msgs" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch">${r.messages.length === 0 ? html`<p class="muted small" style="text-align:center">No messages yet.</p>` : r.messages.map((m) => m.kind === 'system' ? html`<div class="msg-sys">${m.body}</div>` : m.kind === 'payment' ? html`<div class="msg-pay"><span class="icon-tile" style="background:var(--success);color:#fff;border-radius:50%">${ic('shield-check')}</span><div><b>Payment received</b><div class="muted small mono">${m.body}</div></div></div>` : html`<div class="msg ${m.direction}">${m.body}<span class="ts">${timeOf(m.createdAt, offset())}</span></div>`)}</div>
         ${canManage() ? html`<form class="compose" id="reply" autocomplete="off"><input class="input" id="rb" placeholder="Write a reply" maxlength="2000" aria-label="Reply"><button class="btn btn-primary btn-icon" type="submit" aria-label="Send">${ic('send', 'ico-sm')}</button></form><p class="hint" style="padding:0 14px 12px">Replies are saved here and opened in WhatsApp so you can send them to the customer.</p>` : ''}`);
+
+      // Back button: return to conversation list on mobile
+      $('#thread-back', host)?.addEventListener('click', () => { active = null; syncPanes(); void loadConvs(); void loadThread(); });
       $('[data-copy-phone]', host)?.addEventListener('click', () => copyText(r.phone));
+
       const box = $('#msgs', host); if (box) box.scrollTop = box.scrollHeight;
       await api('/api/bookings/conversation/read', { method: 'POST', body: { phone: active } }).catch(() => {});
       void refreshUnread();
@@ -83,6 +116,13 @@ export async function renderMessages(view: HTMLElement, phoneParam?: string | nu
       })),
     });
   }
+
+  // Handle viewport resize: re-sync panes when switching between mobile and desktop
+  const onResize = (): void => syncPanes();
+  window.addEventListener('resize', onResize);
+  // Clean up listener when navigating away (view is replaced)
+  const obs = new MutationObserver(() => { if (!document.contains(view)) { window.removeEventListener('resize', onResize); obs.disconnect(); } });
+  obs.observe(document.body, { childList: true, subtree: true });
 
   await loadConvs(); await loadThread();
 }

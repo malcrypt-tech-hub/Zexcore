@@ -96,6 +96,8 @@
 
 /* Messages */
 .thread { display: grid; gap: 10px; padding: 16px; }
+.conv-thread { display: flex; flex-direction: column; }
+.conv-thread .thread { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .msg { max-width: 82%; padding: 12px 14px; border-radius: 16px; font-size: .9375rem; box-shadow: var(--shadow-1); white-space: pre-wrap; overflow-wrap: anywhere; }
 .msg.in { background: #fff; border: 1px solid var(--border); border-bottom-left-radius: 4px; justify-self: start; }
 .msg.out { background: #dbe7ff; border-bottom-right-radius: 4px; justify-self: end; }
@@ -196,7 +198,7 @@ ul.checklist { padding: 0; }
 .notice .ico { color: var(--warning); margin-top: 2px; }
 .receipt { background: #fff; border: 1px solid var(--border); border-radius: var(--r-lg); position: relative; padding: 24px 20px; text-align: center; }
 .receipt::before { content: ''; position: absolute; left: 12px; right: 12px; top: 0; border-top: 2px dashed var(--border); }
-@media (max-width: 480px) { .topbar .icon-circle { display: none; } .biz-chip { min-width: 96px; } }
+@media (max-width: 480px) { .topbar .icon-circle { display: grid; } .biz-chip { min-width: 80px; max-width: 100px; } }
 .verify-banner { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--warning-tint); border-bottom: 1px solid var(--warning-border); color: var(--ink); font-size: .875rem; }
 .verify-banner > svg { color: var(--warning); flex: none; }
 @media (max-width: 520px) { .verify-banner { flex-wrap: wrap; } }
