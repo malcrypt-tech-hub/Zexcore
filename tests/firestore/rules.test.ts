@@ -385,8 +385,8 @@ describe('public booking', () => {
     await assertFails(getDocs(collection(anon(), 'workspaces', W, 'locks')));
   });
   it('stops at the plan’s monthly booking limit', async () => {
-    await assertSucceeds(book(anon(), 29, { startsAtDate: new Date(start().getTime() + 86400000 * 5) , cells: cellsFor(new Date(start().getTime() + 86400000 * 5), 4) }));
-    await assertFails(book(anon(), 30, { startsAtDate: new Date(start().getTime() + 86400000 * 6), cells: cellsFor(new Date(start().getTime() + 86400000 * 6), 4) }));
+    await assertSucceeds(book(anon(), 49, { startsAtDate: new Date(start().getTime() + 86400000 * 5) , cells: cellsFor(new Date(start().getTime() + 86400000 * 5), 4) }));
+    await assertFails(book(anon(), 50, { startsAtDate: new Date(start().getTime() + 86400000 * 6), cells: cellsFor(new Date(start().getTime() + 86400000 * 6), 4) }));
   });
   it('rejects a booking id for another month', async () => {
     const db = anon();

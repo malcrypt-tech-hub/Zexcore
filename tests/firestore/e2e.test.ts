@@ -178,11 +178,11 @@ describe('dashboard on Firebase, end to end', () => {
     expect(s.week.perDay).toHaveLength(7);
   });
 
-  it('stops the 31st booking of the month on the free plan', async () => {
+  it('stops the 51st booking of the month on the free plan', async () => {
     // 1 already exists this month; fill the rest of the allowance, then expect the limit message
     const ctx = await core.loadCtx();
     let made = 0;
-    for (let d = 4; d < 40 && made < 40; d++) {
+    for (let d = 4; d < 90 && made < 70; d++) {
       const date = openDate(d);
       const { slots } = await pub.slots(slug, new URLSearchParams({ date, serviceId }));
       for (const sl of slots.filter((x) => x.available).filter((_, i) => i % 2 === 0)) {
