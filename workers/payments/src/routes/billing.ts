@@ -22,6 +22,9 @@ export const PLANS: Record<Tier, { monthlyUsd: number; annualUsd: number }> = {
   enterprise: { monthlyUsd: 499, annualUsd: 4990 },
   dedicated: { monthlyUsd: 1500, annualUsd: 15000 },
 };
+/** Paystack can flag very large single charges as fraud on accounts with a low limit; above this we ask the buyer to contact us. */
+export const DEFAULT_MAX_CHECKOUT_NGN = 1_000_000;
+export const maxCheckoutNgn = (env: Env): number => { const n = Number(env.MAX_CHECKOUT_NGN); return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_CHECKOUT_NGN; };
 export const RANK: Record<string, number> = { free: 0, starter: 1, growth: 2, agency: 3, enterprise: 4, dedicated: 5 };
 /** The plan a workspace is paying for right now (free once it has lapsed), and when it ends. */
 export function activePlan(ws: Record<string, unknown> | undefined, now: Date): { tier: string; expires: Date | null } {
@@ -88,6 +91,7 @@ export async function checkout(req: Request, env: Env, d: Deps, headers: Record<
 
   const liveRate = await getLiveNgnRate(env, d);
   const amount = amountMinor(tier, cycle, currency, liveRate);
+  if (currency === 'NGN' && amount > maxCheckoutNgn(env) * 100) return json({ error: `Payments this large are arranged with our team. Please choose monthly billing, or contact us at hello@zexcore.com.ng to pay for the ${tier} plan by ${cycle === 'annual' ? 'the year' : 'bank transfer'}.`, code: 'contact_us' }, 409, headers);
   const reference = randomRef(workspaceId);
   await fsCommit(env, d, [{
     path: `workspaces/${workspaceId}/payments/${reference}`,

@@ -11,6 +11,8 @@ export interface Env {
   PUBLIC_RL?: { limit(opts: { key: string }): Promise<{ success: boolean }> };
   /** Set to 'true' only on a staging Worker. Otherwise a Paystack TEST key (sk_test_…) switches money routes off so test cards can never unlock plans or deposits. */
   ALLOW_TEST_PAYMENTS?: string;
+  /** Largest single card charge for a plan, in naira. Above it the buyer is asked to contact us. Default 1,000,000. */
+  MAX_CHECKOUT_NGN?: string;
   FIREBASE_SERVICE_ACCOUNT: string;
   FIREBASE_PROJECT_ID: string;
   APP_URL: string;
