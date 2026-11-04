@@ -5,7 +5,7 @@ export interface Settings {
   exchangeRate?: number; depositEnabled: boolean; depositMinor: number; openMinutes: number; closeMinutes: number; slotMinutes: number;
   daysOpen: number[]; utcOffsetMinutes: number; leadMinutes: number; maxDaysAhead: number; onboarded: boolean;
   logoUrl?: string | null;
-  riskDepositEnabled?: boolean; riskDepositLevel?: 'medium' | 'high'; riskDepositMinor?: number; waitlistEnabled?: boolean;
+  riskDepositEnabled?: boolean; riskDepositLevel?: 'medium' | 'high'; riskDepositMinor?: number; waitlistEnabled?: boolean; weeklyDigest?: boolean;
 }
 export interface Service { id: string; name: string; description: string | null; durationMin: number; priceMinor: number; active: boolean }
 export interface Staff { id: string; name: string; title: string | null; active: boolean }
