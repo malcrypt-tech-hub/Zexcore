@@ -23,14 +23,12 @@ export async function welcome(c: Ctx): Promise<Response> {
   const app = c.env.APP_URL.replace(/\/$/, '');
   const bizName = String(ws?.data.name ?? '');
   const sent = await sendFormal(c.env, c.d, caller.email, `Welcome to ZexCore, ${name}`, {
-    heading: `Welcome to ZexCore, ${name}`, preheader: 'Your workspace is ready. Here is how to get your first booking.', greeting: `Hello ${name},`,
+    heading: `Welcome to ZexCore, ${name}`, preheader: 'Your workspace is ready. Here is how to get your first booking.', greeting: `Dear ${name},`,
     paragraphs: [
-      `Thank you for creating your account${bizName ? ` and workspace ${bizName}` : ''}. ZexCore gives you one place for your booking page, customers, deposits and WhatsApp replies.`,
-      'To start taking bookings: add your services and opening hours, then share your booking link on WhatsApp, Instagram or your website.',
+      `Thank you for creating your ZexCore account${bizName ? ` and your workspace, ${bizName}` : ''}. ZexCore brings your booking page, customers, deposits and WhatsApp replies together in one place.`,
+      `To begin taking bookings, please add your services and opening hours, then share your booking link with your customers. You can sign in to your dashboard at ${app}/app.`,
+      'If you need any help, reply to this email and a member of our team will respond.',
     ],
-    details: [['Account email', caller.email], ...(bizName ? [['Workspace', bizName] as [string, string]] : []), ['Plan', 'Free']],
-    button: { text: 'Open dashboard', url: `${app}/app` },
-    note: 'Need help? Just reply to this email and a real person will get back to you.',
   });
   return json({ ok: true, sent }, 200, c.headers);
 }
