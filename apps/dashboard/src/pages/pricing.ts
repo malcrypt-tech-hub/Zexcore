@@ -31,7 +31,7 @@ export function renderPricingPage(): string {
       <a href="${t === 'enterprise' || t === 'dedicated' ? '/contact' : '/signup'}" data-link class="btn ${featured ? 'btn-primary' : 'btn-secondary'}" style="width:100%;justify-content:center">${t === 'enterprise' || t === 'dedicated' ? 'Talk to us' : t === 'free' ? 'Start free' : 'Choose ' + NAMES[t]}</a></div>`;
   };
   return shell('pricing',
-    intro('PRICING', 'Simple Plans. No Surprises.', 'Start free. Upgrade when you outgrow it. Prices are in USD; card payments are charged in naira at the day's rate through Paystack. Enterprise and Dedicated are set up with our team.'),
+    intro('PRICING', 'Simple Plans. No Surprises.', 'Start free. Upgrade when you outgrow it. Prices are in USD; card payments are charged in naira at the day\'s rate through Paystack. Enterprise and Dedicated are set up with our team.'),
     block('Choose a plan', 'Every plan includes online booking, customers and your public booking page.', `<div class="rp-grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr))">${tiers.map(plan).join('')}</div>`, true),
     block('Compare Plans', 'Every limit is enforced by the platform — not just the interface.', table(
       ['', ...tiers.map((t) => NAMES[t])],
