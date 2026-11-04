@@ -165,6 +165,9 @@ export async function putSettings(b: Record<string, unknown>): Promise<{ setting
   }
   if (b.logoUrl !== undefined) s.logoUrl = b.logoUrl ? String(b.logoUrl) : null;
   if (b.onboarded !== undefined) s.onboarded = Boolean(b.onboarded);
+  if (b.notifyOwnerEmail !== undefined) s.notifyOwnerEmail = b.notifyOwnerEmail !== false;
+  if (b.notifyOwnerWhatsApp !== undefined) s.notifyOwnerWhatsApp = Boolean(b.notifyOwnerWhatsApp);
+  if (b.notifyWhatsAppPhone !== undefined) s.notifyWhatsAppPhone = String(b.notifyWhatsAppPhone ?? '').trim().slice(0, 32) || null;
   s.utcOffsetMinutes = 60; s.currency = 'USD';
 
   await updateDoc(wsDoc(c), { settings: s });

@@ -18,6 +18,8 @@ export interface WorkspaceSettings {
   waitlistEnabled?: boolean;
   /** Enterprise: the Monday-morning summary email to the owner. On unless switched off. */
   weeklyDigest?: boolean;
+  /** Owner notification preferences */
+  notifyOwnerEmail?: boolean; notifyOwnerWhatsApp?: boolean; notifyWhatsAppPhone?: string | null;
 }
 import { getCachedNgnRate } from '../fx';
 

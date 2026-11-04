@@ -6,6 +6,7 @@ export interface Settings {
   daysOpen: number[]; utcOffsetMinutes: number; leadMinutes: number; maxDaysAhead: number; onboarded: boolean;
   logoUrl?: string | null;
   riskDepositEnabled?: boolean; riskDepositLevel?: 'medium' | 'high'; riskDepositMinor?: number; waitlistEnabled?: boolean; weeklyDigest?: boolean;
+  notifyOwnerEmail?: boolean; notifyOwnerWhatsApp?: boolean; notifyWhatsAppPhone?: string | null;
 }
 export interface Service { id: string; name: string; description: string | null; durationMin: number; priceMinor: number; active: boolean }
 export interface Staff { id: string; name: string; title: string | null; active: boolean }

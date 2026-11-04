@@ -185,6 +185,13 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
         <div class="field"><label>Open days</label><div class="day-pills">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => html`<label><input type="checkbox" name="day" value="${i}" ${s.daysOpen.includes(i) ? 'checked' : ''} ${dis}><span>${d}</span></label>`)}</div></div>
         <div class="form-grid two"><div class="field"><label for="sl">Slot length (minutes)</label><select class="select" id="sl" ${dis}>${[15, 20, 30, 45, 60].map((n) => html`<option value="${n}" ${n === s.slotMinutes ? 'selected' : ''}>${n}</option>`)}</select></div>
         <div class="field"><label for="ld">Minimum notice (hours)</label><input class="input" id="ld" type="number" min="0" max="168" value="${s.leadMinutes / 60}" ${dis}></div></div></section>
+
+      <section class="card card-pad form-grid"><h3>Notifications</h3>
+        <p class="muted small">Choose how you're alerted when customers book or message you.</p>
+        <div class="row between"><div><b>Email alerts</b><div class="muted small">Get an email for every new booking request</div></div><label class="switch"><input type="checkbox" id="ne" ${s.notifyOwnerEmail !== false ? 'checked' : ''} ${dis}><span></span></label></div>
+        <div class="row between"><div><b>WhatsApp quick-reply link</b><div class="muted small">Add a "Reply via WhatsApp" button to your booking emails</div></div><label class="switch"><input type="checkbox" id="nw" ${s.notifyOwnerWhatsApp ? 'checked' : ''} ${dis}><span></span></label></div>
+        <div class="field ${s.notifyOwnerWhatsApp ? '' : 'hidden'}" id="nwf"><label for="nwp">Your WhatsApp number</label><input class="input" id="nwp" type="tel" placeholder="e.g. 08012345678" value="${s.notifyWhatsAppPhone ?? ''}" ${dis}><span class="hint">We'll add a "Reply via WhatsApp" button in booking notification emails so you can reply directly.</span></div>
+      </section>
       <section class="card card-pad form-grid" id="payout"><h3>Where deposits are paid</h3><p class="muted small">Loading…</p></section>
       <section class="card card-pad form-grid"><div class="row between"><div><h3>Upfront deposit</h3><p class="muted small">Customers pay this by card through Paystack to secure their slot. The money goes straight to your bank account below.</p></div><label class="switch"><input type="checkbox" id="dep" ${s.depositEnabled ? 'checked' : ''} ${dis} aria-label="Require deposit"><span></span></label></div>
         <div class="field ${s.depositEnabled ? '' : 'hidden'}" id="depf"><label for="depn">Deposit per booking ($)</label><input class="input" id="depn" type="number" min="0" value="${s.depositMinor / 100}" ${dis}></div>
@@ -216,6 +223,7 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
   });
 
   $('#rd', view)?.addEventListener('change', (e) => $('#rdf', view)?.classList.toggle('hidden', !(e.target as HTMLInputElement).checked));
+  $('#nw', view)?.addEventListener('change', (e) => $('#nwf', view)?.classList.toggle('hidden', !(e.target as HTMLInputElement).checked));
 
   // Logo file picker & preview handling
   if (canBrand) {
@@ -303,6 +311,9 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
           ...($('#wl') ? { waitlistEnabled: ($('#wl') as HTMLInputElement).checked } : {}),
           ...($('#rd') ? { riskDepositEnabled: ($('#rd') as HTMLInputElement).checked, riskDepositLevel: ($('#rl') as HTMLSelectElement).value, riskDepositMinor: Math.round(Number(($('#rdn') as HTMLInputElement).value) * 100) } : {}),
           logoUrl: currentLogo,
+          notifyOwnerEmail: ($('#ne') as HTMLInputElement | null)?.checked ?? true,
+          notifyOwnerWhatsApp: ($('#nw') as HTMLInputElement | null)?.checked ?? false,
+          notifyWhatsAppPhone: ($('#nwp') as HTMLInputElement | null)?.value.trim() || null,
         } });
         await loadSettings(true); toast('Settings saved', 'success');
       } catch (x) { err.textContent = x instanceof ApiError ? x.message : 'Could not save'; err.classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
