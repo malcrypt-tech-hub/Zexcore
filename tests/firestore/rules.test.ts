@@ -257,6 +257,13 @@ describe('team roles', () => {
     await assertFails(setDoc(doc(ad, 'workspaces', W, 'apiKeys', 'k1'), { name: 'x' }));
     await assertFails(getDocs(collection(asRole('editor1'), 'workspaces', W, 'apiKeys')));
     await assertFails(getDocs(collection(asRole('viewer1'), 'workspaces', W, 'apiKeys')));
+    // Waitlist: the team can read and remove entries, nobody creates or edits them from a browser, viewers and strangers see nothing
+    await assertSucceeds(getDocs(collection(ad, 'workspaces', W, 'waitlist')));
+    await assertSucceeds(getDocs(collection(asRole('editor1'), 'workspaces', W, 'waitlist')));
+    await assertFails(setDoc(doc(ad, 'workspaces', W, 'waitlist', 'w1'), { name: 'x', status: 'waiting' }));
+    await assertFails(getDocs(collection(asRole('viewer1'), 'workspaces', W, 'waitlist')));
+    await assertFails(getDocs(collection(other(), 'workspaces', W, 'waitlist')));
+    await assertSucceeds(deleteDoc(doc(ad, 'workspaces', W, 'waitlist', 'w1')));
     await assertFails(setDoc(doc(ad, 'workspaces', W, 'invites', 'x'), { email: 'x@example.com' }));
     await assertFails(setDoc(doc(ad, 'workspaces', W, 'members', 'newbie'), { role: 'admin' }));
     await assertFails(setDoc(doc(other(), 'workspaces', W, 'services', 's_0'), svc()));

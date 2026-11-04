@@ -25,6 +25,7 @@ export function renderMore(view: HTMLElement): void {
     { href: '/app/billing', icon: 'credit-card', t: 'Plan & billing', s: 'Your subscription and payments' },
     { href: '/app/security', icon: 'shield-check', t: 'Security', s: 'Password and signed-in devices' },
     { href: '/app/backups', icon: 'database', t: 'Backups', s: 'Encrypted daily copies and certificates' },
+    { href: '/app/waitlist', icon: 'clock', t: 'Revenue protection', s: 'Waitlist and cancelled times won back' },
     { href: '/app/api-keys', icon: 'key-round', t: 'API keys', s: 'Read-only access for other systems' },
     { href: '/app/export', icon: 'download', t: 'Export data', s: 'CSV and JSON downloads of your records' },
     { href: '/app/audit', icon: 'history', t: 'Audit log', s: 'Tamper-evident record of changes' },
@@ -187,6 +188,7 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
       <section class="card card-pad form-grid"><div class="row between"><div><h3>Upfront deposit</h3><p class="muted small">Customers pay this by card through Paystack to secure their slot. The money goes straight to your bank account below.</p></div><label class="switch"><input type="checkbox" id="dep" ${s.depositEnabled ? 'checked' : ''} ${dis} aria-label="Require deposit"><span></span></label></div>
         <div class="field ${s.depositEnabled ? '' : 'hidden'}" id="depf"><label for="depn">Deposit per booking ($)</label><input class="input" id="depn" type="number" min="0" value="${s.depositMinor / 100}" ${dis}></div>
         <div class="field"><label for="fx">Exchange rate (₦ per $1)</label><input class="input" id="fx" type="number" min="100" max="100000" step="0.01" value="${s.exchangeRate || ''}" ${dis}><p class="muted small">Prices and deposits are in dollars. Customers pay deposits in naira at this rate. It applies only to payments for your own business, never to ZexCore's plan prices.</p></div></section>
+      ${hasFeatureAccess(me.tenant.tier, 'waitlist') ? html`<section class="card card-pad form-grid"><div class="row between"><div><h3>Revenue protection: waitlist</h3><p class="muted small">When a day is full, your booking page offers a waitlist. If a booking is cancelled, we email the people waiting for that service and day, and the first to book gets the time. See who is waiting under More, Revenue protection.</p></div><label class="switch"><input type="checkbox" id="wl" ${s.waitlistEnabled ? 'checked' : ''} ${dis} aria-label="Offer a waitlist"><span></span></label></div></section>` : ''}
       ${hasFeatureAccess(me.tenant.tier, 'risk') ? html`<section class="card card-pad form-grid"><div class="row between"><div><h3>No-show protection</h3><p class="muted small">Every booking gets a no-show risk score from that customer's history with you. When a booking scores as risky, the customer is asked for a deposit even if you do not ask everyone. Needs your payout account above.</p></div><label class="switch"><input type="checkbox" id="rd" ${s.riskDepositEnabled ? 'checked' : ''} ${dis} aria-label="Ask risky customers for a deposit"><span></span></label></div>
         <div class="form-grid two ${s.riskDepositEnabled ? '' : 'hidden'}" id="rdf"><div class="field"><label for="rl">Ask for a deposit when risk is</label><select class="select" id="rl" ${dis}><option value="high" ${s.riskDepositLevel !== 'medium' ? 'selected' : ''}>High (60 and above)</option><option value="medium" ${s.riskDepositLevel === 'medium' ? 'selected' : ''}>Medium or high (30 and above)</option></select></div>
         <div class="field"><label for="rdn">Deposit for risky bookings ($)</label><input class="input" id="rdn" type="number" min="1" max="5000" value="${(s.riskDepositMinor ?? 500) / 100}" ${dis}></div></div>
@@ -295,6 +297,7 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
           exchangeRate: Number(($('#fx') as HTMLInputElement).value) || s.exchangeRate || 1350,
           depositEnabled: depChecked,
           depositMinor: depMinor,
+          ...($('#wl') ? { waitlistEnabled: ($('#wl') as HTMLInputElement).checked } : {}),
           ...($('#rd') ? { riskDepositEnabled: ($('#rd') as HTMLInputElement).checked, riskDepositLevel: ($('#rl') as HTMLSelectElement).value, riskDepositMinor: Math.round(Number(($('#rdn') as HTMLInputElement).value) * 100) } : {}),
           logoUrl: currentLogo,
         } });

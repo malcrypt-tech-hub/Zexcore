@@ -297,6 +297,9 @@ service cloud.firestore {
       // Encrypted backup records (the files live in R2). Written only by the Worker.
       match /backups/{id} { allow read: if isAdmin(wid); allow write: if false; }
 
+      // Waitlist (Enterprise). Visitors join through the Worker only; the team can read entries and remove them.
+      match /waitlist/{id} { allow read, delete: if isWorker(wid); allow create, update: if false; }
+
       // Read-only API keys: only a fingerprint of each key is stored. Made and revoked by the Worker.
       match /apiKeys/{id} { allow read: if isAdmin(wid); allow write: if false; }
 
