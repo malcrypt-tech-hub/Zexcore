@@ -75,6 +75,7 @@ on('POST', '/api/bookings/messages', ({ body }) => msg.send(body));
 on('GET', '/api/public/:slug', ({ params }) => pub.profile(params[0]!));
 on('GET', '/api/public/:slug/availability', ({ params, query }) => pub.slots(params[0]!, query));
 on('POST', '/api/public/:slug/bookings', ({ params, body }) => pub.book(params[0]!, body));
+on('POST', '/api/public/:slug/waitlist', ({ params, body }) => pub.joinWaitlist(params[0]!, body));
 on('GET', '/api/public/:slug/payments/:ref', ({ params }) => pub.payment(params[0]!, params[1]!));
 
 // ── CRM + website pages ──

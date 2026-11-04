@@ -841,3 +841,77 @@ describe('read-only API keys', () => {
     expect((await call('/api/backups/run', { body: JSON.stringify({ workspaceId: KW }), headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' } })).status).toBe(401);
   });
 });
+
+describe('revenue protection: waitlist and backfill', () => {
+  const W = 'wswait0000000000000a';
+  const START = new Date(NOW.getTime() + 2 * 86_400_000);                  // two days out
+  const DAY = new Date(START.getTime() + 3_600_000).toISOString().slice(0, 10);   // Lagos local date of START
+  const join = (over: Record<string, unknown> = {}) => call('/api/public/waitlist', { headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ slug: 'wait-salon', serviceId: 's_0', date: DAY, name: 'Ada Obi', phone: '0803 111 2222', email: 'ada@example.com', ...over }) });
+  const entries = () => [...store.keys()].filter((k) => k.startsWith(`workspaces/${W}/waitlist/`));
+  const field = (path: string, k: string) => fromFs(store.get(path)!.fields[k]);
+  beforeEach(() => { env = { ...env, RESEND_API_KEY: 're_test' }; });
+  const setup = (settings: Record<string, unknown> = {}, plan = 'enterprise') => {
+    seedDoc(`workspaces/${W}`, { name: 'Wait Salon', plan, planExpiresAt: new Date(NOW.getTime() + 20 * 86_400_000), ownerUid: 'owner1', slug: 'wait-salon',
+      settings: { waitlistEnabled: true, publicName: 'Wait Salon', ...settings } });
+    seedDoc('slugs/wait-salon', { wid: W, ownerUid: 'owner1' });
+    seedDoc(`workspaces/${W}/members/owner1`, { role: 'owner' });
+    seedDoc(`workspaces/${W}/services/s_0`, { name: 'Braids', priceMinor: 2000 });
+  };
+  const waiting = (id: string, over: Record<string, unknown> = {}) => seedDoc(`workspaces/${W}/waitlist/${id}`,
+    { serviceId: 's_0', date: DAY, name: `Person ${id}`, phone: `+23480000000${id.length}${id.charCodeAt(0) % 10}`, email: `${id}@example.com`, status: 'waiting', createdAt: new Date(NOW.getTime() - 1000), ...over });
+  const cancelled = (startsAt = START) => seedDoc(`workspaces/${W}/bookings/202611_9`, { status: 'cancelled', serviceId: 's_0', customerName: 'Gone', customerPhone: '+2348099999999', startsAt });
+  const cancelEvent = async () => call('/api/events', { headers: await authed(), body: JSON.stringify({ workspaceId: W, event: 'bookings.booking.cancelled', id: '202611_9' }) });
+
+  it('adds a visitor to the waitlist with a normalised number, and says so plainly when it already has them', async () => {
+    setup();
+    const r = await join();
+    expect(r.status).toBe(201);
+    const [path] = entries();
+    expect(field(path!, 'phone')).toBe('+2348031112222');
+    expect(field(path!, 'status')).toBe('waiting');
+    expect(await (await join()).json()).toMatchObject({ already: true });
+    expect(entries()).toHaveLength(1);
+  });
+
+  it('refuses when the waitlist is off, the plan is too low, or the details are wrong', async () => {
+    setup({ waitlistEnabled: false }); expect((await join()).status).toBe(409);
+    setup({}, 'growth'); expect((await join()).status).toBe(409);
+    setup();
+    for (const bad of [{ email: 'nope' }, { phone: '123' }, { name: '' }, { date: '2020-01-01' }, { date: 'tomorrow' }, { serviceId: 'missing' }]) expect((await join(bad)).status).toBe(400);
+    expect(entries()).toHaveLength(0);
+  });
+
+  it('a cancellation offers the time to the three people who waited longest for that service and day, and no one else', async () => {
+    setup(); cancelled();
+    waiting('aa', { createdAt: new Date(NOW.getTime() - 5000) }); waiting('bb', { createdAt: new Date(NOW.getTime() - 4000) }); waiting('cc', { createdAt: new Date(NOW.getTime() - 3000) });
+    waiting('dd', { createdAt: new Date(NOW.getTime() - 2000) });
+    waiting('ee', { date: '2031-01-01' }); waiting('ff', { serviceId: 's_9' }); waiting('gg', { status: 'booked' });
+    const r = await cancelEvent();
+    expect(await r.json()).toMatchObject({ ok: true, told: 3 });
+    expect(emails.map((m) => m.to[0] ?? m.to).sort()).toEqual(['aa@example.com', 'bb@example.com', 'cc@example.com']);
+    expect(field(`workspaces/${W}/waitlist/aa`, 'status')).toBe('offered');
+    expect(field(`workspaces/${W}/waitlist/dd`, 'status')).toBe('waiting');
+    expect(emails[0].html).toContain(`wait-salon?service=s_0&amp;date=${DAY}`);
+    expect(emails[0].html).toMatch(/first come, first served/i);
+  });
+
+  it('never offers the same cancellation twice, and ignores one that is too close to start or not cancelled', async () => {
+    setup(); cancelled(); waiting('aa');
+    expect(await (await cancelEvent()).json()).toMatchObject({ told: 1 });
+    expect(await (await cancelEvent()).json()).toMatchObject({ told: 0 });
+    expect(emails).toHaveLength(1);
+    store.delete(`workspaces/${W}/automationMarkers/backfill_202611_9`); cancelled(new Date(NOW.getTime() + 10 * 60_000));
+    expect(await (await cancelEvent()).json()).toMatchObject({ told: 0 });
+    cancelled(); store.get(`workspaces/${W}/bookings/202611_9`)!.fields.status = { stringValue: 'confirmed' };
+    expect(await (await cancelEvent()).json()).toMatchObject({ told: 0 });
+  });
+
+  it('does nothing below Enterprise or with the waitlist switched off', async () => {
+    setup({}, 'growth'); cancelled(); waiting('aa');
+    expect(await (await cancelEvent()).json()).toMatchObject({ told: 0 });
+    setup({ waitlistEnabled: false }); store.delete(`workspaces/${W}/automationMarkers/backfill_202611_9`);
+    expect(await (await cancelEvent()).json()).toMatchObject({ told: 0 });
+    expect(emails).toHaveLength(0);
+  });
+});

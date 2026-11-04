@@ -14,6 +14,8 @@ export interface WorkspaceSettings {
   logoUrl?: string | null; rules?: any[];
   /** Enterprise: ask customers with a high no-show risk for a deposit even when deposits are otherwise off. */
   riskDepositEnabled?: boolean; riskDepositLevel?: 'medium' | 'high'; riskDepositMinor?: number;
+  /** Enterprise: let visitors join a waitlist when a day is full, and offer them freed times. */
+  waitlistEnabled?: boolean;
 }
 import { getCachedNgnRate } from '../fx';
 
@@ -106,7 +108,7 @@ export function requireEditor(c: Ctx): void { if (!canEditContent(c)) throw new 
 export function requireAdmin(c: Ctx): void { if (!canWrite(c)) throw new ApiError(403, 'Only a workspace owner or admin can do that.', 'forbidden'); }
 
 const NOUN: Record<EnforcedKey, string> = { bookingsPerMonth: 'bookings a month', staff: 'team members', services: 'services', cmsPages: 'website pages', crmContacts: 'contacts', devices: 'devices', rules: 'automations' };
-const FEATURE_NAME: Record<FeatureKey, string> = { branding: 'Custom branding', compliance: 'Data protection', automations: 'Automations', devices: 'Device monitoring', export: 'Data export', backups: 'Daily backups', risk: 'No-show protection', api: 'API keys' };
+const FEATURE_NAME: Record<FeatureKey, string> = { branding: 'Custom branding', compliance: 'Data protection', automations: 'Automations', devices: 'Device monitoring', export: 'Data export', backups: 'Daily backups', risk: 'No-show protection', api: 'API keys', waitlist: 'Waitlist' };
 /** Stops a paid feature up front with a clear upgrade message, instead of the database refusing it with a bare "no permission". */
 export function requireFeature(c: Ctx, f: FeatureKey): void {
   if (!hasFeatureAccess(c.tier, f)) throw new ApiError(402, `${FEATURE_NAME[f]} is part of the ${FEATURE_TIERS[f][0]!.toUpperCase()}${FEATURE_TIERS[f].slice(1)} plan and above. Upgrade to unlock it.`, 'plan_feature');

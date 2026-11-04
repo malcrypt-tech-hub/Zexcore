@@ -59,6 +59,6 @@ export async function runs(): Promise<{ runs: unknown[] }> {
 }
 
 /** Tells the Worker something happened so approved rules can react. Never blocks or fails the action itself. */
-export function emit(event: 'bookings.booking.created' | 'crm.lead.created', wid: string, id: string): void {
+export function emit(event: 'bookings.booking.created' | 'bookings.booking.cancelled' | 'crm.lead.created', wid: string, id: string): void {
   void worker('/api/events', { body: { workspaceId: wid, event, id } }).catch(() => undefined);
 }
