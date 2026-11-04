@@ -34,6 +34,7 @@ const NAV: { label?: string; items: { href: string; icon: IconName; text: string
   ] },
   { label: 'Account', items: [
     { href: '/app/billing', icon: 'credit-card', text: 'Plan & billing' },
+    { href: '/app/license', icon: 'server', text: 'Cluster & license' },
     { href: '/app/security', icon: 'shield-check', text: 'Security' },
     { href: '/app/audit', icon: 'history', text: 'Audit log' },
     { href: '/app/settings', icon: 'settings', text: 'Settings' },
@@ -119,6 +120,7 @@ export async function appLayout(path: string, onNew: () => void): Promise<HTMLEl
         </div>
         <nav class="bottom-nav" aria-label="Primary">
           <a href="/app" data-link data-nav="/app">${ic('house')}Home</a>
+          <a href="/app/bookings" data-link data-nav="/app/bookings">${ic('calendar-check')}Bookings</a>
           <a href="/app/calendar" data-link data-nav="/app/calendar">${ic('calendar-days')}Calendar</a>
           <a href="/app/messages" data-link data-nav="/app/messages">${ic('message-square')}Messages<span class="badge-n hidden" data-unread>0</span></a>
           <a href="/app/more" data-link data-nav="/app/more">${ic('ellipsis')}More</a>
