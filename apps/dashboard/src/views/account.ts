@@ -9,6 +9,8 @@ import { current, loadMe, canAdmin } from '../lib/session';
 interface PlanList { currencyRates: { NGN_PER_USD: number }; paystackPublicKey: string | null; plans: { tier: string; monthlyUsd: number | null; annualUsd: number | null; limits: Limits | null }[]; freeLimits: Limits; limitLabels: Labels }
 interface Usage { tier: string; effectiveTier: string; usage: Record<LimitKey, { used: number; limit: number | null }>; labels: Labels }
 interface Payment { reference: string; tier: string; cycle: string; currency: string; amount_minor: string | number; paid_minor: string | number | null; status: string; gateway: string | null; created_at: string; paid_at: string | null }
+/** Mirrors the Worker's default MAX_CHECKOUT_NGN: bigger single card charges are arranged with our team. */
+const CHECKOUT_CEILING_NGN = 1_000_000;
 const BLURB: Record<string, string> = { starter: 'For a single location getting started.', growth: 'For growing businesses with a busy calendar.', agency: 'For operators running several locations.', enterprise: 'For large organisations with advanced needs.', dedicated: 'A dedicated setup, built with our team.' };
 
 const EXTRA_FEATURES: Record<string, string[]> = {
@@ -37,6 +39,7 @@ export async function renderBilling(view: HTMLElement): Promise<void> {
     mount($('#plans', view)!, html`${plans.plans.map((p) => {
       const usd = cycle === 'annual' ? p.annualUsd : p.monthlyUsd;
       const contact = p.tier === 'enterprise' || p.tier === 'dedicated';
+      const tooBig = usd !== null && usd * plans.currencyRates.NGN_PER_USD > CHECKOUT_CEILING_NGN;   // Worker enforces the real limit
       const cur = me.tenant.tier === p.tier;
       const extras = EXTRA_FEATURES[p.tier] || [];
       return html`<section class="card card-pad stack-sm" style="${cur ? 'border:2px solid var(--primary);padding:19px' : ''}">
@@ -49,6 +52,7 @@ export async function renderBilling(view: HTMLElement): Promise<void> {
         </ul>
         ${canAdmin() ? (p.tier === 'enterprise' || p.tier === 'dedicated'
           ? (cur ? html`<button class="btn btn-secondary btn-block" disabled>Your plan</button>` : html`<a class="btn btn-primary btn-block" href="mailto:hello@zexcore.com.ng?subject=${encodeURIComponent(`${p.tier[0]!.toUpperCase()}${p.tier.slice(1)} plan for ${me.tenant.name}`)}">Contact us</a>`)
+          : tooBig ? html`<a class="btn btn-primary btn-block" href="mailto:hello@zexcore.com.ng?subject=${encodeURIComponent(`${p.tier[0]!.toUpperCase()}${p.tier.slice(1)} annual plan for ${me.tenant.name}`)}">Contact us to pay yearly</a>`
           : html`<button class="btn ${cur ? 'btn-secondary' : 'btn-primary'} btn-block" data-buy="${p.tier}" ${cur ? 'disabled' : ''}>${cur ? 'Your plan' : 'Choose plan'}</button>`) : ''}</section>`;
     })}`);
     $$('[data-buy]', view).forEach((b) => b.addEventListener('click', () => void checkout(b.dataset.buy!, b as HTMLButtonElement)));

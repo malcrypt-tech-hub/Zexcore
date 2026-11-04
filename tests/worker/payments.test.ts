@@ -132,6 +132,18 @@ describe('test-key guard', () => {
   });
 });
 
+describe('checkout ceiling', () => {
+  it('sends very large card charges to us instead of Paystack, and lets everything under it through', async () => {
+    const big = await call('/api/checkout', { body: checkoutBody({ tier: 'agency', cycle: 'annual' }), headers: await authed() });
+    expect(big.status).toBe(409); expect(await big.json()).toMatchObject({ code: 'contact_us' });
+    expect(paystackInit).toHaveLength(0);
+    expect([...store.keys()].some((k) => k.includes('/payments/'))).toBe(false);   // no order left behind
+    expect((await call('/api/checkout', { body: checkoutBody({ tier: 'agency', cycle: 'monthly' }), headers: await authed() })).status).toBe(201);
+    env = { ...env, MAX_CHECKOUT_NGN: '3000000' };
+    expect((await call('/api/checkout', { body: checkoutBody({ tier: 'agency', cycle: 'annual' }), headers: await authed() })).status).toBe(201);
+  });
+});
+
 describe('pricing', () => {
   it('computes prices on the server in minor units', () => {
     expect(amountMinor('growth', 'monthly', 'NGN', 1500)).toBe(6_450_000);        // $43 at 1,500
