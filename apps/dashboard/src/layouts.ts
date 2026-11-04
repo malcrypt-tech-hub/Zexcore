@@ -120,7 +120,7 @@ export async function appLayout(path: string, onNew: () => void): Promise<HTMLEl
             <a href="/app" data-link class="brand-link">${brand()}</a>
             <span class="biz-chip"><span class="dot dot-success pulse"></span><span class="t">${bizName}</span></span>
             <span class="spacer"></span>
-            <a href="/" target="_blank" rel="noopener" class="btn btn-secondary btn-sm" style="display:inline-flex;align-items:center;gap:6px" title="Back to website (opens in new page)">
+            <a href="/" target="_blank" rel="noopener" class="btn btn-secondary btn-sm topbar-back-site" title="Back to website (opens in new page)">
               ${ic('globe', 'ico-sm')}<span>Back to website</span>
             </a>
             <button class="btn btn-primary btn-sm" data-new>${ic('plus', 'ico-sm')} New</button>

@@ -15,14 +15,16 @@ a, button, input, select, textarea, label { touch-action: manipulation; }
 /* ── Topbar: hide bulky desktop-only links on small screens ── */
 @media (max-width: 1023px) {
   /* "Back to website" btn takes up precious header space — hidden on mobile */
-  .topbar > a.btn { display: none; }
+  .topbar > a.btn, .topbar-back-site { display: none !important; }
 }
 @media (max-width: 479px) {
   /* Notifications icon pushed by biz chip — keep it but tighten gap */
   .topbar { gap: 6px; padding: 0 10px; }
-  .biz-chip { max-width: 120px; }
-  /* Icon circle is hidden on tiny screens per existing rule, so just ensure New btn fits */
-  .topbar [data-new] { padding: 0 12px; }
+  .biz-chip { max-width: 105px; height: 28px; padding: 0 8px; font-size: .75rem; }
+  .topbar .brand-lockup { width: 92px !important; }
+  .topbar [data-new] { padding: 0 10px; height: 32px; font-size: .8125rem; }
+  .icon-circle { width: 34px; height: 34px; }
+  .avatar-btn { width: 32px; height: 32px; font-size: .6875rem; }
 }
 
 /* ── Bottom nav: 5-column grid with icons + labels + badge ── */
@@ -30,20 +32,33 @@ a, button, input, select, textarea, label { touch-action: manipulation; }
   grid-template-columns: repeat(5, 1fr);
 }
 .bottom-nav a {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 3px;
-  font-size: .625rem;
+  font-size: .6875rem;
   padding: 4px 2px;
   position: relative;
+  text-decoration: none;
 }
-/* Bookings badge in bottom nav */
+/* Bookings and Messages badge in bottom nav */
 .bottom-nav .badge-n {
   position: absolute;
   top: 4px;
-  left: calc(50% + 8px);
+  left: calc(50% + 6px);
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
   font-size: .625rem;
+  border-radius: 99px;
+  background: var(--primary);
+  color: #fff;
+  border: 1.5px solid #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 /* ── Phone ergonomics: 44 px touch targets, no iOS zoom on focus ── */
