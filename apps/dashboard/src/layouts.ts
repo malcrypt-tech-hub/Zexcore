@@ -14,7 +14,7 @@ const root = (): HTMLElement => document.getElementById('app')!;
 const NAV: { label?: string; items: { href: string; icon: IconName; text: string; key?: string; feature?: FeatureKey }[] }[] = [
   { items: [
     { href: '/app', icon: 'house', text: 'Home' },
-    { href: '/app/bookings', icon: 'calendar-check', text: 'Bookings' },
+    { href: '/app/bookings', icon: 'calendar-check', text: 'Bookings', key: 'bk' },
     { href: '/app/calendar', icon: 'calendar-days', text: 'Calendar' },
     { href: '/app/messages', icon: 'message-square', text: 'Messages', key: 'msg' },
     { href: '/app/customers', icon: 'users', text: 'Customers' },
@@ -50,13 +50,39 @@ export function brand(size = '', logoUrl?: string | null): Raw {
 }
 
 let unread = 0;
+let pending = 0;
+let prevPending = -1;
+let pollInterval: ReturnType<typeof setInterval> | null = null;
+
 export async function refreshUnread(): Promise<void> {
   try {
     const r = await api<{ counts: { waiting: number } }>('/api/bookings/conversations');
     unread = r.counts.waiting;
   } catch { unread = 0; }
+  try {
+    const rb = await api<{ attention: { pending: number } }>('/api/bookings/summary');
+    pending = rb.attention?.pending ?? 0;
+  } catch { pending = 0; }
+
+  // Show toast when new pending bookings arrive (not on the very first poll)
+  if (prevPending >= 0 && pending > prevPending) {
+    const diff = pending - prevPending;
+    toast(`${diff} new booking${diff > 1 ? 's' : ''} waiting`, 'info');
+  }
+  prevPending = pending;
+
   $$('[data-unread]').forEach((el) => { el.textContent = String(unread); el.classList.toggle('hidden', unread === 0); });
-  $$('[data-unread-pip]').forEach((el) => el.classList.toggle('hidden', unread === 0));
+  $$('[data-booking-badge]').forEach((el) => { el.textContent = String(pending); el.classList.toggle('hidden', pending === 0); });
+  $$('[data-unread-pip]').forEach((el) => el.classList.toggle('hidden', unread === 0 && pending === 0));
+}
+
+export function startPolling(): void {
+  if (pollInterval) return;
+  pollInterval = setInterval(() => { void refreshUnread(); }, 60_000);
+}
+
+export function stopPolling(): void {
+  if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
 }
 
 function isActive(href: string, path: string): boolean {
@@ -85,6 +111,7 @@ export async function appLayout(path: string, onNew: () => void): Promise<HTMLEl
                 <span>${i.text}</span>
                 ${locked ? html`<span class="nav-lock" title="Plan upgrade required" style="margin-left:auto;opacity:0.6;display:inline-flex">${ic('lock', 'ico-xs')}</span>` : ''}
                 ${i.key === 'msg' ? html`<span class="badge-n hidden" data-unread>0</span>` : ''}
+                ${i.key === 'bk' ? html`<span class="badge-n hidden" data-booking-badge>0</span>` : ''}
               </a>`;
             })}`)}
         </aside>
@@ -120,7 +147,7 @@ export async function appLayout(path: string, onNew: () => void): Promise<HTMLEl
         </div>
         <nav class="bottom-nav" aria-label="Primary">
           <a href="/app" data-link data-nav="/app">${ic('house')}Home</a>
-          <a href="/app/bookings" data-link data-nav="/app/bookings">${ic('calendar-check')}Bookings</a>
+          <a href="/app/bookings" data-link data-nav="/app/bookings">${ic('calendar-check')}Bookings<span class="badge-n hidden" data-booking-badge>0</span></a>
           <a href="/app/calendar" data-link data-nav="/app/calendar">${ic('calendar-days')}Calendar</a>
           <a href="/app/messages" data-link data-nav="/app/messages">${ic('message-square')}Messages<span class="badge-n hidden" data-unread>0</span></a>
           <a href="/app/more" data-link data-nav="/app/more">${ic('ellipsis')}More</a>
@@ -158,6 +185,7 @@ export async function appLayout(path: string, onNew: () => void): Promise<HTMLEl
     document.addEventListener('click', () => panel.classList.add('hidden'));
     $('[data-logout]')!.addEventListener('click', () => { logout(); clearStore(); navigate('/signin'); });
     void refreshUnread();
+    startPolling();
     void import('./lib/reminders').then((m) => m.startReminders());
     // Patch logo and business name from settings without blocking first paint.
     void loadSettings().then((s) => {
@@ -171,10 +199,24 @@ export async function appLayout(path: string, onNew: () => void): Promise<HTMLEl
   $$('[data-nav]').forEach((a) => { isActive(a.dataset.nav!, path) ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'); });
   const moreActive = !['/app', '/app/bookings', '/app/calendar', '/app/messages'].some((h) => isActive(h, path));
   $('.bottom-nav [data-nav="/app/more"]')?.[moreActive ? 'setAttribute' : 'removeAttribute']('aria-current', 'page');
+  // Clear badges when user navigates to the relevant section
+  if (isActive('/app/messages', path)) {
+    unread = 0;
+    $$('[data-unread]').forEach((el) => { el.textContent = '0'; el.classList.add('hidden'); });
+    $$('[data-unread-pip]').forEach((el) => el.classList.toggle('hidden', pending === 0));
+  }
+  if (isActive('/app/bookings', path)) {
+    pending = 0;
+    prevPending = 0;
+    $$('[data-booking-badge]').forEach((el) => { el.textContent = '0'; el.classList.add('hidden'); });
+    $$('[data-unread-pip]').forEach((el) => el.classList.toggle('hidden', unread === 0));
+  }
   return view;
 }
 
 export function leaveApp(): void {
+  stopPolling();
+  prevPending = -1;
   if ($('.app')) mount(root(), '');
 }
 

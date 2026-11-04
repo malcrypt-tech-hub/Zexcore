@@ -61,12 +61,20 @@ export async function publicBooked(c: Ctx): Promise<Response> {
   const owner = await ownerContact(c, wid);
   const ws = await fsGet(c.env, c.d, `workspaces/${wid}`);
   const off = Number((ws?.data.settings as Record<string, unknown> | undefined)?.utcOffsetMinutes ?? 60);
+  const wsSettings = ws?.data.settings as Record<string, unknown> | undefined;
+  const emailEnabled = wsSettings?.notifyOwnerEmail !== false; // default: on
+  const waEnabled = Boolean(wsSettings?.notifyOwnerWhatsApp);
+  const waPhone = String(wsSettings?.notifyWhatsAppPhone ?? '').replace(/\D/g, '');
+  const customerWaPhone = String(bk.customerPhone ?? '').replace(/\D/g, '');
   const price = Number(bk.priceMinor ?? 0);
-  await sendFormal(c.env, c.d, owner.email, `New booking request: ${String(bk.customerName)}`, {
-    heading: 'You have a new booking request', preheader: `${String(bk.customerName)} wants to book ${String(bk.service)}`, greeting: `Hello ${owner.name},`,
-    paragraphs: [`${String(bk.customerName)} has asked to book through your ZexCore booking page. Please review it and confirm or decline from your dashboard.`],
-    details: [['Customer', String(bk.customerName)], ['Phone', String(bk.customerPhone)], ['Service', String(bk.service || 'Service')], ['When', localWhen(String(bk.startsAt), off)], ['Reference', String(bk.ref)], ...(price > 0 ? [['Price', `$${(price / 100).toFixed(2)}`] as [string, string]] : []), ...(risk ? [['No-show risk', `${risk.level[0]!.toUpperCase()}${risk.level.slice(1)} (${risk.score}/100)`] as [string, string]] : [])],
-    button: { text: 'Open dashboard', url: `${c.env.APP_URL.replace(/\/$/, '')}/app/bookings` },
-    note: 'You receive this email each time a customer books through your public page.' });
+  if (emailEnabled) {
+    await sendFormal(c.env, c.d, owner.email, `New booking request: ${String(bk.customerName)}`, {
+      heading: 'You have a new booking request', preheader: `${String(bk.customerName)} wants to book ${String(bk.service)}`, greeting: `Hello ${owner.name},`,
+      paragraphs: [`${String(bk.customerName)} has asked to book through your ZexCore booking page. Please review it and confirm or decline from your dashboard.`],
+      details: [['Customer', String(bk.customerName)], ['Phone', String(bk.customerPhone)], ['Service', String(bk.service || 'Service')], ['When', localWhen(String(bk.startsAt), off)], ['Reference', String(bk.ref)], ...(price > 0 ? [['Price', `$${(price / 100).toFixed(2)}`] as [string, string]] : []), ...(risk ? [['No-show risk', `${risk.level[0]!.toUpperCase()}${risk.level.slice(1)} (${risk.score}/100)`] as [string, string]] : [])],
+      button: { text: 'Open dashboard', url: `${c.env.APP_URL.replace(/\/$/, '')}/app/bookings` },
+      ...(waEnabled && customerWaPhone ? { note: `Reply to this customer on WhatsApp: https://wa.me/${customerWaPhone}${waPhone ? ` · Your WhatsApp: https://wa.me/${waPhone}` : ''}` } : {}),
+    });
+  }
   return json({ ok: true, ran: await fireEvent(c, wid, 'bookings.booking.created', r.payload) }, 200, c.headers);
 }
