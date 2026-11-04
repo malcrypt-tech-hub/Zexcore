@@ -153,6 +153,7 @@ export async function putSettings(b: Record<string, unknown>): Promise<{ setting
       if (!p.exists() || !p.data()?.subaccountCode) throw new ApiError(400, 'Add the bank account where deposits should be paid before turning on no-show protection.', 'payout_missing');
     }
   }
+  if (b.weeklyDigest !== undefined) s.weeklyDigest = b.weeklyDigest === true;
   if (b.waitlistEnabled !== undefined) {
     s.waitlistEnabled = b.waitlistEnabled === true;
     if (s.waitlistEnabled && !c.settings.waitlistEnabled) requireFeature(c, 'waitlist');

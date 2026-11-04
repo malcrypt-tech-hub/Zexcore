@@ -15,6 +15,7 @@ import * as payout from './payout';
 import * as team from './team';
 import * as keys from './apikeys';
 import * as wl from './waitlist';
+import * as ins from './insights';
 import { getLiveNgnRate } from '../fx';
 
 type Params = string[];
@@ -97,6 +98,7 @@ on('GET', '/api/team', () => team.listTeam());
 on('POST', '/api/team/invite', ({ body }) => team.invite(body));
 on('POST', '/api/team/revoke', ({ body }) => team.revokeInvite(String(body.id)));
 on('POST', '/api/team/role', ({ body }) => team.setRole(String(body.uid), String(body.role)));
+on('GET', '/api/insights', ({ query }) => ins.get(Number(query.get('days'))));
 on('GET', '/api/waitlist', () => wl.overview());
 on('DELETE', '/api/waitlist/:id', async ({ params }) => { await wl.removeEntry(params[0]!); return { ok: true }; });
 on('GET', '/api/keys', async () => ({ keys: await keys.listKeys() }));

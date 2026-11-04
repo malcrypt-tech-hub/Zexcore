@@ -16,8 +16,9 @@ NGN_PER_USD = "auto"
 # [[r2_buckets]]
 # binding = "BACKUPS"
 # bucket_name = "zexcore-backups"
-# [triggers]
-# crons = ["7 * * * *"]
+# The hourly tick runs the weekly summary emails (and backups once the R2 bucket above is set up).
+[triggers]
+crons = ["7 * * * *"]
 
 # Secrets (set in the Cloudflare dashboard, never in this file):
 #   PAYSTACK_SECRET_KEY        Paystack secret key. Money routes only work with sk_live_...; an sk_test_ key needs ALLOW_TEST_PAYMENTS="true" (staging only).

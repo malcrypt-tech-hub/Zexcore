@@ -18,10 +18,13 @@ import { banks, depositLink, depositStatus, payoutSetup, publicDeposit, refundDe
 import { memberEvent, publicBooked } from './routes/events';
 import { certificate, download, runNow, scheduledBackups } from './routes/backups';
 import { welcome } from './routes/welcome';
+import { insights, scheduledDigests } from './routes/insights';
 import { accept, invite, inviteInfo, remove, revoke, setRole } from './routes/team';
 
 export type { Env, Deps } from './env';
 export { scheduledBackups } from './routes/backups';
+export { scheduledDigests, sendDigest, weekKey, digestDue } from './routes/insights';
+export { summarize } from './insights';
 export { amountMinor, isTier, PLANS, planAfterPayment } from './routes/billing';
 export { paystackSignature } from './util';
 export { toFs, fromFs } from './fs';
@@ -63,6 +66,7 @@ const ROUTES: Record<string, Handler> = {
   'POST /api/account/delete': deleteAccount,
   'POST /api/risk/assess': assess,
   'POST /api/public/waitlist': joinWaitlist,
+  'POST /api/insights': insights,
   'POST /api/keys/create': createKey,
   'POST /api/keys/revoke': revokeKey,
   'GET /api/v1/bookings': v1Bookings,
@@ -124,5 +128,8 @@ export async function handle(req: Request, env: Env, d: Deps = realDeps()): Prom
 export default {
   fetch: (req: Request, env: Env) => handle(req, env),
   /** Cron Trigger: hourly tick. Backs up the Enterprise/Dedicated workspaces that are due (see routes/backups.ts). */
-  scheduled: (_event: unknown, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) => { ctx.waitUntil(scheduledBackups(env, realDeps()).catch((e) => console.error('scheduled backups', e instanceof Error ? e.message : e))); },
+  scheduled: (_event: unknown, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) => {
+    ctx.waitUntil(scheduledBackups(env, realDeps()).catch((e) => console.error('scheduled backups', e instanceof Error ? e.message : e)));
+    ctx.waitUntil(scheduledDigests(env, realDeps()).catch((e) => console.error('scheduled digests', e instanceof Error ? e.message : e)));
+  },
 };

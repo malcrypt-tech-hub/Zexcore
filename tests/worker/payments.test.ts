@@ -4,7 +4,7 @@ import { creditDays } from '../../workers/payments/src/routes/billing.js';
 import { SEATS } from '../../workers/payments/src/routes/team.js';
 import { KEEP, backupId, gunzip, open as openBackup, scheduledBackups } from '../../workers/payments/src/routes/backups.js';
 import { LIMITS } from '../../apps/dashboard/src/lib/fb/plan';
-import { handle, paystackSignature, amountMinor, planAfterPayment, throttled, toFs, fromFs, resetTokenCache, resetJwksCache, type Env } from '../../workers/payments/src/index.js';
+import { handle, summarize, sendDigest, weekKey, digestDue, paystackSignature, amountMinor, planAfterPayment, throttled, toFs, fromFs, resetTokenCache, resetJwksCache, type Env } from '../../workers/payments/src/index.js';
 
 const PROJECT = 'zexcore-5d6c0';
 const SECRET = 'sk_test_worker_secret';
@@ -923,5 +923,65 @@ describe('revenue protection: waitlist and backfill', () => {
     setup({ waitlistEnabled: false }); store.delete(`workspaces/${W}/automationMarkers/backfill_202611_9`);
     expect(await (await cancelEvent()).json()).toMatchObject({ told: 0 });
     expect(emails).toHaveLength(0);
+  });
+});
+
+describe('business insights and the weekly summary', () => {
+  const IW = 'wsinsight00000000000';
+  const DAYMS = 86_400_000;
+  const T = NOW.getTime();
+  const book = (n: number, over: Record<string, unknown>) => seedDoc(`workspaces/${IW}/bookings/202611_${n}`, { status: 'completed', serviceId: 's_0', customerPhone: `+23480100000${n}`, startsAt: new Date(T - 2 * DAYMS), ...over });
+  const setup = (plan = 'enterprise', settings: Record<string, unknown> = {}) => {
+    seedDoc(`workspaces/${IW}`, { name: 'Insight Salon', plan, planExpiresAt: new Date(T + 20 * DAYMS), ownerUid: 'owner1', slug: 'insight-salon', settings: { publicName: 'Insight Salon', ...settings } });
+    seedDoc(`workspaces/${IW}/members/owner1`, { role: 'owner', email: 'sade@example.com', name: 'Sade Bello' });
+    seedDoc(`workspaces/${IW}/members/editor1`, { role: 'editor' });
+    seedDoc(`workspaces/${IW}/members/viewer1`, { role: 'viewer' });
+    seedDoc(`workspaces/${IW}/services/s_0`, { name: 'Braids', priceMinor: 2000 });
+    seedDoc(`workspaces/${IW}/services/s_1`, { name: 'Wash', priceMinor: 500 });
+    seedDoc(`workspaces/${IW}/bookings/202610_0`, { status: 'completed', serviceId: 's_0', customerPhone: '+2348010000000', startsAt: new Date(T - 2 * DAYMS) });
+    book(1, { customerPhone: '+2348010000000' }); book(2, { status: 'no_show' }); book(3, { status: 'cancelled' }); book(4, { serviceId: 's_1', depositStatus: 'paid', depositMinor: 100 });
+    book(5, { customerPhone: '+2348010000000', startsAt: new Date(T - 10 * DAYMS) });                       // earlier period
+    book(6, { startsAt: new Date(T + 3 * DAYMS), status: 'confirmed' });                                   // booked ahead
+  };
+  const ask = async (sub = 'owner1', days = 7) => call('/api/insights', { headers: await authed({ sub }), body: JSON.stringify({ workspaceId: IW, days }) });
+
+  it('counts only what happened: statuses, list-price revenue, deposits, rates, repeat customers', async () => {
+    setup();
+    const r = await ask(); expect(r.status).toBe(200);
+    const j = await r.json() as any;
+    expect(j.current).toMatchObject({ bookings: 6, completed: 3, cancelled: 1, noShows: 1, upcoming: 1, revenueMinor: 2000 * 2 + 500, depositsMinor: 100, noShowRate: 25, cancelRate: 16.7, repeatCustomers: 1 });
+    expect(j.previous).toMatchObject({ bookings: 1, completed: 1, revenueMinor: 2000 });
+    expect(j.truncated).toBe(false);
+  });
+  it('says null rather than inventing a rate or a busiest day when there is nothing to divide', () => {
+    const p = summarize([], [], 0, 10, 5);
+    expect(p).toMatchObject({ bookings: 0, noShowRate: null, cancelRate: null, topServices: [] });
+    expect(p.byWeekday.every((n) => n === 0)).toBe(true);
+  });
+  it('is for Enterprise, readable by owners, admins and viewers, and by nobody else', async () => {
+    setup('growth'); expect((await ask()).status).toBe(402);
+    setup(); expect((await ask('viewer1')).status).toBe(200);
+    expect((await ask('editor1')).status).toBe(403); expect((await ask('stranger')).status).toBe(403);
+  });
+  it('emails the owner a plain summary once a week, and never when switched off, on a lower plan or already sent', async () => {
+    env = { ...env, RESEND_API_KEY: 're_test' };
+    setup();
+    expect(await sendDigest(env, { fetch: mockFetch(), now: () => NOW }, IW)).toBe(true);
+    const m = emails[0];
+    expect(m.subject).toBe('Your week at Insight Salon');
+    expect(m.text).toContain('Bookings: 5'); expect(m.text).toContain('Dear Sade,'); expect(m.text).toContain('/app/insights'); expect(m.html).not.toContain('<table');
+    expect(await sendDigest(env, { fetch: mockFetch(), now: () => NOW }, IW)).toBe(false);      // same week
+    expect(emails).toHaveLength(1);
+    store.delete(`workspaces/${IW}/automationMarkers/digest_${weekKey(T)}`);
+    setup('enterprise', { weeklyDigest: false }); expect(await sendDigest(env, { fetch: mockFetch(), now: () => NOW }, IW)).toBe(false);
+    setup('growth'); expect(await sendDigest(env, { fetch: mockFetch(), now: () => NOW }, IW)).toBe(false);
+    expect(emails).toHaveLength(1);
+  });
+  it('only runs on Monday mornings in Lagos, and week markers change every week', () => {
+    expect(digestDue(Date.UTC(2026, 10, 2, 6, 30))).toBe(true);     // Mon 2 Nov 07:30 Lagos
+    expect(digestDue(Date.UTC(2026, 10, 2, 5, 30))).toBe(false);    // 06:30 Lagos
+    expect(digestDue(Date.UTC(2026, 10, 3, 9, 0))).toBe(false);     // Tuesday
+    expect(weekKey(Date.UTC(2026, 10, 2, 9, 0))).not.toBe(weekKey(Date.UTC(2026, 10, 9, 9, 0)));
+    expect(weekKey(Date.UTC(2026, 10, 2, 9, 0))).toBe(weekKey(Date.UTC(2026, 10, 8, 9, 0)));
   });
 });
