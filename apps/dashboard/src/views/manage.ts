@@ -11,7 +11,7 @@ import { hasFeatureAccess } from '../lib/fb/plan';
 const ro = (edit = false): Raw => (edit ? canEdit() : canAdmin()) ? html`` : html`<div class="alert alert-info" style="margin-bottom:16px">${ic('info', 'ico-sm')} ${edit ? 'Only owners, admins and editors can change this.' : 'Only owners and admins can change these settings.'}</div>`;
 
 export function renderMore(view: HTMLElement): void {
-  const items: { href: string; icon: IconName; t: string; s: string }[] = [
+  const items: { href?: string; icon: IconName; t: string; s: string; comingSoon?: boolean }[] = [
     { href: '/app/customers', icon: 'users', t: 'Customers', s: 'Everyone who has booked' },
     { href: '/app/services', icon: 'list-checks', t: 'Services', s: 'What you offer, how long, how much' },
     { href: '/app/team', icon: 'id-card', t: 'Bookable staff', s: 'Doctors, stylists and other calendars' },
@@ -23,6 +23,7 @@ export function renderMore(view: HTMLElement): void {
     { href: '/app/content', icon: 'globe', t: 'Website pages', s: 'Draft and publish page content' },
     { href: '/app/compliance', icon: 'scale', t: 'Data protection', s: 'Consent, erasure and retention' },
     { href: '/app/billing', icon: 'credit-card', t: 'Plan & billing', s: 'Your subscription and payments' },
+    { icon: 'server', t: 'Cluster & license', s: 'Dedicated clusters and on-premise license keys', comingSoon: true },
     { href: '/app/security', icon: 'shield-check', t: 'Security', s: 'Password and signed-in devices' },
     { href: '/app/backups', icon: 'database', t: 'Backups', s: 'Encrypted daily copies and certificates' },
     { href: '/app/insights', icon: 'activity', t: 'Business insights', s: 'Bookings, revenue and busy times' },
@@ -34,7 +35,16 @@ export function renderMore(view: HTMLElement): void {
   ];
   const me = current()!;
   mount(view, html`<div class="page-head"><div><h1>More</h1><p>${me.tenant.name}</p></div></div>
-    <div class="card list">${items.filter((i) => !(me.role === 'viewer' && i.href === '/app/access')).map((i) => html`<a class="list-item hover" href="${i.href}" data-link><span class="icon-tile">${ic(i.icon)}</span><span class="grow"><b>${i.t}</b><br><span class="muted small">${i.s}</span></span>${ic('chevron-right')}</a>`)}</div>
+    <div class="card list">${items.filter((i) => !(me.role === 'viewer' && i.href === '/app/access')).map((i) => {
+      if (i.comingSoon) {
+        return html`<div class="list-item" style="cursor:default;opacity:0.75" aria-disabled="true" title="Coming soon">
+          <span class="icon-tile">${ic(i.icon)}</span>
+          <span class="grow"><b>${i.t}</b><br><span class="muted small">${i.s}</span></span>
+          <span class="badge" style="font-size:0.6875rem;padding:3px 8px;font-weight:600">Coming soon</span>
+        </div>`;
+      }
+      return html`<a class="list-item hover" href="${i.href!}" data-link><span class="icon-tile">${ic(i.icon)}</span><span class="grow"><b>${i.t}</b><br><span class="muted small">${i.s}</span></span>${ic('chevron-right')}</a>`;
+    })}</div>
     <button class="btn btn-secondary btn-block" style="margin-top:16px" data-out>${ic('log-out', 'ico-sm')} Sign out</button>`);
   $('[data-out]', view)!.addEventListener('click', () => { logout(); navigate('/signin'); });
   void import('../lib/fb/team').then(async ({ myWorkspaces, switchWorkspace }) => {
