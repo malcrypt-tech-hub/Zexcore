@@ -134,8 +134,11 @@ describe('test-key guard', () => {
 
 describe('pricing', () => {
   it('computes prices on the server in minor units', () => {
-    expect(amountMinor('growth', 'monthly', 'NGN', 1500)).toBe(7_350_000);
-    expect(amountMinor('starter', 'annual', 'USD')).toBe(19_000);
+    expect(amountMinor('growth', 'monthly', 'NGN')).toBe(6_500_000);
+    expect(amountMinor('starter', 'annual', 'NGN')).toBe(12_000_000);            // ten months: two free
+    expect(amountMinor('agency', 'annual', 'NGN')).toBe(200_000_000);
+    expect(amountMinor('agency', 'annual', 'NGN')).toBe(amountMinor('agency', 'monthly', 'NGN') * 10);
+    expect(amountMinor('starter', 'annual', 'USD')).toBe(8_000);
   });
   it('round-trips Firestore values', () => {
     const v = { a: 'x', n: 5, d: new Date('2026-01-01T00:00:00Z'), arr: [1, 'b'], nested: { ok: true } };
@@ -166,11 +169,11 @@ describe('POST /api/checkout', () => {
     expect(r.status).toBe(201);
     const j = await r.json();
     expect(j.authorizationUrl).toBe('https://checkout.paystack.com/abc');
-    expect(paystackInit[0].amount).toBe(7_350_000);
+    expect(paystackInit[0].amount).toBe(6_500_000);
     expect(paystackInit[0].currency).toBe('NGN');
     const pay = [...store.entries()].find(([k]) => k.startsWith(`workspaces/${WID}/payments/`))!;
     expect(fromFs(pay[1].fields.status)).toBe('pending');
-    expect(fromFs(pay[1].fields.amountMinor)).toBe(7_350_000);
+    expect(fromFs(pay[1].fields.amountMinor)).toBe(6_500_000);
   });
   it('validates plan, cycle, currency and workspace id', async () => {
     for (const bad of [{ tier: 'free' }, { tier: 'platinum' }, { cycle: 'weekly' }, { currency: 'GBP' }, { workspaceId: '../x' }]) {
@@ -189,8 +192,8 @@ describe('POST /api/paystack-webhook', () => {
   const REF = 'zx_ws1_test_ref';
   const event = (over: Record<string, unknown> = {}) => JSON.stringify({ event: 'charge.success', data: { reference: REF, metadata: { workspaceId: WID, tier: 'enterprise' }, ...over } });
   const send = async (body: string, sig?: string) => call('/api/paystack-webhook', { body, headers: { 'x-paystack-signature': sig ?? (await paystackSignature(body, SECRET)) } });
-  const pending = (over: Record<string, unknown> = {}) => seedDoc(`workspaces/${WID}/payments/${REF}`, { reference: REF, tier: 'growth', cycle: 'monthly', currency: 'NGN', amountMinor: 7_350_000, status: 'pending', ...over });
-  const ok = (amount = 7_350_000, currency = 'NGN') => { paystackVerify[REF] = { status: true, data: { status: 'success', amount, currency, reference: REF } }; };
+  const pending = (over: Record<string, unknown> = {}) => seedDoc(`workspaces/${WID}/payments/${REF}`, { reference: REF, tier: 'growth', cycle: 'monthly', currency: 'NGN', amountMinor: 6_500_000, status: 'pending', ...over });
+  const ok = (amount = 6_500_000, currency = 'NGN') => { paystackVerify[REF] = { status: true, data: { status: 'success', amount, currency, reference: REF } }; };
   const plan = () => fromFs(store.get(`workspaces/${WID}`)!.fields.plan);
 
   it('rejects bad or missing signatures and changes nothing', async () => {
@@ -219,13 +222,13 @@ describe('POST /api/paystack-webhook', () => {
     pending(); ok(100);
     expect((await (await send(event())).json()).ignored).toBe('amount_mismatch');
     expect(plan()).toBe('free');
-    pending(); ok(7_350_000, 'USD');
+    pending(); ok(6_500_000, 'USD');
     await send(event());
     expect(plan()).toBe('free');
   });
   it('ignores references we never issued and payments Paystack does not confirm', async () => {
     ok(); expect((await (await send(event())).json()).ignored).toBe('unknown_reference');
-    pending(); paystackVerify[REF] = { status: true, data: { status: 'failed', amount: 7_350_000, currency: 'NGN', reference: REF } };
+    pending(); paystackVerify[REF] = { status: true, data: { status: 'failed', amount: 6_500_000, currency: 'NGN', reference: REF } };
     expect((await (await send(event())).json()).ignored).toBe('not_successful');
     expect(plan()).toBe('free');
   });
@@ -240,7 +243,7 @@ describe('POST /api/paystack-webhook', () => {
     await send(event());
     expect(plan()).toBe('growth');
     const exp = fromFs(store.get(`workspaces/${WID}`)!.fields.planExpiresAt) as Date;
-    expect(exp.getTime()).toBe(NOW.getTime() + (31 + Math.floor(30 * 19 / 49)) * 86400000);
+    expect(exp.getTime()).toBe(NOW.getTime() + (31 + Math.floor(30 * 12 / 65)) * 86400000);
   });
   it('renewing early keeps the time already paid for', async () => {
     seedDoc(`workspaces/${WID}`, { plan: 'growth', ownerUid: 'owner1', planExpiresAt: new Date(NOW.getTime() + 10 * 86400000) });
@@ -264,7 +267,7 @@ describe('plan changes while a plan is running', () => {
     expect((await call('/api/checkout', { headers: await authed(), body: checkoutBody({ tier: 'growth' }) })).status).toBe(201);
   });
   it('turns unused time on the old plan into extra days when moving up', () => {
-    expect(creditDays('starter', 30 * 86_400_000, 'growth')).toBe(Math.floor(30 * 19 / 49));
+    expect(creditDays('starter', 30 * 86_400_000, 'growth')).toBe(Math.floor(30 * 12 / 65));
     expect(creditDays('starter', 0, 'growth')).toBe(0);
     expect(creditDays('free', 30 * 86_400_000, 'growth')).toBe(0);
   });
@@ -358,10 +361,10 @@ describe('plan time is never lost', () => {
     expect(planAfterPayment('growth', left, 'growth', 'monthly', NOW).expires.getTime()).toBe(NOW.getTime() + 41 * day);
   });
   it('converts what is left on a cheaper plan into time on the new one when upgrading', () => {
-    const left = new Date(NOW.getTime() + 49 * day);                 // 49 days of Starter ($19) = 19 days of Growth ($49)
+    const left = new Date(NOW.getTime() + 49 * day);                 // 49 days of Starter (₦12,000) = 9 days of Growth (₦65,000)
     const r = planAfterPayment('starter', left, 'growth', 'monthly', NOW);
     expect(r.plan).toBe('growth');
-    expect(Math.round((r.expires.getTime() - NOW.getTime()) / day)).toBe(Math.round(49 * 19 / 49 + 31));
+    expect(Math.round((r.expires.getTime() - NOW.getTime()) / day)).toBe(Math.round(49 * 12 / 65 + 31));
   });
   it('keeps the higher plan, and extends it, if a lower plan is paid for while it is active', () => {
     const left = new Date(NOW.getTime() + 20 * day);
@@ -577,14 +580,15 @@ describe('formal e-mails', () => {
   beforeEach(() => { env = { ...env, RESEND_API_KEY: 're_test' }; seedDoc('users/owner1', { name: 'Sade Bello', email: 'sade@example.com', workspaceIds: [WID] }); });
   const welcomeReq = async (over?: Record<string, unknown>) => call('/api/welcome', { body: '{}', headers: await authed(over) });
 
-  it('welcomes a verified new user once, by name, with an Open dashboard button', async () => {
+  it('welcomes a verified new user once, by name, as a plain formal message', async () => {
     const r = await welcomeReq();
     expect(await r.json()).toMatchObject({ ok: true, sent: true });
     expect(emails).toHaveLength(1);
     const m = emails[0];
     expect(m.to).toEqual(['sade@example.com']); expect(m.subject).toBe('Welcome to ZexCore, Sade');
-    expect(m.html).toContain('Open dashboard'); expect(m.html).toContain('href="https://zexcore.com.ng/app"'); expect(m.html).toContain('Sade Salon');
-    expect(m.text).toContain('Open dashboard: https://zexcore.com.ng/app'); expect(m.reply_to).toBe('hello@zexcore.com.ng');
+    expect(m.html).toContain('https://zexcore.com.ng/app'); expect(m.html).toContain('Sade Salon'); expect(m.html).toContain('Dear Sade');
+    expect(m.html).not.toContain('<table'); expect(m.html).not.toContain('background:#c8102e');   // no card, no button
+    expect(m.text).toContain('https://zexcore.com.ng/app'); expect(m.text).toContain('Kind regards,'); expect(m.reply_to).toBe('hello@zexcore.com.ng');
     expect(await (await welcomeReq()).json()).toMatchObject({ sent: false });      // never twice
     expect(emails).toHaveLength(1);
   });

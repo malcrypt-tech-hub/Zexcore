@@ -17,6 +17,8 @@ export interface EmailSpec {
   note?: string;
   /** Hidden preview line shown by mail apps beside the subject. */
   preheader?: string;
+  /** Branded card layout. Only for payment invoices and receipts; every other message is plain, formal text. */
+  card?: boolean;
 }
 
 /** Plain text and HTML versions of one formal, branded message. Everything interpolated is escaped. */
@@ -32,6 +34,15 @@ export function renderEmail(spec: EmailSpec, appUrl: string): { text: string; ht
   const rows = spec.details ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;border:1px solid #e5e7eb;border-radius:10px;border-collapse:separate;overflow:hidden">${
     spec.details.map(([k, v], i) => `<tr><td style="padding:11px 16px;font-size:13px;color:#6b7280;width:38%;${i ? 'border-top:1px solid #e5e7eb;' : ''}background:#f9fafb">${e(k)}</td><td style="padding:11px 16px;font-size:14px;color:#111827;font-weight:600;${i ? 'border-top:1px solid #e5e7eb;' : ''}">${e(v)}</td></tr>`).join('')}</table>` : '';
   const button = spec.button ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0 8px"><tr><td style="background:#c8102e;border-radius:8px"><a href="${e(spec.button.url)}" style="display:inline-block;padding:13px 28px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none">${e(spec.button.text)}</a></td></tr></table>` : '';
+  if (!spec.card) {
+    const p = (t: string): string => `<p style="margin:0 0 14px">${e(t)}</p>`;
+    const facts = spec.details ? `<p style="margin:0 0 14px">${spec.details.map(([k, v]) => `${e(k)}: ${e(v)}`).join('<br>')}</p>` : '';
+    const link = spec.button ? `<p style="margin:0 0 14px">${e(spec.button.text)}: <a href="${e(spec.button.url)}">${e(spec.button.url)}</a></p>` : '';
+    const plain = `<!doctype html><html><body style="margin:0;padding:16px;background:#ffffff;color:#111111;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6">
+${spec.greeting ? p(spec.greeting) : ''}${spec.paragraphs.map(p).join('')}${facts}${link}${spec.note ? p(spec.note) : ''}<p style="margin:0 0 14px">Kind regards,<br>The ZexCore team<br>ZexCore, a product of Zexlabs<br><a href="${e(appUrl)}">${e(appUrl)}</a></p>
+<p style="margin:18px 0 0;font-size:12px;color:#666666">Questions? Reply to this email or write to <a href="mailto:${REPLY_TO}">${REPLY_TO}</a>.</p></body></html>`;
+    return { text: text.replace('\nZexCore by Zexlabs\n', '\nKind regards,\nThe ZexCore team\nZexCore, a product of Zexlabs\n'), html: plain };
+  }
   const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
 <span style="display:none;max-height:0;overflow:hidden;opacity:0">${e(spec.preheader ?? spec.heading)}</span>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:28px 12px"><tr><td align="center">

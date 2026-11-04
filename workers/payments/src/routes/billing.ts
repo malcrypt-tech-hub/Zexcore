@@ -4,18 +4,22 @@ import { fsCommit, fsGet } from '../fs';
 import { ID_RE, json, paystackSignature, randomRef, timingSafeEqual } from '../util';
 import { settleDeposit } from './deposits';
 
-import { getLiveNgnRate, DEFAULT_FALLBACK_RATE } from '../rates';
 
 // ───────────── pricing (mirrors apps/api/src/billing/plans.ts) ─────────────
 export type Tier = 'starter' | 'growth' | 'agency' | 'enterprise' | 'dedicated';
 export type Cycle = 'monthly' | 'annual';
 export type Currency = 'NGN' | 'USD';
-export const PLANS: Record<Tier, { monthlyUsd: number; annualUsd: number }> = {
-  starter: { monthlyUsd: 19, annualUsd: 190 },
-  growth: { monthlyUsd: 49, annualUsd: 490 },
-  agency: { monthlyUsd: 149, annualUsd: 1490 },
-  enterprise: { monthlyUsd: 499, annualUsd: 4990 },
-  dedicated: { monthlyUsd: 1500, annualUsd: 15000 },
+/**
+ * Prices are set in naira and charged exactly as listed; annual is ten months (two free). The dollar figures are the
+ * approximate list price for cards paid in USD. Enterprise and Dedicated are agreed with our team and cannot be bought here;
+ * their entries only keep the plan-change arithmetic working for workspaces we set up by hand.
+ */
+export const PLANS: Record<Tier, { monthlyNgn: number; annualNgn: number; monthlyUsd: number; annualUsd: number }> = {
+  starter: { monthlyNgn: 12_000, annualNgn: 120_000, monthlyUsd: 8, annualUsd: 80 },
+  growth: { monthlyNgn: 65_000, annualNgn: 650_000, monthlyUsd: 43, annualUsd: 430 },
+  agency: { monthlyNgn: 200_000, annualNgn: 2_000_000, monthlyUsd: 133, annualUsd: 1330 },
+  enterprise: { monthlyNgn: 750_000, annualNgn: 7_500_000, monthlyUsd: 499, annualUsd: 4990 },
+  dedicated: { monthlyNgn: 2_250_000, annualNgn: 22_500_000, monthlyUsd: 1500, annualUsd: 15000 },
 };
 export const RANK: Record<string, number> = { free: 0, starter: 1, growth: 2, agency: 3, enterprise: 4, dedicated: 5 };
 /** The plan a workspace is paying for right now (free once it has lapsed), and when it ends. */
@@ -27,12 +31,12 @@ export function activePlan(ws: Record<string, unknown> | undefined, now: Date): 
 /** Days of the new plan that the unused time on the old one is worth (same daily value as its monthly price). */
 export function creditDays(oldTier: string, remainingMs: number, newTier: Tier): number {
   const old = PLANS[oldTier as Tier]; if (!old || remainingMs <= 0) return 0;
-  return Math.floor((remainingMs / 86_400_000) * old.monthlyUsd / PLANS[newTier].monthlyUsd);
+  return Math.floor((remainingMs / 86_400_000) * old.monthlyNgn / PLANS[newTier].monthlyNgn);
 }
 export const isTier = (v: unknown): v is Tier => typeof v === 'string' && Object.prototype.hasOwnProperty.call(PLANS, v);
-export function amountMinor(tier: Tier, cycle: Cycle, currency: Currency, ngnPerUsd = DEFAULT_FALLBACK_RATE): number {
-  const usd = cycle === 'annual' ? PLANS[tier].annualUsd : PLANS[tier].monthlyUsd;
-  return Math.round((currency === 'NGN' ? usd * ngnPerUsd : usd) * 100);
+export function amountMinor(tier: Tier, cycle: Cycle, currency: Currency): number {
+  const p = PLANS[tier];
+  return (currency === 'NGN' ? (cycle === 'annual' ? p.annualNgn : p.monthlyNgn) : (cycle === 'annual' ? p.annualUsd : p.monthlyUsd)) * 100;
 }
 
 const PAID_RANK: Record<Tier, number> = { starter: 0, growth: 1, agency: 2, enterprise: 3, dedicated: 4 };
@@ -54,7 +58,7 @@ export function planAfterPayment(currentPlan: unknown, currentExpiry: Date | nul
     const carriedDays = creditDays(cur, currentExpiry!.getTime() - now.getTime(), tier);   // whole days, same rule as everywhere else
     return { plan: tier, expires: new Date(now.getTime() + carriedDays * 86_400_000 + addMs) };
   }
-  const extra = addMs * (PLANS[tier].monthlyUsd / PLANS[cur].monthlyUsd);
+  const extra = addMs * (PLANS[tier].monthlyNgn / PLANS[cur].monthlyNgn);
   return { plan: cur, expires: new Date(currentExpiry!.getTime() + extra) };
 }
 
@@ -81,12 +85,11 @@ export async function checkout(req: Request, env: Env, d: Deps, headers: Record<
   const cur = activePlan(wsNow?.data, d.now());
   if ((RANK[tier] ?? 0) < (RANK[cur.tier] ?? 0)) return json({ error: `You are on the ${cur.tier} plan until ${cur.expires?.toISOString().slice(0, 10)}. To move to a cheaper plan, wait until it ends or contact us.`, code: 'downgrade_blocked' }, 409, headers);
 
-  const liveRate = await getLiveNgnRate(env, d);
-  const amount = amountMinor(tier, cycle, currency, liveRate);
+  const amount = amountMinor(tier, cycle, currency);
   const reference = randomRef(workspaceId);
   await fsCommit(env, d, [{
     path: `workspaces/${workspaceId}/payments/${reference}`,
-    fields: { reference, tier, cycle, currency, amountMinor: amount, rate: liveRate, status: 'pending', createdBy: caller.uid, createdAt: d.now() },
+    fields: { reference, tier, cycle, currency, amountMinor: amount, status: 'pending', createdBy: caller.uid, createdAt: d.now() },
     precondition: { exists: false },
   }]);
 
