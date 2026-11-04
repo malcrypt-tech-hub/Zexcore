@@ -10,7 +10,7 @@ export async function plans(): Promise<unknown> {
   return {
     currencyRates: { NGN_PER_USD: liveRate }, paystackPublicKey: paymentsUrl() ? 'hosted-checkout' : null,
     plans: [...(Object.keys(PRICES) as (keyof typeof PRICES)[]).map((tier) => ({ tier, ...PRICES[tier], limits: toLimits(tier) })),
-      ...(['enterprise', 'dedicated'] as const).map((tier) => ({ tier, monthlyNgn: null, annualNgn: null, approxUsd: null, limits: toLimits(tier) }))],
+      ...(['enterprise', 'dedicated'] as const).map((tier) => ({ tier, monthlyUsd: null, annualUsd: null, limits: toLimits(tier) }))],
     freeLimits: toLimits('free'), limitLabels: LABELS,
   };
 }
@@ -44,11 +44,11 @@ export async function checkout(b: Record<string, unknown>): Promise<unknown> {
   return j;
 }
 
-/** Receipts show what was charged: the plan's naira list price (or the stored amount for older payments). */
+/** Receipts are shown in US dollars (the plan's list price); Paystack settles the card payment in naira. */
 const usdAmount = (x: Record<string, any>): { currency: string; amount_minor: number } => {
   const t = PRICES[x.tier as keyof typeof PRICES];
-  const ngn = t && x.currency === 'NGN' ? (x.cycle === 'annual' ? t.annualNgn : t.monthlyNgn) : null;
-  return ngn == null ? { currency: x.currency, amount_minor: x.amountMinor ?? 0 } : { currency: 'NGN', amount_minor: ngn * 100 };
+  const usd = t ? (x.cycle === 'annual' ? t.annualUsd : t.monthlyUsd) : null;
+  return usd == null ? { currency: x.currency, amount_minor: x.amountMinor ?? 0 } : { currency: 'USD', amount_minor: Math.round(usd * 100) };
 };
 const pay = (d: QueryDocumentSnapshot) => {
   const x = d.data();

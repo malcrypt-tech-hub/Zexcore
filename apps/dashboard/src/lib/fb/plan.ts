@@ -16,11 +16,11 @@ export const LIMITS: Record<Tier, Record<'bookingsPerMonth' | 'staff' | 'service
 /** The rules treat "unlimited" as this many slots. */
 export const UNLIMITED_SLOTS = 999_999;
 
-/** Naira list prices, charged as listed; annual is ten months. approxUsd is only a guide for people paying from abroad. */
-export const PRICES: Record<'starter' | 'growth' | 'agency', { monthlyNgn: number; annualNgn: number; approxUsd: number }> = {
-  starter: { monthlyNgn: 12_000, annualNgn: 120_000, approxUsd: 8 },
-  growth: { monthlyNgn: 65_000, annualNgn: 650_000, approxUsd: 43 },
-  agency: { monthlyNgn: 200_000, annualNgn: 2_000_000, approxUsd: 133 },
+/** List prices in US dollars; annual is ten months. Paystack settles card payments in naira at the day's rate. */
+export const PRICES: Record<'starter' | 'growth' | 'agency', { monthlyUsd: number; annualUsd: number }> = {
+  starter: { monthlyUsd: 8, annualUsd: 80 },
+  growth: { monthlyUsd: 43, annualUsd: 430 },
+  agency: { monthlyUsd: 133, annualUsd: 1330 },
 };
 
 import { getCachedNgnRate, DEFAULT_FALLBACK_RATE } from '../fx';
