@@ -1,4 +1,5 @@
 import { assessBooking } from './risk';
+import { backfillSlot, markWaitlistBooked } from './waitlist';
 import { DOERS, requireMember } from '../auth';
 import { fireEvent, ownerContact } from '../automation';
 import type { Ctx } from '../env';
@@ -30,6 +31,9 @@ export async function memberEvent(c: Ctx): Promise<Response> {
     if (!r) throw new HttpError(404, 'Booking not found');
     return json({ ok: true, ran: await fireEvent(c, wid, event, r.payload) }, 200, c.headers);
   }
+  if (event === 'bookings.booking.cancelled') {
+    return json({ ok: true, told: await backfillSlot(c, wid, id) }, 200, c.headers);
+  }
   if (event === 'crm.lead.created') {
     const l = await fsGet(c.env, c.d, `workspaces/${wid}/leads/${id}`);
     if (!l) throw new HttpError(404, 'Lead not found');
@@ -51,6 +55,7 @@ export async function publicBooked(c: Ctx): Promise<Response> {
   try {
     await fsCommit(c.env, c.d, [{ path: `workspaces/${wid}/automationMarkers/${bookingId}`, fields: { at: c.d.now() }, precondition: { exists: false } }]);
   } catch (e) { if (e instanceof FsConflict) return json({ ok: true, duplicate: true }, 200, c.headers); throw e; }
+  await markWaitlistBooked(c, wid, bookingId).catch((e) => console.error('waitlist match failed', e instanceof Error ? e.message : e));
   const bk = r.payload.booking as Record<string, unknown>;
   const risk = await assessBooking(c, wid, bookingId).catch(() => null);   // Enterprise only; a failure must not lose the booking email
   const owner = await ownerContact(c, wid);

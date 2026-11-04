@@ -7,7 +7,7 @@ import { brand } from '../layouts';
 
 interface Profile {
   business: { slug: string; name: string; type: string; phone: string | null; address: string | null };
-  currency: string; exchangeRate?: number; deposit: { enabled: boolean; amountMinor: number };
+  currency: string; exchangeRate?: number; deposit: { enabled: boolean; amountMinor: number }; waitlist?: boolean;
   hours: { openMinutes: number; closeMinutes: number; daysOpen: number[]; utcOffsetMinutes: number; maxDaysAhead: number };
   paystackPublicKey: string | null;
   services: { id: string; name: string; description: string | null; durationMin: number; priceMinor: number }[];
@@ -67,6 +67,11 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
   for (let i = 0; i < Math.min(p.hours.maxDaysAhead, 21); i++) days.push(ymd(new Date(Date.now() + i * 86_400_000).toISOString(), off));
   const open = (d: string) => p.hours.daysOpen.includes(new Date(d + 'T00:00:00Z').getUTCDay());
   st.date = days.find(open) ?? today;
+  { // a waitlist offer links here with ?service=&date= so the freed day is already selected
+    const q = new URLSearchParams(location.search); const sv = q.get('service'), dt = q.get('date');
+    if (sv && p.services.some((s) => s.id === sv)) st.serviceId = sv;
+    if (dt && days.includes(dt)) st.date = dt;
+  }
   const svc = () => p.services.find((s) => s.id === st.serviceId);
   const needDeposit = p.deposit.enabled;
   const dep = () => { const s = svc(); const price = s?.priceMinor ?? 0; return needDeposit ? (price > 0 ? Math.min(p.deposit.amountMinor, price) : p.deposit.amountMinor) : 0; };
@@ -110,10 +115,28 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
     try {
       const q = new URLSearchParams({ date: st.date, serviceId: st.serviceId }); if (st.staffId) q.set('staffId', st.staffId);
       const r = await api<{ slots: { startsAt: string; available: boolean }[] }>(`/api/public/${slug}/availability?${q}`, { auth: false });
-      if (!r.slots.length) { mount(host, html`<p class="muted" style="grid-column:1/-1">No times available on this day. Try another date.</p>`); return; }
-      mount(host, html`${r.slots.map((s) => html`<button type="button" class="slot" data-t="${s.startsAt}" aria-pressed="${s.startsAt === st.slot}" ${s.available ? '' : 'disabled'}>${timeOf(s.startsAt, off)}<small>${s.available ? 'Available' : 'Booked'}</small></button>`)}`);
+      const full = !r.slots.some((s) => s.available);
+      if (full && p.waitlist) {
+        mount(host, html`${r.slots.length ? '' : html`<p class="muted" style="grid-column:1/-1">No times available on this day.</p>`}<div class="notice" style="grid-column:1/-1">${ic('info')}<div><b>Fully booked?</b> Join the waitlist and we will email you if a time opens up on this day. It is first come, first served.<div style="margin-top:10px"><button type="button" class="btn btn-secondary" id="wl">Join the waitlist</button></div><div id="wlmsg" class="small" style="margin-top:8px" role="status"></div></div></div>`);
+        $('#wl')!.addEventListener('click', (e) => void joinWaitlist(e.currentTarget as HTMLButtonElement));
+        if (!r.slots.length) return;
+      } else if (!r.slots.length) { mount(host, html`<p class="muted" style="grid-column:1/-1">No times available on this day. Try another date.</p>`); return; }
+      mount(host, html`${full && p.waitlist ? html`<div class="notice" style="grid-column:1/-1">${ic('info')}<div><b>Fully booked?</b> Join the waitlist and we will email you if a time opens up on this day. It is first come, first served.<div style="margin-top:10px"><button type="button" class="btn btn-secondary" id="wl">Join the waitlist</button></div><div id="wlmsg" class="small" style="margin-top:8px" role="status"></div></div></div>` : ''}${r.slots.map((s) => html`<button type="button" class="slot" data-t="${s.startsAt}" aria-pressed="${s.startsAt === st.slot}" ${s.available ? '' : 'disabled'}>${timeOf(s.startsAt, off)}<small>${s.available ? 'Available' : 'Booked'}</small></button>`)}`);
+      if (full && p.waitlist) $('#wl')!.addEventListener('click', (e) => void joinWaitlist(e.currentTarget as HTMLButtonElement));
       $$('.slot:not(:disabled)', host).forEach((b) => b.addEventListener('click', () => { st.slot = b.dataset.t!; $$('.slot', host).forEach((x) => x.setAttribute('aria-pressed', String(x === b))); }));
     } catch { mount(host, html`<p class="err" style="grid-column:1/-1">Could not load times. Please refresh.</p>`); }
+  }
+
+  async function joinWaitlist(btn: HTMLButtonElement): Promise<void> {
+    const msg = $('#wlmsg')!; const say = (m: string, ok = false) => { msg.textContent = m; msg.style.color = ok ? 'var(--success, #15803d)' : 'var(--danger, #b91c1c)'; };
+    const name = ($('#cn') as HTMLInputElement).value.trim(), phone = ($('#cp') as HTMLInputElement).value.trim(), email = ($('#ce') as HTMLInputElement).value.trim();
+    if (name.length < 2) return say('Enter your full name above first.');
+    if (!phone) return say('Enter your phone number above first.');
+    if (!/^\S+@\S+\.\S+$/.test(email)) return say('Enter your email above so we can tell you when a time opens.');
+    await busy(btn, async () => {
+      try { await api(`/api/public/${slug}/waitlist`, { method: 'POST', auth: false, body: { serviceId: st.serviceId, date: st.date, name, phone, email } }); say('You are on the waitlist. We will email you if a time opens up on this day.', true); btn.disabled = true; }
+      catch (e) { say(e instanceof ApiError ? e.message : 'Could not join the waitlist. Please try again.'); }
+    });
   }
 
   async function submit(btn: HTMLButtonElement): Promise<void> {

@@ -80,13 +80,13 @@ service cloud.firestore {
         && getAfter(wsPath(request.resource.data.wid)).data.slug == slug
         && noExtraKeys(['wid', 'ownerUid', 'name', 'timezone', 'currency', 'bookingEnabled', 'slotMinutes',
                         'openMinutes', 'closeMinutes', 'closedWeekdays', 'depositNote', 'phone', 'address',
-                        'bookingCap', 'leadMinutes', 'maxDaysAhead', 'depositEnabled', 'depositMinor', 'exchangeRate', 'riskDeposit']);
+                        'bookingCap', 'leadMinutes', 'maxDaysAhead', 'depositEnabled', 'depositMinor', 'exchangeRate', 'riskDeposit', 'waitlist']);
       allow update: if signedIn() && resource.data.ownerUid == request.auth.uid
         && request.resource.data.wid == resource.data.wid
         && request.resource.data.ownerUid == resource.data.ownerUid
         && noExtraKeys(['wid', 'ownerUid', 'name', 'timezone', 'currency', 'bookingEnabled', 'slotMinutes',
                         'openMinutes', 'closeMinutes', 'closedWeekdays', 'depositNote', 'phone', 'address',
-                        'bookingCap', 'leadMinutes', 'maxDaysAhead', 'depositEnabled', 'depositMinor', 'exchangeRate', 'riskDeposit']);
+                        'bookingCap', 'leadMinutes', 'maxDaysAhead', 'depositEnabled', 'depositMinor', 'exchangeRate', 'riskDeposit', 'waitlist']);
       allow delete: if false;
     }
 

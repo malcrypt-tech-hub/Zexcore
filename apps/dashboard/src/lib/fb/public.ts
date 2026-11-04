@@ -9,7 +9,7 @@ import { DEMO_SLUG, demoBook, demoProfile, demoSlots } from './demo';
 
 interface PublicPage {
   wid: string; name: string; phone: string | null; address: string | null; openMinutes: number; closeMinutes: number; slotMinutes: number;
-  daysOpen: number[]; leadMinutes: number; maxDaysAhead: number; bookingCap: number; bookingEnabled: boolean; depositEnabled: boolean; depositMinor: number; exchangeRate: number; riskDeposit: boolean;
+  daysOpen: number[]; leadMinutes: number; maxDaysAhead: number; bookingCap: number; bookingEnabled: boolean; depositEnabled: boolean; depositMinor: number; exchangeRate: number; riskDeposit: boolean; waitlist: boolean;
 }
 const cache = new Map<string, { at: number; page: PublicPage }>();
 
@@ -27,7 +27,7 @@ async function page(slug: string): Promise<PublicPage> {
     daysOpen: [0, 1, 2, 3, 4, 5, 6].filter((x) => !closed.includes(x)), leadMinutes: d.leadMinutes ?? 60, maxDaysAhead: Math.min(d.maxDaysAhead ?? 60, 120),
     bookingCap: Math.max(1, Math.min(Number(d.bookingCap) || 30, 999_999)), bookingEnabled: true,
     exchangeRate: Number(d.exchangeRate) > 0 ? Number(d.exchangeRate) : getCachedNgnRate(),
-    riskDeposit: d.riskDeposit === true,
+    riskDeposit: d.riskDeposit === true, waitlist: d.waitlist === true,
     depositEnabled: d.depositEnabled === true && Number(d.depositMinor) > 0, depositMinor: d.depositEnabled === true ? Math.max(0, Number(d.depositMinor) || 0) : 0,
   };
   cache.set(slug, { at: Date.now(), page: p });
@@ -52,7 +52,7 @@ export async function profile(slug: string): Promise<unknown> {
   const p = await page(slug);
   let cat; try { cat = await catalog(p.wid); } catch (e) { throw toApiError(e); }
   return {
-    business: { slug, name: p.name, type: 'business', phone: p.phone, address: p.address }, currency: 'USD', exchangeRate: p.exchangeRate, deposit: { enabled: p.depositEnabled, amountMinor: p.depositMinor },
+    business: { slug, name: p.name, type: 'business', phone: p.phone, address: p.address }, currency: 'USD', exchangeRate: p.exchangeRate, deposit: { enabled: p.depositEnabled, amountMinor: p.depositMinor }, waitlist: p.waitlist,
     hours: { openMinutes: p.openMinutes, closeMinutes: p.closeMinutes, daysOpen: p.daysOpen, utcOffsetMinutes: 60, maxDaysAhead: p.maxDaysAhead },
     paystackPublicKey: null, services: cat.services, staff: cat.staff,
   };
@@ -95,6 +95,19 @@ export async function book(slug: string, b: Record<string, unknown>): Promise<un
     if (r.ok && j.authorizationUrl) return { booking, payment: { reference: j.reference, amountMinor: j.amountMinor, authorizationUrl: j.authorizationUrl } };
   } catch { /* the booking still stands; the business can send a payment link */ }
   return { booking, payment: null };
+}
+
+export async function joinWaitlist(slug: string, b: Record<string, unknown>): Promise<unknown> {
+  const p = await page(slug);
+  if (!p.waitlist) throw new ApiError(409, 'This business does not have a waitlist.', 'waitlist_off');
+  const base = paymentsUrl();
+  if (!base) throw new ApiError(503, 'The waitlist is not available right now.', 'unavailable');
+  let r: Response;
+  try { r = await fetch(`${base}/api/public/waitlist`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...b, slug }) }); }
+  catch { throw new ApiError(0, 'Cannot reach the server. Check your connection.', 'network'); }
+  const j = (await r.json().catch(() => ({}))) as Record<string, unknown> & { error?: string };
+  if (!r.ok) throw new ApiError(r.status, j.error ?? 'Could not join the waitlist.');
+  return j;
 }
 
 export async function payment(slug: string, ref: string): Promise<unknown> {
