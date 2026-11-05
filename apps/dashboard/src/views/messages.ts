@@ -70,7 +70,7 @@ export async function renderMessages(view: HTMLElement, phoneParam?: string | nu
       const backBar = html`<div class="thread-back-bar">
         <button class="btn btn-ghost btn-sm btn-icon" id="thread-back" aria-label="Back to conversations">${ic('arrow-left', 'ico-sm')}</button>
         <span class="avatar" style="width:28px;height:28px;font-size:.6875rem">${initials(name || r.phone)}</span>
-        <b class="truncate" style="flex:1">${name || r.phone}</b>
+        <span class="truncate" style="flex:1;min-width:0"><b>${name || r.phone}</b>${name ? html`<span class="muted small mono" style="display:block">${r.phone}</span>` : ''}</span>
         <a class="btn btn-secondary btn-sm btn-icon" href="tel:${r.phone}" aria-label="Call">${ic('phone', 'ico-sm')}</a>
       </div>`;
 

@@ -133,6 +133,8 @@ a, button, input, select, textarea, label { touch-action: manipulation; }
     z-index: 5;
   }
   .thread-back-bar button { min-height: 36px; min-width: 36px; padding: 0 10px; }
+  /* The back bar already shows who this is and the call button, so the desktop header under it is hidden to avoid saying it twice. */
+  .thread-back-bar + .card-head { display: none; }
   /* Scrollable message area fills available space */
   .conv-thread #msgs { flex: 1; max-height: none !important; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   /* Compose bar sticks to bottom inside thread */
@@ -251,3 +253,16 @@ a, button, input, select, textarea, label { touch-action: manipulation; }
   word-break: break-word;
 }
 
+
+/* Calendar month bar: previous and next stay on either side of the month picker instead of stacking on their own rows. */
+@media (max-width: 640px) {
+  .cal-bar { flex-wrap: nowrap !important; }
+  .cal-bar .cal-jump { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+  .cal-bar .cal-jump .input { min-width: 0; }
+}
+
+/* On narrow phones a calendar cell has room for the number only; the word would break mid-letter. The full text stays in aria-label. */
+@media (max-width: 520px) {
+  .cal-count-word { display: none; }
+  .cal-count { display: inline-block; min-width: 18px; padding: 1px 5px; border-radius: 9px; background: var(--primary-tint, #fff1f2); color: var(--primary, #c8102e); font-weight: 700; text-align: center; }
+}

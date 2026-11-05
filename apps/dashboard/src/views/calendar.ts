@@ -27,7 +27,7 @@ export async function renderCalendar(view: HTMLElement, startDate?: string | nul
     <div class="page-head"><div><h1>Calendar</h1><p>Click a date to add appointments. Browse any month, past or future.</p></div>
       <div class="row" style="gap:8px;flex-wrap:wrap">${canEdit ? html`<button class="btn btn-secondary" data-new>${ic('plus', 'ico-sm')} New booking</button>` : ''}${canEdit ? html`<button class="btn btn-primary" data-add-appt>${ic('plus', 'ico-sm')} Add appointment</button>` : ''}</div></div>
     <div id="notif"></div><div id="pinned"></div>
-    <div class="card card-pad"><div class="row between" style="margin-bottom:12px;gap:8px;flex-wrap:wrap">
+    <div class="card card-pad"><div class="row between cal-bar" style="margin-bottom:12px;gap:8px;flex-wrap:wrap">
       <button class="btn btn-secondary btn-sm btn-icon" data-prev aria-label="Previous month">${ic('chevron-left', 'ico-sm')}</button>
       <div class="cal-jump"><select class="input" id="cal-m" aria-label="Month">${MON_LONG.map((n, i) => html`<option value="${i}">${n}</option>`)}</select>
         <input class="input" id="cal-y" type="number" min="1990" max="2100" style="width:92px" aria-label="Year">
@@ -97,7 +97,7 @@ export async function renderCalendar(view: HTMLElement, startDate?: string | nul
         const o = occ.get(c), p = dayPriority(o), nb = bookingCounts[c] ?? 0, pinned = o?.some((x) => x.pinned);
         return html`<button class="cal-cell ${c === todayStr ? 'today' : ''}" data-d="${c}" aria-pressed="${c === selected}" aria-label="${longDate(c)}, ${nb} bookings, ${o?.length ?? 0} appointments"><span class="row between" style="gap:2px"><b>${Number(c.slice(8))}</b>${pinned ? html`<span class="cal-pin" aria-hidden="true">&#9733;</span>` : ''}</span>
           ${p ? html`<span class="cal-dots" aria-hidden="true"><i class="${p}"></i>${o!.length > 1 ? html`<span class="cal-count">${o!.length}</span>` : ''}</span>` : ''}
-          ${nb ? html`<span class="cal-count">${nb} ${nb === 1 ? 'booking' : 'bookings'}</span>` : ''}</button>`;
+          ${nb ? html`<span class="cal-count">${nb}<span class="cal-count-word"> ${nb === 1 ? 'booking' : 'bookings'}</span></span>` : ''}</button>`;
       })}</div>`);
     $$('[data-d]', view).forEach((b) => b.addEventListener('click', () => { selected = b.dataset.d!; drawMonth(); drawDay(); }));
   }
