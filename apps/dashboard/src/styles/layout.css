@@ -118,7 +118,7 @@
 .link-card { background: var(--canvas); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 
 /* Messages */
-.thread { display: grid; gap: 10px; padding: 16px; }
+.thread { display: grid; gap: 10px; padding: 16px; align-content: start; }
 .conv-thread { display: flex; flex-direction: column; }
 .conv-thread .thread { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .msg { max-width: 82%; padding: 12px 14px; border-radius: 16px; font-size: .9375rem; box-shadow: var(--shadow-1); white-space: pre-wrap; overflow-wrap: anywhere; }
