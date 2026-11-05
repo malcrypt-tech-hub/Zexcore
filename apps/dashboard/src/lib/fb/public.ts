@@ -44,7 +44,7 @@ async function catalog(wid: string) {
     getDocs(query(collection(db, 'workspaces', wid, 'staff'), orderBy('seq'))),
   ]);
   return {
-    services: s.docs.filter((d) => d.data().active !== false).map((d) => ({ id: d.id, name: d.data().name as string, description: (d.data().description ?? null) as string | null, durationMin: d.data().durationMin as number, priceMinor: (d.data().priceMinor ?? 0) as number })),
+    services: s.docs.filter((d) => d.data().active !== false).map((d) => ({ id: d.id, name: d.data().name as string, description: (d.data().description ?? null) as string | null, durationMin: d.data().durationMin as number, priceMinor: (d.data().priceMinor ?? 0) as number, bookingMode: d.data().bookingMode === 'enquiry' ? 'enquiry' : 'appointment', intakeFields: Array.isArray(d.data().intakeFields) ? d.data().intakeFields : [], consultationEnabled: d.data().consultationEnabled === true })),
     staff: t.docs.filter((d) => d.data().active !== false).map((d) => ({ id: d.id, name: d.data().name as string, title: (d.data().title ?? null) as string | null })),
   };
 }
@@ -80,7 +80,15 @@ export async function book(slug: string, b: Record<string, unknown>): Promise<un
   const candidates = b.staffId ? cat.staff.filter((s) => s.id === b.staffId).map((s) => s.id) : cat.staff.map((s) => s.id);
   const made = await createBooking({
     wid: p.wid, source: 'public', service, staffCandidates: candidates, customerName: String(b.customerName ?? ''), customerPhone: String(b.customerPhone ?? ''),
-    customerEmail: b.customerEmail ? String(b.customerEmail).slice(0, 160) : null, notes: b.notes ? String(b.notes).slice(0, 500) : null, startMs: new Date(String(b.startsAt)).getTime(),
+    customerEmail: b.customerEmail ? String(b.customerEmail).slice(0, 160) : null,
+    notes: JSON.stringify({ note: b.notes ? String(b.notes).slice(0, 500) : '', answers: (() => {
+      const raw = b.intakeAnswers && typeof b.intakeAnswers === 'object' ? b.intakeAnswers as Record<string, unknown> : {};
+      const fields = Array.isArray((service as any).intakeFields) ? (service as any).intakeFields as {key:string;label:string;required:boolean;type:string;options?:string[]}[] : [];
+      const clean: Record<string,string> = {};
+      for (const f of fields) { const value = String(raw[f.key] ?? '').trim().slice(0, 2000); if (f.required && !value) throw new ApiError(400, `Please complete: ${f.label}`); if (value && f.type === 'select' && !f.options?.includes(value)) throw new ApiError(400, `Choose a valid option for ${f.label}.`); if (value) clean[f.key] = value; }
+      return clean;
+    })(), consultationRequested: b.consultationRequested === true }),
+    startMs: new Date(String(b.startsAt)).getTime(),
     status: 'pending', maxTries: 24,
     // The public page cannot read bookings, so it picks a random free-looking number below the plan's monthly cap.
     nextN: () => Promise.resolve(Math.floor(Math.random() * p.bookingCap)),
