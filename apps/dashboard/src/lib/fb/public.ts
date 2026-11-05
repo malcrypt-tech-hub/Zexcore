@@ -9,7 +9,7 @@ import { DEMO_SLUG, demoBook, demoProfile, demoSlots } from './demo';
 
 interface PublicPage {
   wid: string; name: string; phone: string | null; address: string | null; openMinutes: number; closeMinutes: number; slotMinutes: number;
-  daysOpen: number[]; leadMinutes: number; maxDaysAhead: number; bookingCap: number; bookingEnabled: boolean; depositEnabled: boolean; depositMinor: number; exchangeRate: number; riskDeposit: boolean; waitlist: boolean;
+  daysOpen: number[]; leadMinutes: number; maxDaysAhead: number; bookingCap: number; bookingEnabled: boolean; depositEnabled: boolean; depositMinor: number; exchangeRate: number; rateAuto: boolean; riskDeposit: boolean; waitlist: boolean;
   currency?: string;
 }
 const cache = new Map<string, { at: number; page: PublicPage }>();
@@ -27,7 +27,7 @@ async function page(slug: string): Promise<PublicPage> {
     openMinutes: d.openMinutes ?? DEFAULT_SETTINGS.openMinutes, closeMinutes: d.closeMinutes ?? DEFAULT_SETTINGS.closeMinutes, slotMinutes: d.slotMinutes ?? 30,
     daysOpen: [0, 1, 2, 3, 4, 5, 6].filter((x) => !closed.includes(x)), leadMinutes: d.leadMinutes ?? 60, maxDaysAhead: Math.min(d.maxDaysAhead ?? 60, 120),
     bookingCap: Math.max(1, Math.min(Number(d.bookingCap) || 30, 999_999)), bookingEnabled: true,
-    exchangeRate: Number(d.exchangeRate) > 0 ? Number(d.exchangeRate) : getCachedNgnRate(),
+    exchangeRate: Number(d.exchangeRate) > 0 ? Number(d.exchangeRate) : getCachedNgnRate(), rateAuto: !(Number(d.exchangeRate) > 0),
     riskDeposit: d.riskDeposit === true, waitlist: d.waitlist === true,
     depositEnabled: d.depositEnabled === true && Number(d.depositMinor) > 0, depositMinor: d.depositEnabled === true ? Math.max(0, Number(d.depositMinor) || 0) : 0,
     currency: (d.currency as string) || 'USD',
@@ -54,7 +54,7 @@ export async function profile(slug: string): Promise<unknown> {
   const p = await page(slug);
   let cat; try { cat = await catalog(p.wid); } catch (e) { throw toApiError(e); }
   return {
-    business: { slug, name: p.name, type: 'business', phone: p.phone, address: p.address, currency: p.currency || 'USD' }, currency: p.currency || 'USD', exchangeRate: p.exchangeRate, deposit: { enabled: p.depositEnabled, amountMinor: p.depositMinor }, waitlist: p.waitlist,
+    business: { slug, name: p.name, type: 'business', phone: p.phone, address: p.address, currency: p.currency || 'USD' }, currency: p.currency || 'USD', rateAuto: p.rateAuto, exchangeRate: p.exchangeRate, deposit: { enabled: p.depositEnabled, amountMinor: p.depositMinor }, waitlist: p.waitlist,
     hours: { openMinutes: p.openMinutes, closeMinutes: p.closeMinutes, daysOpen: p.daysOpen, utcOffsetMinutes: 60, maxDaysAhead: p.maxDaysAhead },
     paystackPublicKey: null, services: cat.services, staff: cat.staff,
   };

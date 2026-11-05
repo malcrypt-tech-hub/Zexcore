@@ -8,7 +8,7 @@ import { formatInCurrency, fetchLiveRates, getCachedRates, type SupportedCurrenc
 
 interface Profile {
   business: { slug: string; name: string; type: string; phone: string | null; address: string | null };
-  currency: string; exchangeRate?: number; deposit: { enabled: boolean; amountMinor: number }; waitlist?: boolean;
+  currency: string; exchangeRate?: number; rateAuto?: boolean; deposit: { enabled: boolean; amountMinor: number }; waitlist?: boolean;
   hours: { openMinutes: number; closeMinutes: number; daysOpen: number[]; utcOffsetMinutes: number; maxDaysAhead: number };
   paystackPublicKey: string | null;
   services: { id: string; name: string; description: string | null; durationMin: number; priceMinor: number }[];
@@ -90,12 +90,12 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
   const priceText = (usdMinor: number): string => {
     if (!usdMinor) return 'Free';
     if (displayCurrency === 'USD') return money(usdMinor, 'USD');
-    const converted = formatInCurrency(usdMinor, displayCurrency, rates, p.exchangeRate);
+    const converted = formatInCurrency(usdMinor, displayCurrency, rates, p.rateAuto ? undefined : p.exchangeRate);
     return `${converted} (${money(usdMinor, 'USD')})`;
   };
 
   const depositNgn = (): number => {
-    const rate = p.exchangeRate && p.exchangeRate > 100 ? p.exchangeRate : (rates.NGN || 1350);
+    const rate = !p.rateAuto && p.exchangeRate && p.exchangeRate > 100 ? p.exchangeRate : (rates.NGN || 1350);
     return Math.round(dep() * rate);
   };
 

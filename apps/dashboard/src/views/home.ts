@@ -27,7 +27,7 @@ export async function renderHome(view: HTMLElement): Promise<void> {
 
   const me = current()!;
   const first = (me.user.name || '').split(' ')[0] || 'there';
-  const off = s.utcOffsetMinutes, cur = s.currency;
+  const off = s.utcOffsetMinutes, cur = 'USD';   // prices and deposits are US dollars
   const dow = new Date(s.today + 'T00:00:00Z').getUTCDay();
   const steps = [
     { done: s.setup.hasName, t: 'Business name', s: 'Shown on your booking page', href: '/app/settings' },
