@@ -3,7 +3,7 @@ import { LIMITS, PRICES, hasFeatureAccess, type Tier } from '../lib/fb/plan';
 import { block, cta, intro, shell, table } from './ref';
 
 const usd = (amount: number): string => '$' + amount.toLocaleString('en-US');
-const lim = (n: number | null, t?: Tier): string => (n === null ? (t === 'dedicated' ? 'Custom' : 'Unlimited (fair use)') : t === 'dedicated' ? 'Custom' : n.toLocaleString('en-US'));
+const lim = (n: number | null, t?: Tier): string => (n === null ? (t === 'dedicated' ? 'Custom' : 'Unlimited') : t === 'dedicated' ? 'Custom' : n.toLocaleString('en-US'));
 const NAMES: Record<Tier, string> = { free: 'Free', starter: 'Starter', growth: 'Growth', agency: 'Agency', enterprise: 'Enterprise', dedicated: 'Dedicated' };
 const BLURB: Record<Tier, string> = {
   free: 'Take your first bookings.', starter: 'A single location getting started.', growth: 'A busy calendar and a small team.',
