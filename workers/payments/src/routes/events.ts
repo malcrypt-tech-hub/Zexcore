@@ -7,7 +7,7 @@ import { FsConflict, fsCommit, fsGet } from '../fs';
 import { sendFormal } from '../mail';
 import { sendBookingAlert, waNumber, whatsappConfigured } from '../whatsapp';
 import { enqueueWhatsAppEvent } from './whatsappAutomation';
-import { HttpError, ID_RE, json, localWhen, readJson } from '../util';
+import { HttpError, ID_RE, firstName, json, localWhen, readJson } from '../util';
 
 const BOOKING_RE = /^\d{6}_\d{1,6}$/;
 
