@@ -16,7 +16,7 @@ import type { Ctx, Deps, Env } from '../env';
 import { FsConflict, fsCommit, fsGet, fsQuery } from '../fs';
 import { ownerContact } from '../automation';
 import { sendFormal } from '../mail';
-import { HttpError, ID_RE, firstName, json, randomRef, readJson } from '../util';
+import { HttpError, ID_RE, firstName, json, localWhen, randomRef, readJson } from '../util';
 import { getLiveNgnRate } from '../rates';
 import { assessBooking } from './risk';
 
@@ -172,7 +172,7 @@ export async function settleDeposit(env: Env, d: Deps, wid: string, reference: s
     fsGet(env, d, `workspaces/${wid}`),
   ]);
   const customerEmail = String(booking?.data.customerEmail ?? '').trim();
-  if (/^[^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+$/.test(customerEmail)) {
+  if (/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(customerEmail)) {
     const service = booking ? await fsGet(env, d, `workspaces/${wid}/services/${String(booking.data.serviceId)}`) : null;
     const settings = (workspace?.data.settings ?? {}) as Record<string, unknown>;
     const offset = Number(settings.utcOffsetMinutes ?? 60);

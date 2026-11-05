@@ -78,7 +78,7 @@ export async function publicBooked(c: Ctx): Promise<Response> {
   // not acceptance of the appointment; the business still confirms it from the dashboard.
   const bookingDoc = await fsGet(c.env, c.d, `workspaces/${wid}/bookings/${bookingId}`);
   const customerEmail = String(bookingDoc?.data.customerEmail ?? '').trim();
-  if (/^[^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+$/.test(customerEmail)) {
+  if (/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(customerEmail)) {
     await sendFormal(c.env, c.d, customerEmail, 'We received your booking request', {
       heading: 'Your booking request was received',
       preheader: `Your request to book ${String(bk.service || 'a service')} has been sent.`,

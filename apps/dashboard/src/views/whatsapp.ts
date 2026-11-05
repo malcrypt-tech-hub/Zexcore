@@ -83,7 +83,7 @@ export async function renderWhatsApp(view: HTMLElement): Promise<void> {
   connect.addEventListener('click', ev => void busy(ev.currentTarget as HTMLButtonElement, async () => {
     error.classList.add('hidden');
     const id = phoneId.value.trim(), accessToken = token.value.trim();
-    if (!/^\\d{5,30}$/.test(id) || accessToken.length < 30) { error.textContent = 'Enter a valid phone number ID and Meta access token.'; error.classList.remove('hidden'); return; }
+    if (!/^\d{5,30}$/.test(id) || accessToken.length < 30) { error.textContent = 'Enter a valid phone number ID and Meta access token.'; error.classList.remove('hidden'); return; }
     try {
       const result = await worker<{ connected: boolean; phoneNumberId: string; displayPhoneNumber: string | null; verifiedName: string | null }>('/api/whatsapp/connect', { method: 'POST', body: { workspaceId: wid, phoneNumberId: id, accessToken } });
       token.value = ''; connection = { ...result, connectedAt: new Date().toISOString() }; paintConnection(); toast('WhatsApp Business number verified and connected.', 'success');
@@ -153,7 +153,7 @@ export async function renderWhatsApp(view: HTMLElement): Promise<void> {
     const phone = ($('#wa-consent-phone', view) as HTMLInputElement).value.trim();
     const source = ($('#wa-consent-source', view) as HTMLSelectElement).value;
     const result = $('#wa-consent-result', view)!;
-    if (!/^\\+?[1-9]\\d{7,14}$/.test(phone.replace(/[\\s().-]/g, ''))) { result.textContent = 'Enter a valid phone number in international format, including country code.'; return; }
+    if (!/^\+?[1-9]\d{7,14}$/.test(phone.replace(/[\s().-]/g, ''))) { result.textContent = 'Enter a valid phone number in international format, including country code.'; return; }
     try {
       const r = await worker<{ ok: boolean; optedIn: boolean }>('/api/whatsapp/consent', { method: 'POST', body: { workspaceId: wid, phone, source, optedIn } });
       result.textContent = r.optedIn ? 'Opt-in recorded. This customer is eligible for configured follow-ups.' : 'Opt-out recorded. Queued follow-ups will be cancelled before sending.';

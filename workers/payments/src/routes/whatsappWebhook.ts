@@ -8,7 +8,7 @@ import { json } from '../util';
 
 const enc = new TextEncoder();
 const STOP_WORDS = new Set(['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT']);
-const digits = (s: string) => s.replace(/\\D/g, '');
+const digits = (s: string) => s.replace(/\D/g, '');
 const integrationPath = (wid: string) => `workspaces/${wid}/integrations/whatsapp`;
 const consentPath = (wid: string, phone: string) => `workspaces/${wid}/whatsappConsents/${digits(phone)}`;
 
