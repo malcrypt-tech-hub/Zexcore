@@ -25,6 +25,7 @@ import { whatsappConnect, whatsappDisconnect, whatsappStatus } from './routes/wh
 import { manageWhatsAppSequences, setWhatsAppConsent, scheduledWhatsApp } from './routes/whatsappAutomation';
 import { whatsappWebhook, whatsappWebhookVerify } from './routes/whatsappWebhook';
 import { scheduledDepositExpiry } from './routes/expiry';
+import { listDevices, recordSignIn, revokeAll } from './routes/security';
 
 export type { Env, Deps } from './env';
 export { scheduledBackups } from './routes/backups';
@@ -77,6 +78,9 @@ const ROUTES: Record<string, Handler> = {
   'POST /api/whatsapp/sequences': manageWhatsAppSequences,
   'POST /api/whatsapp/consent': setWhatsAppConsent,
   'POST /api/account/delete': deleteAccount,
+  'POST /api/security/signin': recordSignIn,
+  'GET /api/security/devices': listDevices,
+  'POST /api/security/revoke-all': revokeAll,
   'POST /api/risk/assess': assess,
   'POST /api/public/waitlist': joinWaitlist,
   'POST /api/insights': insights,

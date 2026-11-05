@@ -89,6 +89,7 @@ export async function deleteAccount(c: Ctx): Promise<Response> {
       left++;
     }
   }
+  await wipeCollection(c, `users/${caller.uid}`, 'signins', budget);   // Security Watch record goes with the account
   if (u) await fsCommit(c.env, c.d, [{ path: u.path, delete: true }]);
   await deleteLogin(c, caller.uid);
   return json({ ok: true, workspacesClosed: closed, workspacesLeft: left }, 200, c.headers);
