@@ -1,5 +1,4 @@
-import { collection, doc, getDocs, limit, orderBy, query, updateDoc } from 'firebase/firestore';
-import { fb } from '../lib/fb/firebase';
+import { getDocs, limit, orderBy, query, updateDoc } from 'firebase/firestore';
 import { audit, loadCtx, wsCol, wsDoc } from '../lib/fb/core';
 import { html, mount } from '../lib/html';
 import { $, busy, errorState, toast } from '../lib/ui';
