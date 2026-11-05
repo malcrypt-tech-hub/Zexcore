@@ -11,7 +11,7 @@ interface Profile {
   currency: string; exchangeRate?: number; rateAuto?: boolean; deposit: { enabled: boolean; amountMinor: number }; waitlist?: boolean;
   hours: { openMinutes: number; closeMinutes: number; daysOpen: number[]; utcOffsetMinutes: number; maxDaysAhead: number };
   paystackPublicKey: string | null;
-  services: { id: string; name: string; description: string | null; durationMin: number; priceMinor: number }[];
+  services: { id: string; name: string; description: string | null; durationMin: number; priceMinor: number; bookingMode?: 'appointment'|'enquiry'; intakeFields?: {key:string;label:string;type:'text'|'textarea'|'select'|'number'|'url';required:boolean;options?:string[];placeholder?:string}[]; consultationEnabled?:boolean }[];
   staff: { id: string; name: string; title: string | null }[];
 }
 interface PayInfo { ref: string; status: string; depositStatus: string; amountMinor: number; currency: string; startsAt: string; serviceName: string }
@@ -123,7 +123,10 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
           <div class="field"><label for="cn">Full name</label><input class="input" id="cn" autocomplete="name" required maxlength="160"></div>
           <div class="field"><label for="cp">WhatsApp / mobile number</label><input class="input" id="cp" type="tel" autocomplete="tel" required placeholder="0803 123 4567"></div>
           <div class="field"><label for="ce">Email ${needDeposit ? '(for your receipt)' : html`<span class="faint">(optional)</span>`}</label><input class="input" id="ce" type="email" autocomplete="email" ${needDeposit ? 'required' : ''}></div>
-        </div></section>
+        </div>
+        ${(svc()?.intakeFields ?? []).length ? html`<div class="card card-pad form-grid" style="margin-top:12px"><h3>Tell us more</h3>${(svc()?.intakeFields ?? []).map((f) => html`<div class="field"><label for="intake-${f.key}">${f.label}${f.required ? ' *' : ''}</label>${f.type === 'textarea' ? html`<textarea class="input" id="intake-${f.key}" rows="3" maxlength="2000" placeholder="${f.placeholder ?? ''}"></textarea>` : f.type === 'select' ? html`<select class="input" id="intake-${f.key}"><option value="">Choose…</option>${(f.options ?? []).map((x) => html`<option value="${x}">${x}</option>`)}</select>` : html`<input class="input" id="intake-${f.key}" type="${f.type === 'number' ? 'number' : f.type === 'url' ? 'url' : 'text'}" maxlength="2000" placeholder="${f.placeholder ?? ''}">`}</div>`)}</div>` : ''}
+        ${svc()?.consultationEnabled ? html`<label class="check" style="margin-top:12px"><input type="checkbox" id="consultation"> I would also like a consultation</label>` : ''}
+        </section>
       ${needDeposit ? html`<section class="pub-section"><h2>${p.staff.length ? 5 : 4}. Secure your slot</h2><div class="notice">${ic('info')}<div><b>${priceText(dep())} refundable deposit</b> is required to hold your appointment. You will pay securely by card.${svc() && svc()!.priceMinor > dep() ? html` The balance of <b>${priceText(svc()!.priceMinor - dep())}</b> is paid when you arrive.` : ''}<div class="muted small" style="margin-top:6px;font-size:0.75rem">Charged as ${money(depositNgn(), 'NGN')} via Paystack at checkout.</div></div></div></section>` : ''}
       <div id="berr" class="alert alert-error hidden" style="margin-top:16px" role="alert"></div>
       </form>
@@ -183,7 +186,8 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
     if (needDeposit && !/^\S+@\S+\.\S+$/.test(email)) return fail('Please enter a valid email for your receipt.');
     await busy(btn, async () => {
       try {
-        const r = await api<{ booking: { ref: string; status: string; startsAt: string; serviceName: string }; payment: { reference: string; amountMinor: number; authorizationUrl: string } | null }>(`/api/public/${slug}/bookings`, { method: 'POST', auth: false, body: { serviceId: st.serviceId, staffId: st.staffId || null, customerName: name, customerPhone: phone, customerEmail: email || null, startsAt: st.slot } });
+        const intakeAnswers: Record<string,string> = {}; for (const f of svc()?.intakeFields ?? []) { const el = document.getElementById('intake-' + f.key) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null; const value = el?.value.trim() ?? ''; if (f.required && !value) return fail('Please complete: ' + f.label); if (value) intakeAnswers[f.key] = value; }
+        const r = await api<{ booking: { ref: string; status: string; startsAt: string; serviceName: string }; payment: { reference: string; amountMinor: number; authorizationUrl: string } | null }>(`/api/public/${slug}/bookings`, { method: 'POST', auth: false, body: { serviceId: st.serviceId, staffId: st.staffId || null, customerName: name, customerPhone: phone, customerEmail: email || null, startsAt: st.slot, intakeAnswers, consultationRequested: (document.getElementById('consultation') as HTMLInputElement | null)?.checked === true } });
         if (!r.payment) { showReceipt(r.booking.ref, r.booking.serviceName, r.booking.startsAt, r.booking.status, false); if (needDeposit) toast('Your request is in. The business will arrange your deposit with you.', 'info'); return; }
         location.assign(r.payment.authorizationUrl);
       } catch (e) { fail(e instanceof ApiError ? e.message : 'Could not complete your booking'); if (e instanceof ApiError && e.status === 409) void loadSlots(); }

@@ -10,7 +10,7 @@ import { emit } from './rules';
 export interface BookingDto {
   id: string; ref: string; status: string; serviceId: string; serviceName: string; durationMin: number; staffId: string | null; staffName: string | null;
   customerName: string; customerPhone: string; customerEmail: string | null; startsAt: string; endsAt: string; currency: string; priceMinor: number;
-  depositMinor: number; depositStatus: 'none' | 'unpaid' | 'paid' | 'refunded'; paymentReference: string | null; notes: string | null; source: string; createdAt: string | null;
+  depositMinor: number; depositStatus: 'none' | 'unpaid' | 'paid' | 'refunded'; paymentReference: string | null; notes: string | null; intakeAnswers?: Record<string,string>; consultationRequested?: boolean; source: string; createdAt: string | null;
   risk: { score: number; level: 'low' | 'medium' | 'high'; reasons: string[] } | null;
 }
 
@@ -33,7 +33,7 @@ function toDto(d: QueryDocumentSnapshot, svcs: Map<string, ServiceDto>, staff: M
     id: d.id, ref: refOf(d.id), status: x.status, serviceId: x.serviceId, serviceName: s?.name ?? 'Removed service', durationMin: s?.durationMin ?? Math.round((x.endsAt.toMillis() - x.startsAt.toMillis()) / 60000),
     staffId: x.staffId ?? null, staffName: p?.name ?? null, customerName: x.customerName, customerPhone: x.customerPhone, customerEmail: x.customerEmail ?? null,
     startsAt: iso(x.startsAt)!, endsAt: iso(x.endsAt)!, currency: 'USD', priceMinor: s?.priceMinor ?? 0, ...deposit(x, s?.priceMinor ?? 0, dep),
-    notes: x.notes ?? null, source: x.source ?? 'staff', createdAt: iso(x.createdAt),
+    notes: x.notes ?? null, intakeAnswers: x.intakeAnswers && typeof x.intakeAnswers === 'object' ? x.intakeAnswers : {}, consultationRequested: x.consultationRequested === true, source: x.source ?? 'staff', createdAt: iso(x.createdAt),
     risk: typeof x.riskScore === 'number' ? { score: x.riskScore, level: x.riskLevel, reasons: Array.isArray(x.riskReasons) ? x.riskReasons : [] } : null,
   };
 }
@@ -73,7 +73,7 @@ export async function availability(wid: string, s: SlotSettings, service: { dura
 // ───────────── create ─────────────
 interface NewBooking {
   wid: string; source: 'public' | 'staff'; service: { id: string; durationMin: number }; staffCandidates: string[];
-  customerName: string; customerPhone: string; customerEmail: string | null; notes: string | null; startMs: number;
+  customerName: string; customerPhone: string; customerEmail: string | null; notes: string | null; intakeAnswers?: Record<string,string>; consultationRequested?: boolean; startMs: number;
   nextN: () => Promise<number>; // staff: lowest free number; public: random below the page's cap hint
   maxTries: number; status: string;
 }
@@ -98,7 +98,7 @@ export async function createBooking(n: NewBooking): Promise<{ id: string; staffI
     const id = `${ym}_${await n.nextN()}`;
     const b = writeBatch(db);
     b.set(doc(db, 'workspaces', n.wid, 'bookings', id), {
-      serviceId: n.service.id, staffId, customerName: name, customerPhone: phone, customerEmail: n.customerEmail || null, notes: n.notes || null,
+      serviceId: n.service.id, staffId, customerName: name, customerPhone: phone, customerEmail: n.customerEmail || null, notes: n.notes || null, intakeAnswers: n.intakeAnswers ?? {}, consultationRequested: n.consultationRequested === true,
       startsAt: Timestamp.fromMillis(n.startMs), endsAt: Timestamp.fromMillis(n.startMs + n.service.durationMin * 60_000), cells, status: n.status, source: n.source, createdAt: serverTimestamp(),
     });
     for (const cell of cells) b.set(doc(db, 'workspaces', n.wid, 'locks', `${staffId}_${cell}`), { bookingId: id, createdAt: serverTimestamp() });
