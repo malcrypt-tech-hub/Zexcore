@@ -1,10 +1,8 @@
 import { html, mount, $ } from '../lib/html';
-import { busy } from '../lib/ui';
-import { ic } from '../lib/icons';
+import { busy, toast, confirmDialog } from '../lib/ui';
 import { worker } from '../lib/fb/worker';
 import { ApiError } from '../lib/api';
 import { current, canAdmin } from '../lib/session';
-import { toast, confirmDialog } from '../lib/ui';
 
 interface Connection {
   connected: boolean;
