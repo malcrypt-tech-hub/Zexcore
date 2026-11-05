@@ -27,3 +27,24 @@ All requests require a Firebase ID token in `Authorization: Bearer ...` and a JS
 - `POST /api/whatsapp/disconnect` — disables the connection and clears the encrypted token fields.
 
 The Meta access token must have permission to read and send messages for the selected WhatsApp Business phone number. The connection is not yet used to send customer follow-ups; sequence configuration, opt-in controls, durable scheduling, delivery webhooks and approved-template handling are subsequent work.
+
+
+## Meta webhook setup
+
+Configure the WhatsApp Business Platform webhook callback as:
+
+`https://YOUR_WORKER_HOST/api/whatsapp/webhook`
+
+Subscribe the WhatsApp Business Account to the `messages` field. Set two Worker secrets:
+
+```sh
+npx wrangler secret put WHATSAPP_APP_SECRET
+npx wrangler secret put WHATSAPP_WEBHOOK_VERIFY_TOKEN
+```
+
+- `WHATSAPP_APP_SECRET` is the Meta app secret used to verify `X-Hub-Signature-256` over the exact raw request body. Invalid or unsigned POSTs are rejected.
+- `WHATSAPP_WEBHOOK_VERIFY_TOKEN` is a random value you choose and enter in Meta's webhook setup. The GET challenge is accepted only when it matches.
+- Inbound `STOP`, `STOPALL`, `UNSUBSCRIBE`, `CANCEL`, `END` and `QUIT` messages revoke the sender's workspace consent and cancel queued/in-flight jobs.
+- Meta `sent`, `delivered`, `read` and `failed` status callbacks are stored on the matching WhatsApp job using its provider message ID.
+
+The webhook is tenant-routed using the verified event's `phone_number_id` matched against each enabled workspace connection. Configure the secrets and Meta subscription before expecting callbacks. A sender that has already passed its final consent check and is currently making the external Meta request cannot be recalled; the webhook cancels all jobs it can still safely claim.
