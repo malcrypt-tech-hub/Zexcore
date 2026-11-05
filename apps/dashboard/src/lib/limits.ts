@@ -11,6 +11,6 @@ export function limitLines(limits: Limits | null, labels: Labels, tier?: string)
   return LIMIT_ORDER.map((k) => {
     const n = limits[k];
     const l = labels[k];
-    return n === null ? `${l.many[0]!.toUpperCase()}${l.many.slice(1)}: unlimited (fair use)` : `${n.toLocaleString('en-NG')} ${n === 1 ? l.one : l.many}`;
+    return n === null ? `${l.many[0]!.toUpperCase()}${l.many.slice(1)}: unlimited` : `${n.toLocaleString('en-NG')} ${n === 1 ? l.one : l.many}`;
   });
 }
