@@ -349,20 +349,36 @@ async function paintPayout(view: HTMLElement, depositsOn: boolean): Promise<void
     if (current()?.role !== 'owner') { mount(box, html`<h3>Where deposits are paid</h3><p class="muted small">${depositsOn ? 'Deposits are on.' : 'The workspace owner has not added a bank account yet.'} Only the owner can add or change it.</p>`); return; }
     mount(box, html`<h3>Where deposits are paid</h3><p class="muted small">Add the bank account that should receive deposits. We check the account name with your bank before saving.</p>
       <div id="po-err" class="alert alert-error hidden" role="alert"></div>
-      <div class="form-grid two"><div class="field"><label for="po-bank">Bank</label><select class="select" id="po-bank"><option value="">Loading banks…</option></select></div>
-      <div class="field"><label for="po-acct">Account number</label><input class="input" id="po-acct" inputmode="numeric" maxlength="10" placeholder="10 digits" autocomplete="off"></div></div>
+      <div class="form-grid two">
+        <div class="field">
+          <label for="po-bank-input">Bank</label>
+          <input class="input" id="po-bank-input" list="po-banks-list" placeholder="Type or choose your bank…" autocomplete="off">
+          <datalist id="po-banks-list"></datalist>
+        </div>
+        <div class="field"><label for="po-acct">Account number</label><input class="input" id="po-acct" inputmode="numeric" maxlength="10" placeholder="10 digits" autocomplete="off"></div>
+      </div>
       <div class="row" style="gap:8px"><button class="btn btn-primary" type="button" id="po-save">Verify and save</button>${p.setUp ? html`<button class="btn btn-ghost" type="button" id="po-cancel">Cancel</button>` : ''}</div>`);
-    const sel = $('#po-bank', box) as HTMLSelectElement;
+    const bankInput = $('#po-bank-input', box) as HTMLInputElement;
+    const datalist = $('#po-banks-list', box) as HTMLDataListElement;
+    let bankList: { name: string; code: string }[] = [];
     void api<{ banks: { name: string; code: string }[] }>('/api/payout/banks').then((r) => {
-      sel.innerHTML = '<option value="">Choose your bank</option>' + r.banks.map((b) => `<option value="${b.code}">${b.name.replace(/[<>&"]/g, '')}</option>`).join('');
-    }).catch((e) => { sel.innerHTML = '<option value="">Banks unavailable</option>'; const er = $('#po-err', box)!; er.textContent = e instanceof ApiError ? e.message : 'Could not load banks.'; er.classList.remove('hidden'); });
+      bankList = r.banks;
+      datalist.innerHTML = r.banks.map((b) => `<option value="${b.name.replace(/[<>&"]/g, '')}" data-code="${b.code}"></option>`).join('');
+    }).catch((e) => { const er = $('#po-err', box)!; er.textContent = e instanceof ApiError ? e.message : 'Could not load banks.'; er.classList.remove('hidden'); });
     $('#po-cancel', box)?.addEventListener('click', () => show(false));
     $('#po-save', box)?.addEventListener('click', (ev) => {
       void busy(ev.currentTarget as HTMLButtonElement, async () => {
         const er = $('#po-err', box)!; er.classList.add('hidden');
+        const typedName = bankInput.value.trim().toLowerCase();
+        const found = bankList.find((b) => b.name.toLowerCase() === typedName || b.name.toLowerCase().includes(typedName));
+        if (!found) {
+          er.textContent = 'Please choose a valid bank from the suggestions.';
+          er.classList.remove('hidden');
+          return;
+        }
         try {
-          const r = await api<{ accountName: string; last4: string }>('/api/payout', { method: 'POST', body: { bankCode: sel.value, bankName: sel.selectedOptions[0]?.textContent ?? '', accountNumber: ($('#po-acct', box) as HTMLInputElement).value.trim() } });
-          p = { setUp: true, bankName: sel.selectedOptions[0]?.textContent ?? null, accountName: r.accountName, last4: r.last4 };
+          const r = await api<{ accountName: string; last4: string }>('/api/payout', { method: 'POST', body: { bankCode: found.code, bankName: found.name, accountNumber: ($('#po-acct', box) as HTMLInputElement).value.trim() } });
+          p = { setUp: true, bankName: found.name, accountName: r.accountName, last4: r.last4 };
           toast(`Saved. Deposits will be paid to ${r.accountName}.`, 'success'); show(false);
         } catch (x) { er.textContent = x instanceof ApiError ? x.message : 'Could not save the account.'; er.classList.remove('hidden'); }
       });
