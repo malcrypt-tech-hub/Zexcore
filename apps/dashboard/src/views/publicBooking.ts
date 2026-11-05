@@ -4,6 +4,7 @@ import { api, ApiError } from '../lib/api';
 import { money, timeOf, DAY, MON, initials, ymd, whenLabel } from '../lib/format';
 import { busy, toast } from '../lib/ui';
 import { brand } from '../layouts';
+import { formatInCurrency, fetchLiveRates, getCachedRates, type SupportedCurrency } from '../lib/fx';
 
 interface Profile {
   business: { slug: string; name: string; type: string; phone: string | null; address: string | null };
@@ -61,6 +62,16 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
   }
 
   // ── Booking flow ──
+  let rates = getCachedRates();
+  void fetchLiveRates().then((r) => { rates = r; draw(); }).catch(() => undefined);
+  let displayCurrency: SupportedCurrency = 'USD';
+  try {
+    const saved = localStorage.getItem('zx.display_currency') as SupportedCurrency;
+    if (saved && ['USD', 'NGN', 'GBP', 'EUR', 'GHS', 'KES', 'ZAR'].includes(saved)) {
+      displayCurrency = saved;
+    }
+  } catch { /* ignore */ }
+
   const st = { serviceId: p.services[0]?.id ?? '', staffId: '', date: '', slot: '' };
   const today = ymd(new Date().toISOString(), off);
   const days: string[] = [];
@@ -76,13 +87,31 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
   const needDeposit = p.deposit.enabled;
   const dep = () => { const s = svc(); const price = s?.priceMinor ?? 0; return needDeposit ? (price > 0 ? Math.min(p.deposit.amountMinor, price) : p.deposit.amountMinor) : 0; };
 
+  const priceText = (usdMinor: number): string => {
+    if (!usdMinor) return 'Free';
+    if (displayCurrency === 'USD') return money(usdMinor, 'USD');
+    const converted = formatInCurrency(usdMinor, displayCurrency, rates, p.exchangeRate);
+    return `${converted} (${money(usdMinor, 'USD')})`;
+  };
+
+  const depositNgn = (): number => {
+    const rate = p.exchangeRate && p.exchangeRate > 100 ? p.exchangeRate : (rates.NGN || 1350);
+    return Math.round(dep() * rate);
+  };
+
   if (!p.services.length) { mount(root, html`<div class="public-wrap">${head(p.business.name, sub)}<div class="card"><div class="empty"><h3>Bookings aren't open yet</h3><p>${p.business.name} hasn't added any services. Please check back soon.</p></div></div></div>`); return; }
 
   const draw = () => {
     mount(root, html`<div class="public-wrap">${head(p.business.name, sub)}
+      <div class="row between wrap" style="align-items:center;margin:-10px 0 16px;gap:8px">
+        <span class="muted small">Display prices in:</span>
+        <div class="row" style="gap:4px">
+          ${(['USD', 'NGN', 'GBP', 'EUR', 'GHS', 'KES', 'ZAR'] as SupportedCurrency[]).map((cur) => html`<button type="button" class="btn btn-sm ${cur === displayCurrency ? 'btn-primary' : 'btn-secondary'}" data-cur="${cur}" style="padding:0 8px;font-size:0.75rem;min-height:28px;height:28px">${cur}</button>`)}
+        </div>
+      </div>
       <form id="bf" novalidate>
       <section class="pub-section"><h2 style="margin-top:8px">1. Choose a service <small></small></h2>
-        <div class="stack-sm" role="radiogroup" aria-label="Service">${p.services.map((s) => html`<button type="button" class="option-card" role="radio" aria-checked="${s.id === st.serviceId}" data-svc="${s.id}"><span class="radio-dot">${ic('check')}</span><span class="grow"><b>${s.name}</b><br><span class="muted small">${s.durationMin} min${s.description ? ` · ${s.description}` : ''}</span></span><b class="num" style="color:var(--primary)">${s.priceMinor ? money(s.priceMinor, p.currency) : 'Free'}</b></button>`)}</div></section>
+        <div class="stack-sm" role="radiogroup" aria-label="Service">${p.services.map((s) => html`<button type="button" class="option-card" role="radio" aria-checked="${s.id === st.serviceId}" data-svc="${s.id}"><span class="radio-dot">${ic('check')}</span><span class="grow"><b>${s.name}</b><br><span class="muted small">${s.durationMin} min${s.description ? ` · ${s.description}` : ''}</span></span><b class="num" style="color:var(--primary)">${priceText(s.priceMinor)}</b></button>`)}</div></section>
       ${p.staff.length ? html`<section class="pub-section"><h2>2. Choose who <small>Any available is fastest</small></h2>
         <div class="stack" style="grid-template-columns:1fr 1fr;gap:10px"><button type="button" class="option-card" role="radio" aria-checked="${st.staffId === ''}" data-staff="" style="background:${st.staffId === '' ? 'var(--primary-tint)' : '#fff'}"><span class="grow"><b>Any available</b><br><span class="muted small">Auto-assigned</span></span></button>
         ${p.staff.map((s) => html`<button type="button" class="option-card" role="radio" aria-checked="${s.id === st.staffId}" data-staff="${s.id}"><span class="avatar grey">${initials(s.name)}</span><span class="grow"><b>${s.name}</b><br><span class="muted small">${s.title ?? ''}</span></span></button>`)}</div></section>` : ''}
@@ -95,12 +124,17 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
           <div class="field"><label for="cp">WhatsApp / mobile number</label><input class="input" id="cp" type="tel" autocomplete="tel" required placeholder="0803 123 4567"></div>
           <div class="field"><label for="ce">Email ${needDeposit ? '(for your receipt)' : html`<span class="faint">(optional)</span>`}</label><input class="input" id="ce" type="email" autocomplete="email" ${needDeposit ? 'required' : ''}></div>
         </div></section>
-      ${needDeposit ? html`<section class="pub-section"><h2>${p.staff.length ? 5 : 4}. Secure your slot</h2><div class="notice">${ic('info')}<div><b>${money(dep(), p.currency)} refundable deposit</b> is required to hold your appointment. You will pay securely by card.${svc() && svc()!.priceMinor > dep() ? html` The balance of <b>${money(svc()!.priceMinor - dep(), p.currency)}</b> is paid when you arrive.` : ''}</div></div></section>` : ''}
+      ${needDeposit ? html`<section class="pub-section"><h2>${p.staff.length ? 5 : 4}. Secure your slot</h2><div class="notice">${ic('info')}<div><b>${priceText(dep())} refundable deposit</b> is required to hold your appointment. You will pay securely by card.${svc() && svc()!.priceMinor > dep() ? html` The balance of <b>${priceText(svc()!.priceMinor - dep())}</b> is paid when you arrive.` : ''}<div class="muted small" style="margin-top:6px;font-size:0.75rem">Charged as ${money(depositNgn(), 'NGN')} via Paystack at checkout.</div></div></div></section>` : ''}
       <div id="berr" class="alert alert-error hidden" style="margin-top:16px" role="alert"></div>
       </form>
-      <div class="pay-bar"><div><button class="btn btn-primary btn-lg btn-block" id="go">${needDeposit ? html`${ic('lock', 'ico-sm')} Pay ${money(dep(), p.currency)} deposit` : 'Request booking'}</button>
-        ${needDeposit ? html`<p class="muted small" style="text-align:center;margin-top:6px">Secured by Paystack</p>` : ''}</div></div></div>`);
+      <div class="pay-bar"><div><button class="btn btn-primary btn-lg btn-block" id="go">${needDeposit ? html`${ic('lock', 'ico-sm')} Pay ${money(depositNgn(), 'NGN')} deposit` : 'Request booking'}</button>
+        ${needDeposit ? html`<p class="muted small" style="text-align:center;margin-top:6px">Secured by Paystack (${priceText(dep())})</p>` : ''}</div></div></div>`);
 
+    $$('[data-cur]').forEach((b) => b.addEventListener('click', () => {
+      displayCurrency = b.dataset.cur as SupportedCurrency;
+      try { localStorage.setItem('zx.display_currency', displayCurrency); } catch { /* ignore */ }
+      keep();
+    }));
     $$('[data-svc]').forEach((b) => b.addEventListener('click', () => { st.serviceId = b.dataset.svc!; st.slot = ''; keep(); }));
     $$('[data-staff]').forEach((b) => b.addEventListener('click', () => { st.staffId = b.dataset.staff!; st.slot = ''; keep(); }));
     $$('[data-date]').forEach((b) => b.addEventListener('click', () => { st.date = b.dataset.date!; st.slot = ''; keep(); }));
