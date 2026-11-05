@@ -83,7 +83,7 @@ export async function renderWhatsApp(view: HTMLElement): Promise<void> {
   connect.addEventListener('click', ev => void busy(ev.currentTarget as HTMLButtonElement, async () => {
     error.classList.add('hidden');
     const id = phoneId.value.trim(), accessToken = token.value.trim();
-    if (!/^\d{5,30}$/.test(id) || accessToken.length < 30) { error.textContent = 'Enter a valid phone number ID and Meta access token.'; error.classList.remove('hidden'); return; }
+    if (!/^\\d{5,30}$/.test(id) || accessToken.length < 30) { error.textContent = 'Enter a valid phone number ID and Meta access token.'; error.classList.remove('hidden'); return; }
     try {
       const result = await worker<{ connected: boolean; phoneNumberId: string; displayPhoneNumber: string | null; verifiedName: string | null }>('/api/whatsapp/connect', { method: 'POST', body: { workspaceId: wid, phoneNumberId: id, accessToken } });
       token.value = ''; connection = { ...result, connectedAt: new Date().toISOString() }; paintConnection(); toast('WhatsApp Business number verified and connected.', 'success');
@@ -109,7 +109,7 @@ export async function renderWhatsApp(view: HTMLElement): Promise<void> {
   const paintSequences = () => {
     if (!sequences.length) { mount(seqHost, html`<div class="empty-state"><p class="muted small">No follow-up sequences yet. Create one below to start.</p></div>`); return; }
     mount(seqHost, html`<div class="list">${sequences.map(s => html`<div class="list-item"><span class="icon-tile">↗</span><div class="grow"><b>${s.name}</b><div class="muted small">${s.trigger} · ${s.steps.length} step(s) · ${s.steps[0]?.templateName ?? 'No template'}</div></div><span class="badge">${s.enabled ? 'Enabled' : 'Paused'}</span><button class="btn btn-secondary btn-sm" data-wa-edit="${s.id}">Edit</button><button class="btn btn-soft-danger btn-sm" data-wa-delete="${s.id}">Delete</button></div>` )}</div>`);
-    $('[data-wa-edit]', seqHost).forEach(b => b.addEventListener('click', () => {
+    $$('[data-wa-edit]', seqHost).forEach(b => b.addEventListener('click', () => {
       const s = sequences.find(x => x.id === b.dataset.waEdit); if (!s) return;
       editingId = s.id;
       ($('#wa-seq-name', view) as HTMLInputElement).value = s.name;
@@ -121,7 +121,7 @@ export async function renderWhatsApp(view: HTMLElement): Promise<void> {
       ($('#wa-seq-enabled', view) as HTMLInputElement).checked = s.enabled;
       $('#wa-seq-heading', view)!.textContent = 'Edit sequence'; seqSave.textContent = 'Update sequence'; seqCancel.classList.remove('hidden');
     }));
-    $('[data-wa-delete]', seqHost).forEach(b => b.addEventListener('click', () => void confirmDialog({ title: 'Delete this sequence?', message: 'Future events will no longer queue messages from this sequence.', confirmLabel: 'Delete sequence', danger: true }).then(async ok => {
+    $$('[data-wa-delete]', seqHost).forEach(b => b.addEventListener('click', () => void confirmDialog({ title: 'Delete this sequence?', message: 'Future events will no longer queue messages from this sequence.', confirmLabel: 'Delete sequence', danger: true }).then(async ok => {
       if (!ok) return;
       try { await worker('/api/whatsapp/sequences', { method: 'POST', body: { workspaceId: wid, action: 'delete', id: b.dataset.waDelete } }); sequences = sequences.filter(s => s.id !== b.dataset.waDelete); paintSequences(); toast('Sequence deleted.', 'success'); }
       catch (e) { showError(e, seqError); }
@@ -144,7 +144,7 @@ export async function renderWhatsApp(view: HTMLElement): Promise<void> {
     const sequence = { name, trigger: ($('#wa-seq-trigger', view) as HTMLSelectElement).value, enabled: ($('#wa-seq-enabled', view) as HTMLInputElement).checked, steps: [{ delayMinutes, templateName, language, bodyParameters }] };
     try {
       const r = await worker<{ id: string }>('/api/whatsapp/sequences', { method: 'POST', body: { workspaceId: wid, action: 'save', ...(editingId ? { id: editingId } : {}), sequence } });
-      if (editingId) sequences = sequences.map(s => s.id === editingId ? { id: editingId!, ...sequence } : s); else sequences.push({ id: r.id, ...sequence });
+      if (editingId) sequences = sequences.map(s => s.id === editingId ? { id: editingId!, ...sequence } : s); else sequences.push({ id: r.id, ...sequence }); 
       paintSequences(); resetSequenceForm(); toast('Sequence saved.', 'success');
     } catch (e) { showError(e, seqError); }
   }));
@@ -153,7 +153,7 @@ export async function renderWhatsApp(view: HTMLElement): Promise<void> {
     const phone = ($('#wa-consent-phone', view) as HTMLInputElement).value.trim();
     const source = ($('#wa-consent-source', view) as HTMLSelectElement).value;
     const result = $('#wa-consent-result', view)!;
-    if (!/^\+?[1-9]\d{7,14}$/.test(phone.replace(/[\s().-]/g, ''))) { result.textContent = 'Enter a valid phone number in international format, including country code.'; return; }
+    if (!/^\\+?[1-9]\\d{7,14}$/.test(phone.replace(/[\\s().-]/g, ''))) { result.textContent = 'Enter a valid phone number in international format, including country code.'; return; }
     try {
       const r = await worker<{ ok: boolean; optedIn: boolean }>('/api/whatsapp/consent', { method: 'POST', body: { workspaceId: wid, phone, source, optedIn } });
       result.textContent = r.optedIn ? 'Opt-in recorded. This customer is eligible for configured follow-ups.' : 'Opt-out recorded. Queued follow-ups will be cancelled before sending.';
