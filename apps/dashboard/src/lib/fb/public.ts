@@ -81,13 +81,22 @@ export async function book(slug: string, b: Record<string, unknown>): Promise<un
   const made = await createBooking({
     wid: p.wid, source: 'public', service, staffCandidates: candidates, customerName: String(b.customerName ?? ''), customerPhone: String(b.customerPhone ?? ''),
     customerEmail: b.customerEmail ? String(b.customerEmail).slice(0, 160) : null,
-    notes: JSON.stringify({ note: b.notes ? String(b.notes).slice(0, 500) : '', answers: (() => {
+    notes: b.notes ? String(b.notes).slice(0, 500) : null,
+    intakeAnswers: (() => {
       const raw = b.intakeAnswers && typeof b.intakeAnswers === 'object' ? b.intakeAnswers as Record<string, unknown> : {};
-      const fields = Array.isArray((service as any).intakeFields) ? (service as any).intakeFields as {key:string;label:string;required:boolean;type:string;options?:string[]}[] : [];
+      const fields = Array.isArray(service.intakeFields) ? service.intakeFields : [];
       const clean: Record<string,string> = {};
-      for (const f of fields) { const value = String(raw[f.key] ?? '').trim().slice(0, 2000); if (f.required && !value) throw new ApiError(400, `Please complete: ${f.label}`); if (value && f.type === 'select' && !f.options?.includes(value)) throw new ApiError(400, `Choose a valid option for ${f.label}.`); if (value) clean[f.key] = value; }
+      for (const f of fields) {
+        const value = String(raw[f.key] ?? '').trim().slice(0, 2000);
+        if (f.required && !value) throw new ApiError(400, `Please complete: ${f.label}`);
+        if (value && f.type === 'select' && !f.options?.includes(value)) throw new ApiError(400, `Choose a valid option for ${f.label}.`);
+        if (value && f.type === 'url' && !/^https?:\/\//i.test(value)) throw new ApiError(400, `Enter a valid URL for ${f.label}.`);
+        if (value && f.type === 'number' && !Number.isFinite(Number(value))) throw new ApiError(400, `Enter a number for ${f.label}.`);
+        if (value) clean[f.key] = value;
+      }
       return clean;
-    })(), consultationRequested: b.consultationRequested === true }),
+    })(),
+    consultationRequested: service.consultationEnabled === true && b.consultationRequested === true,
     startMs: new Date(String(b.startsAt)).getTime(),
     status: 'pending', maxTries: 24,
     // The public page cannot read bookings, so it picks a random free-looking number below the plan's monthly cap.
