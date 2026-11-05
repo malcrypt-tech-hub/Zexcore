@@ -5,6 +5,7 @@ import { getLiveRates, FALLBACK_RATES } from '../../workers/payments/src/rates.j
 import { SEATS } from '../../workers/payments/src/routes/team.js';
 import { KEEP, backupId, gunzip, open as openBackup, scheduledBackups } from '../../workers/payments/src/routes/backups.js';
 import { LIMITS } from '../../apps/dashboard/src/lib/fb/plan';
+import { scheduledDepositExpiry } from '../../workers/payments/src/index.js';
 import { handle, summarize, sendDigest, weekKey, digestDue, paystackSignature, amountMinor, planAfterPayment, throttled, toFs, fromFs, resetTokenCache, resetJwksCache, type Env } from '../../workers/payments/src/index.js';
 
 const PROJECT = 'zexcore-5d6c0';
@@ -1058,5 +1059,43 @@ describe('live currency rates', () => {
     const r = await handle(new Request('https://pay.example.workers.dev/api/rates'), env, { fetch: (async () => Response.json({ rates: table })) as never, now: () => new Date(NOW.getTime() + 200 * 86_400_000) });
     expect(r.status).toBe(200);
     expect(await r.json()).toMatchObject({ base: 'USD', live: true, rates: { USD: 1, GBP: 0.77 } });
+  });
+});
+
+describe('unpaid risk-deposit bookings expire', () => {
+  const X = 'wsexpire000000000001';
+  const START = new Date(NOW.getTime() + 2 * 86_400_000);
+  const DAY = new Date(START.getTime() + 3_600_000).toISOString().slice(0, 10);
+  const bk = (id: string, over: Record<string, unknown> = {}) => seedDoc(`workspaces/${X}/bookings/${id}`, { status: 'pending', serviceId: 's_0', service: 'Braids', customerName: 'Ada Obi', customerEmail: 'ada@example.com', customerPhone: '+2348031112222',
+    depositStatus: 'unpaid', riskDeposit: true, createdAt: new Date(NOW.getTime() - 25 * 3_600_000), startsAt: START, ...over });
+  const status = (id: string) => fromFs(store.get(`workspaces/${X}/bookings/${id}`)!.fields.status);
+  beforeEach(() => {
+    env = { ...env, RESEND_API_KEY: 're_test' };
+    seedDoc(`workspaces/${X}`, { name: 'Expire Salon', plan: 'enterprise', planExpiresAt: new Date(NOW.getTime() + 20 * 86_400_000), ownerUid: 'owner1', slug: 'expire-salon', settings: { waitlistEnabled: true, publicName: 'Expire Salon' } });
+    seedDoc(`workspaces/${X}/services/s_0`, { name: 'Braids', priceMinor: 2000 });
+  });
+
+  it('cancels a booking whose deposit is unpaid after 24 hours, tells the customer and offers the time to the waitlist', async () => {
+    bk('202611_1');
+    seedDoc(`workspaces/${X}/waitlist/w1`, { serviceId: 's_0', date: DAY, name: 'Wendy Ade', phone: '+2348000000001', email: 'wendy@example.com', status: 'waiting', createdAt: new Date(NOW.getTime() - 1000) });
+    const r = await scheduledDepositExpiry(env, { fetch: mockFetch(), now: () => NOW });
+    expect(r.expired).toBe(1);
+    expect(status('202611_1')).toBe('cancelled');
+    expect(fromFs(store.get(`workspaces/${X}/bookings/202611_1`)!.fields.cancelledReason)).toBe('deposit_unpaid');
+    expect(emails.map((m) => m.to[0] ?? m.to).sort()).toEqual(['ada@example.com', 'wendy@example.com']);
+    expect(emails.find((m) => (m.to[0] ?? m.to) === 'ada@example.com').subject).toMatch(/released/);
+  });
+
+  it('leaves paid, recent, past, already-cancelled and non-risk bookings alone, and does not run twice', async () => {
+    bk('202611_2', { depositStatus: 'paid' });
+    bk('202611_3', { createdAt: new Date(NOW.getTime() - 3_600_000) });
+    bk('202611_4', { startsAt: new Date(NOW.getTime() - 3_600_000) });
+    bk('202611_5', { status: 'cancelled' });
+    bk('202611_6', { riskDeposit: false });
+    expect((await scheduledDepositExpiry(env, { fetch: mockFetch(), now: () => NOW })).expired).toBe(0);
+    for (const id of ['202611_2', '202611_3', '202611_4', '202611_6']) expect(status(id)).toBe('pending');
+    bk('202611_7');
+    expect((await scheduledDepositExpiry(env, { fetch: mockFetch(), now: () => NOW })).expired).toBe(1);
+    expect((await scheduledDepositExpiry(env, { fetch: mockFetch(), now: () => NOW })).expired).toBe(0);
   });
 });

@@ -24,9 +24,11 @@ import { accept, invite, inviteInfo, remove, revoke, setRole } from './routes/te
 import { whatsappConnect, whatsappDisconnect, whatsappStatus } from './routes/whatsapp';
 import { manageWhatsAppSequences, setWhatsAppConsent, scheduledWhatsApp } from './routes/whatsappAutomation';
 import { whatsappWebhook, whatsappWebhookVerify } from './routes/whatsappWebhook';
+import { scheduledDepositExpiry } from './routes/expiry';
 
 export type { Env, Deps } from './env';
 export { scheduledBackups } from './routes/backups';
+export { scheduledDepositExpiry, expireUnpaidDeposits } from './routes/expiry';
 export { scheduledDigests, sendDigest, weekKey, digestDue } from './routes/insights';
 export { summarize } from './insights';
 export { amountMinor, isTier, PLANS, planAfterPayment } from './routes/billing';
@@ -142,6 +144,7 @@ export default {
   scheduled: (_event: unknown, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) => {
     ctx.waitUntil(scheduledBackups(env, realDeps()).catch((e) => console.error('scheduled backups', e instanceof Error ? e.message : e)));
     ctx.waitUntil(scheduledDigests(env, realDeps()).catch((e) => console.error('scheduled digests', e instanceof Error ? e.message : e)));
+    ctx.waitUntil(scheduledDepositExpiry(env, realDeps()).catch((e) => console.error('scheduled deposit expiry', e instanceof Error ? e.message : e)));
     ctx.waitUntil(scheduledWhatsApp(env, realDeps()).catch((e) => console.error('scheduled WhatsApp', e instanceof Error ? e.message : e)));
   },
 };
