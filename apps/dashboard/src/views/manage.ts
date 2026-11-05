@@ -80,6 +80,8 @@ export async function renderServices(view: HTMLElement): Promise<void> {
         <div class="form-grid two"><div class="field"><label for="sd">Duration (minutes)</label><input class="input" id="sd" type="number" min="5" max="480" value="${s?.durationMin ?? 30}"></div>
         <div class="field"><label for="sp">Price ($)</label><input class="input" id="sp" type="number" min="0" value="${s ? s.priceMinor / 100 : 0}"></div></div>
         <div class="field"><label for="sx">Description <span class="faint">(optional)</span></label><input class="input" id="sx" maxlength="500" value="${s?.description ?? ''}"></div>
+        <div class="form-grid two"><div class="field"><label for="sm">Booking type</label><select class="input" id="sm"><option value="appointment" ${s?.bookingMode !== 'enquiry' ? 'selected' : ''}>Appointment</option><option value="enquiry" ${s?.bookingMode === 'enquiry' ? 'selected' : ''}>Project / service enquiry</option></select></div><div class="field"><label for="sc">Consultation</label><label class="check"><input type="checkbox" id="sc" ${s?.consultationEnabled ? 'checked' : ''}> Offer optional consultation</label></div></div>
+        <div class="field"><label for="sf">Custom intake questions (JSON)</label><textarea class="input" id="sf" rows="4" placeholder='[{"key":"project","label":"Describe your project","type":"textarea","required":true}]'>${JSON.stringify(s?.intakeFields ?? [], null, 2)}</textarea><small class="muted">Up to 12 questions. Types: text, textarea, number, url, select. Select fields need options.</small></div>
         ${s ? html`<label class="check"><input type="checkbox" id="sa" ${s.active ? 'checked' : ''}> Show on my booking page</label>` : ''}</form>`,
       footer: html`${s ? html`<button class="btn btn-soft-danger" data-del style="margin-right:auto">${ic('trash-2', 'ico-sm')} Delete</button>` : ''}<button class="btn btn-secondary" data-close>Cancel</button><button class="btn btn-primary" data-save>Save</button>`,
       onMount: (el, close) => {
@@ -91,6 +93,8 @@ export async function renderServices(view: HTMLElement): Promise<void> {
         $('[data-save]', el)!.addEventListener('click', () => void busy($('[data-save]', el) as HTMLButtonElement, async () => {
         const body: Record<string, unknown> = { name: ($('#sn', el) as HTMLInputElement).value.trim(), durationMin: Number(($('#sd', el) as HTMLInputElement).value), priceMinor: Math.round(Number(($('#sp', el) as HTMLInputElement).value) * 100), description: ($('#sx', el) as HTMLInputElement).value.trim() };
         if (s) body.active = ($('#sa', el) as HTMLInputElement).checked;
+        body.bookingMode = ($('#sm', el) as HTMLSelectElement).value; body.consultationEnabled = ($('#sc', el) as HTMLInputElement).checked;
+        try { body.intakeFields = JSON.parse(($('#sf', el) as HTMLTextAreaElement).value || '[]'); } catch { const e = $('#se', el)!; e.textContent = 'Custom intake questions must be valid JSON.'; e.classList.remove('hidden'); return; }
         try { await api(s ? `/api/bookings/services/${s.id}` : '/api/bookings/services', { method: s ? 'PATCH' : 'POST', body }); toast('Saved', 'success'); close(); void load(); }
         catch (x) { const e = $('#se', el)!; e.textContent = x instanceof ApiError ? x.message : 'Could not save'; e.classList.remove('hidden'); }
       }));
