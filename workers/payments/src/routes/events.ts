@@ -6,6 +6,7 @@ import type { Ctx } from '../env';
 import { FsConflict, fsCommit, fsGet } from '../fs';
 import { sendFormal } from '../mail';
 import { sendBookingAlert, waNumber, whatsappConfigured } from '../whatsapp';
+import { enqueueWhatsAppEvent } from './whatsappAutomation';
 import { HttpError, ID_RE, json, localWhen, readJson } from '../util';
 
 const BOOKING_RE = /^\d{6}_\d{1,6}$/;
@@ -30,7 +31,8 @@ export async function memberEvent(c: Ctx): Promise<Response> {
   if (event === 'bookings.booking.created') {
     const r = await bookingPayload(c, wid, id);
     if (!r) throw new HttpError(404, 'Booking not found');
-    return json({ ok: true, ran: await fireEvent(c, wid, event, r.payload) }, 200, c.headers);
+    const queued = await enqueueWhatsAppEvent(c, wid, event, r.payload, id).catch(() => 0);
+    return json({ ok: true, ran: await fireEvent(c, wid, event, r.payload), whatsappQueued: queued }, 200, c.headers);
   }
   if (event === 'bookings.booking.cancelled') {
     return json({ ok: true, told: await backfillSlot(c, wid, id) }, 200, c.headers);
@@ -81,5 +83,6 @@ export async function publicBooked(c: Ctx): Promise<Response> {
       ...(waEnabled && customerWaPhone ? { note: `Reply to this customer on WhatsApp: https://wa.me/${customerWaPhone}${waPhone ? ` · Your WhatsApp: https://wa.me/${waPhone}` : ''}` } : {}),
     });
   }
-  return json({ ok: true, ran: await fireEvent(c, wid, 'bookings.booking.created', r.payload) }, 200, c.headers);
+  const queued = await enqueueWhatsAppEvent(c, wid, 'bookings.booking.created', r.payload, bookingId).catch(() => 0);
+  return json({ ok: true, ran: await fireEvent(c, wid, 'bookings.booking.created', r.payload), whatsappQueued: queued }, 200, c.headers);
 }

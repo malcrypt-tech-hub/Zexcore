@@ -16,6 +16,7 @@ export function renderMore(view: HTMLElement): void {
   const items: { href?: string; icon: IconName; t: string; s: string; comingSoon?: boolean }[] = [
     { href: '/app/customers', icon: 'users', t: 'Customers', s: 'Everyone who has booked' },
     { href: '/app/enquiries', icon: 'mail', t: 'Service enquiries', s: 'Project requests and non-appointment enquiries' },
+    { href: '/app/whatsapp', icon: 'message-circle', t: 'WhatsApp Business', s: 'Connect your business number for messaging' },
     { href: '/app/services', icon: 'list-checks', t: 'Services', s: 'What you offer, how long, how much' },
     { href: '/app/team', icon: 'id-card', t: 'Bookable staff', s: 'Doctors, stylists and other calendars' },
     { href: '/app/access', icon: 'users', t: 'Team access', s: 'Invite admins and editors to sign in' },

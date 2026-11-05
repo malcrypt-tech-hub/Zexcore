@@ -20,7 +20,7 @@ const clearLegacySiteStyles = () => {
 setUnauthorizedHandler(() => navigate('/signin', true));
 
 const TITLES: Record<string, string> = {
-  '/app': 'Home', '/app/bookings': 'Bookings', '/app/enquiries': 'Service enquiries', '/app/calendar': 'Calendar', '/app/messages': 'Messages', '/app/more': 'More',
+  '/app': 'Home', '/app/bookings': 'Bookings', '/app/enquiries': 'Service enquiries', '/app/calendar': 'Calendar', '/app/messages': 'Messages', '/app/whatsapp': 'WhatsApp Business', '/app/more': 'More',
   '/app/customers': 'Customers', '/app/services': 'Services', '/app/team': 'Bookable staff', '/app/access': 'Team access', '/app/insights': 'Business insights', '/app/waitlist': 'Revenue protection', '/app/export': 'Export data', '/app/backups': 'Backups', '/app/api-keys': 'API keys', '/app/booking-page': 'Booking page',
   '/app/billing': 'Plan & billing', '/app/audit': 'Audit log', '/app/settings': 'Settings', '/app/security': 'Security',
   '/app/crm': 'CRM', '/app/devices': 'Devices', '/app/automations': 'Automations', '/app/content': 'Website pages', '/app/compliance': 'Data protection',
@@ -157,6 +157,7 @@ appRoute('/app/booking-page', () => import('./views/manage').then((m) => m.rende
 appRoute('/app/billing', () => import('./views/account').then((m) => m.renderBilling));
 appRoute('/app/audit', () => import('./views/account').then((m) => m.renderAudit));
 appRoute('/app/settings', () => import('./views/manage').then((m) => m.renderSettings));
+appRoute('/app/whatsapp', () => import('./views/whatsapp').then((m) => m.renderWhatsApp));
 appRoute('/app/security', () => import('./views/security').then((m) => m.renderSecurity));
 appRoute('/app/crm', () => import('./views/crm').then((m) => m.renderCrm));
 appRoute('/app/devices', () => import('./views/devices').then((m) => m.renderDevices));
