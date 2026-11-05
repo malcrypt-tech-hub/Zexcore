@@ -15,6 +15,8 @@ export interface Env {
   MAX_CHECKOUT_NGN?: string;
   /** WhatsApp Business Cloud API (owner alerts). Off unless both token and phone id are set. */
   WHATSAPP_TOKEN?: string; WHATSAPP_PHONE_ID?: string; WHATSAPP_TEMPLATE_BOOKING?: string; WHATSAPP_TEMPLATE_LANG?: string;
+  /** Meta webhook app secret and dedicated verification token. */
+  WHATSAPP_APP_SECRET?: string; WHATSAPP_WEBHOOK_VERIFY_TOKEN?: string;
   /** 32-byte base64 key used to encrypt tenant WhatsApp credentials at rest. */
   WHATSAPP_ENCRYPTION_KEY?: string;
   FIREBASE_SERVICE_ACCOUNT: string;
