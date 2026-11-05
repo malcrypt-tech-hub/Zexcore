@@ -1,4 +1,5 @@
 import type { Deps, Env } from './env';
+import { createEmailProvider } from './email-provider';
 
 const escHtml = (s: string): string => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 const REPLY_TO = 'hello@zexcore.com.ng';
@@ -61,16 +62,10 @@ ${spec.note ? `<p style="margin:16px 0 0;font-size:13px;line-height:1.6;color:#6
   return { text, html };
 }
 
-/** Sends a plain-text (and optionally HTML) e-mail through Resend when it is configured; otherwise reports that nothing was sent. */
+/** Backwards-compatible boolean sender; new messaging code can use the typed provider contract directly. */
 export async function sendMail(env: Env, d: Deps, to: string, subject: string, text: string, html?: string): Promise<boolean> {
-  if (!env.RESEND_API_KEY || !to) return false;
-  try {
-    const r = await d.fetch('https://api.resend.com/emails', {
-      method: 'POST', headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ from: env.MAIL_FROM || 'ZexCore <notifications@zexcore.com.ng>', to: [to], reply_to: REPLY_TO, subject: subject.slice(0, 200), text: text.slice(0, 20_000), ...(html ? { html: html.slice(0, 100_000) } : {}) }),
-    });
-    return r.ok;
-  } catch { return false; }
+  const result = await createEmailProvider(env, d).send({ to, subject, text, ...(html ? { html } : {}) });
+  return result.ok;
 }
 
 /** The usual way to send: a formal, branded message built from a spec. */
