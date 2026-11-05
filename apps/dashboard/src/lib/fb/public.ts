@@ -86,7 +86,7 @@ export async function book(slug: string, b: Record<string, unknown>): Promise<un
       const value = String(raw[f.key] ?? '').trim().slice(0, 2000);
       if (f.required && !value) throw new ApiError(400, `Please complete: ${f.label}`);
       if (value && f.type === 'select' && !f.options?.includes(value)) throw new ApiError(400, `Choose a valid option for ${f.label}.`);
-      if (value && f.type === 'url' && !/^https?:\\/\\//i.test(value)) throw new ApiError(400, `Enter a valid URL for ${f.label}.`);
+      if (value && f.type === 'url' && !/^https?:\/\//i.test(value)) throw new ApiError(400, `Enter a valid URL for ${f.label}.`);
       if (value && f.type === 'number' && !Number.isFinite(Number(value))) throw new ApiError(400, `Enter a number for ${f.label}.`);
       if (value) clean[f.key] = value;
     }
