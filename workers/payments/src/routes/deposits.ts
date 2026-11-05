@@ -164,6 +164,39 @@ export async function settleDeposit(env: Env, d: Deps, wid: string, reference: s
       { path: `workspaces/${wid}/bookings/${String(pay.data.bookingId)}`, fields: { depositStatus: 'paid', depositMinor: Number(pay.data.usdMinor) || 0, paymentReference: reference, status: 'confirmed' }, mask: ['depositStatus', 'depositMinor', 'paymentReference', 'status'], precondition: { exists: true } },
     ]);
   } catch (e) { if (!(e instanceof FsConflict)) throw e; return (await fsGet(env, d, path))?.data.status === 'paid' ? 'paid' : 'pending'; }
+  // Send a customer receipt only after the verified payment and booking update have committed.
+  // The paid-state guard above makes webhook/status retries idempotent and prevents duplicate receipts.
+  const bookingId = String(pay.data.bookingId ?? '');
+  const [booking, workspace] = await Promise.all([
+    fsGet(env, d, `workspaces/${wid}/bookings/${bookingId}`),
+    fsGet(env, d, `workspaces/${wid}`),
+  ]);
+  const customerEmail = String(booking?.data.customerEmail ?? '').trim();
+  if (/^[^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+$/.test(customerEmail)) {
+    const service = booking ? await fsGet(env, d, `workspaces/${wid}/services/${String(booking.data.serviceId)}`) : null;
+    const settings = (workspace?.data.settings ?? {}) as Record<string, unknown>;
+    const offset = Number(settings.utcOffsetMinutes ?? 60);
+    const paidNgn = Number(vj.data.amount ?? pay.data.amountMinor);
+    const usdMinor = Number(pay.data.usdMinor ?? 0);
+    await sendFormal(env, d, customerEmail, 'Your booking deposit payment receipt', {
+      heading: 'Your deposit payment was received',
+      preheader: `Payment received for booking ${bookingId.replace('_', '-')}`,
+      greeting: `Hello ${firstName(String(booking?.data.customerName ?? ''), customerEmail)},`,
+      paragraphs: ['Your booking deposit has been successfully verified and recorded. Keep this email as your payment receipt.'],
+      details: [
+        ['Business', String(workspace?.data.name ?? 'ZexCore business')],
+        ['Service', String(service?.data.name ?? 'Booking deposit')],
+        ['Booking reference', `ZX-${bookingId.replace('_', '-')}`],
+        ['Payment reference', reference],
+        ['Amount paid', `₦${(paidNgn / 100).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`],
+        ...(usdMinor > 0 ? [['Deposit value', `${(usdMinor / 100).toFixed(2)}`] as [string, string]] : []),
+        ['Payment date', now.toISOString().replace('T', ' ').slice(0, 16) + ' UTC'],
+        ...(booking?.data.startsAt instanceof Date ? [['Appointment', localWhen(booking.data.startsAt.toISOString(), offset)] as [string, string]] : []),
+      ],
+      note: 'This receipt confirms the deposit payment only. Contact the business directly if you need to change or cancel your appointment.',
+      card: true,
+    }).catch((e) => console.error('deposit receipt email failed', e instanceof Error ? e.message : e));
+  }
   return 'paid';
 }
 
