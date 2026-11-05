@@ -7,7 +7,9 @@ import { canAdmin, canManage, current } from '../lib/session';
 import { hasFeatureAccess } from '../lib/fb/plan';
 import { api, toast, badge, pageHead, formModal, inp, fail, errMsg } from './shared';
 
-type Tab = 'retention' | 'erasure' | 'consent' | 'access';
+type Tab = 'retention' | 'erasure' | 'consent' | 'subject' | 'breaches' | 'access';
+interface Breach { id: string; title: string; description: string; affected: number | null; discovered_at: string | null; notified_at: string | null; closed: boolean }
+const NOTICE_MS = 72 * 3_600_000;
 interface Policy { id: string; entity: string; retention_days: number; action: string; enabled: boolean; last_run_at: string | null }
 interface Erasure { id: string; subject_id: string; status: string; requested_at: string; completed_at?: string | null }
 interface Consent { id: string; subject_id: string; purpose: string; legal_basis: string; granted_at: string; revoked_at: string | null }
@@ -35,7 +37,7 @@ export async function renderCompliance(view: HTMLElement): Promise<void> {
   }
   let tab: Tab = 'retention';
   mount(view, html`${pageHead('Data protection', 'Retention, erasure requests, consent and access records for the personal data you hold (NDPA and GDPR style duties).')}
-    <div class="chips" role="tablist" style="margin-bottom:16px">${(['retention', 'erasure', 'consent', 'access'] as Tab[]).map((t) => html`<button class="chip-btn" role="tab" data-tab="${t}" aria-pressed="${t === tab}">${{ retention: 'Retention', erasure: 'Erasure', consent: 'Consent', access: 'Access logs' }[t]}</button>`)}</div>
+    <div class="chips" role="tablist" style="margin-bottom:16px">${(['retention', 'erasure', 'consent', 'subject', 'breaches', 'access'] as Tab[]).map((t) => html`<button class="chip-btn" role="tab" data-tab="${t}" aria-pressed="${t === tab}">${{ retention: 'Retention', erasure: 'Erasure', consent: 'Consent', subject: 'Their data', breaches: 'Breaches', access: 'Access logs' }[t]}</button>`)}</div>
     <div id="cb"></div>`);
   const host = $('#cb', view)!;
   const card = (inner: Raw): Raw => html`<div class="card">${inner}</div>`;
@@ -108,6 +110,43 @@ export async function renderCompliance(view: HTMLElement): Promise<void> {
     }));
   };
 
+  const subject = (): void => {
+    mount(host, html`<form class="card card-pad stack" id="sf"><p class="muted small">When someone asks what you hold about them, look them up here and download it. It covers bookings, contacts, messages, enquiries and consent records for that phone number or email.</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap"><input class="input mono grow" id="ss" placeholder="Phone number or email" required><button class="btn btn-primary" type="submit">${ic('download', 'ico-sm')} Download their data</button></div><div id="sm" class="muted small" role="status"></div></form>`);
+    $('#sf', host)!.addEventListener('submit', async (ev) => {
+      ev.preventDefault(); const v = ($('#ss', host) as HTMLInputElement).value.trim(); const msg = $('#sm', host)!;
+      try {
+        const r = await api<{ subject: string; data: Record<string, unknown[]> }>('/api/compliance/access-request', { method: 'POST', body: { subjectId: v } });
+        const total = Object.values(r.data).reduce((a, x) => a + x.length, 0);
+        if (total === 0) { msg.textContent = 'Nothing is held about this person.'; return; }
+        const url = URL.createObjectURL(new Blob([JSON.stringify(r, null, 2)], { type: 'application/json' }));
+        const a = document.createElement('a'); a.href = url; a.download = `data-held-${r.subject.replace(/[^a-z0-9]+/gi, '-')}.json`; a.click(); URL.revokeObjectURL(url);
+        msg.textContent = `Downloaded ${total} record${total === 1 ? '' : 's'}.`;
+      } catch (e) { msg.textContent = errMsg(e, 'Could not look that person up'); }
+    });
+  };
+
+  const breaches = async (): Promise<void> => {
+    mount(host, card(skeletonRows(2)));
+    try {
+      const { breaches: rows } = await api<{ breaches: Breach[] }>('/api/compliance/breaches');
+      const left = (b: Breach): string => { const h = (new Date(b.discovered_at ?? Date.now()).getTime() + NOTICE_MS - Date.now()) / 3_600_000; return h <= 0 ? 'The 72 hours have passed' : `${Math.floor(h)}h left of 72`; };
+      mount(host, html`<div class="alert alert-info small" style="margin-bottom:12px">The Nigeria Data Protection Act expects you to tell the Commission within 72 hours of becoming aware of a breach that risks people's rights. This register keeps the record and the clock. It does not send anything for you, and it is not legal advice.</div>
+        <div class="row" style="justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary" data-new>${ic('plus', 'ico-sm')} Log an incident</button></div>
+        ${card(rows.length === 0 ? emptyState({ icon: 'triangle-alert', title: 'No incidents logged', text: 'Log anything that exposed or lost personal data, even if you are unsure it counts.' })
+          : html`<div class="list">${rows.map((b) => html`<div class="list-item"><span class="icon-tile">${ic('triangle-alert')}</span><div class="grow"><b>${b.title}</b><br><span class="muted small">${b.description}</span><br><span class="muted small">Found ${ago(b.discovered_at ?? '')}${b.affected != null ? ` · ${b.affected} people` : ''} · ${b.notified_at ? `Commission told ${ago(b.notified_at)}` : b.closed ? 'Closed' : left(b)}</span></div>${canAdmin() && !b.closed ? html`<div class="row" style="gap:6px">${b.notified_at ? '' : html`<button class="btn btn-secondary btn-sm" data-told="${b.id}">Mark Commission told</button>`}<button class="btn btn-secondary btn-sm" data-close="${b.id}">Close</button></div>` : ''}</div>`)}</div>`)}`);
+      $('[data-new]', host)!.addEventListener('click', () => formModal({
+        title: 'Log an incident', submitLabel: 'Log incident',
+        body: html`<div class="field"><label for="bt">Title</label><input class="input" id="bt" maxlength="120" required></div><div class="field"><label for="bd">What happened</label><textarea class="input" id="bd" rows="4" maxlength="2000" required></textarea></div>
+          <div class="field"><label for="bw">When you found out</label><input class="input" id="bw" type="datetime-local"></div><div class="field"><label for="ba">People affected (leave empty if unknown)</label><input class="input" id="ba" type="number" min="0"></div>`,
+        submit: async (el) => { const w = inp(el, '#bw'); await api('/api/compliance/breaches', { method: 'POST', body: { title: inp(el, '#bt'), description: inp(el, '#bd'), discoveredAt: w ? new Date(w).toISOString() : undefined, affected: inp(el, '#ba') } }); toast('Incident logged', 'success'); void breaches(); },
+      }));
+      host.querySelectorAll<HTMLElement>('[data-told],[data-close]').forEach((b) => b.addEventListener('click', async () => {
+        try { await api(`/api/compliance/breaches/${b.dataset.told ?? b.dataset.close}`, { method: 'POST', body: b.dataset.told ? { notified: true } : { closed: true } }); void breaches(); } catch (e) { toast(errMsg(e, 'Could not update'), 'error'); }
+      }));
+    } catch (e) { mount(host, card(fail(host, e, () => void breaches(), 'Could not load the register'))); }
+  };
+
   const access = async (): Promise<void> => {
     mount(host, card(skeletonRows(3)));
     try {
@@ -117,7 +156,7 @@ export async function renderCompliance(view: HTMLElement): Promise<void> {
     } catch (e) { mount(host, card(fail(host, e, () => void access(), 'Could not load access logs'))); }
   };
 
-  const show = (): void => { view.querySelectorAll<HTMLElement>('[data-tab]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tab === tab))); void ({ retention, erasure, consent: async () => consent(), access }[tab]()); };
+  const show = (): void => { view.querySelectorAll<HTMLElement>('[data-tab]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tab === tab))); void ({ retention, erasure, consent: async () => consent(), subject: async () => subject(), breaches, access }[tab]()); };
   view.querySelectorAll<HTMLElement>('[data-tab]').forEach((b) => b.addEventListener('click', () => { tab = b.dataset.tab as Tab; show(); }));
   show();
 }

@@ -15,6 +15,7 @@ function subjectOf(raw: unknown): Subject {
   if (!p) throw new ApiError(400, 'Enter the person’s phone number (08012345678) or email address.');
   return { kind: 'phone', value: p };
 }
+const bookingField = (s: Subject): string => (s.kind === 'phone' ? 'customerPhone' : 'customerEmail');
 const subjectKey = (s: Subject): string => s.value;
 
 async function find(c: Ctx, col: string, field: string, value: string): Promise<QueryDocumentSnapshot[]> {
@@ -86,11 +87,11 @@ export async function executeErasure(id: string): Promise<{ ok: true; summary: R
   if (!req.exists()) throw new ApiError(404, 'That request no longer exists.');
   if (req.data().status === 'completed') throw new ApiError(409, 'This request has already been carried out.');
   const s = subjectOf(req.data().subjectId);
-  const bookingField = s.kind === 'phone' ? 'customerPhone' : 'customerEmail';
-  const bookings = await find(c, 'bookings', bookingField, s.value);
+  const bookings = await find(c, 'bookings', bookingField(s), s.value);
   const contacts = await find(c, 'contacts', s.kind === 'phone' ? 'phone' : 'email', s.value);
   const phone = s.kind === 'phone' ? s.value : bookings[0]?.data().customerPhone as string | undefined;
   const messages = phone ? await find(c, 'messages', 'phone', phone) : [];
+  const enquiries = await find(c, 'enquiries', bookingField(s), s.value);
   const consents = await find(c, 'consents', 'subjectId', s.value);
 
   // Bookings keep their time and money (the business may need them for its books) but lose every personal detail.
@@ -99,10 +100,10 @@ export async function executeErasure(id: string): Promise<{ ok: true; summary: R
     bookings.slice(i, i + 400).forEach((d) => batch.update(d.ref, { customerName: 'Erased customer', customerPhone: '+000000000000', customerEmail: null, notes: null }));
     await batch.commit();
   }
-  await deleteAll(contacts); await deleteAll(messages); await deleteAll(consents);
+  await deleteAll(contacts); await deleteAll(messages); await deleteAll(consents); await deleteAll(enquiries);
   if (phone) await deleteAll([{ ref: wsDoc(c, 'convState', phone) }]);
 
-  const summary = { bookings: bookings.length, contacts: contacts.length, messages: messages.length, consents: consents.length };
+  const summary = { bookings: bookings.length, contacts: contacts.length, messages: messages.length, consents: consents.length, enquiries: enquiries.length };
   await updateDoc(req.ref, { status: 'completed', completedAt: serverTimestamp(), summary });
   void audit(c, 'compliance.erasure_done', 'erasure', id);
   return { ok: true, summary };
@@ -143,4 +144,57 @@ export async function accessLogs(params: URLSearchParams): Promise<{ accessLogs:
   const s = await getDocs(query(wsCol(c, 'auditChain'), orderBy('seq', 'desc'), qLimit(500)));
   const rows = s.docs.map((d) => d.data() as DocumentData).filter((x) => String(x.action).startsWith('compliance.'));
   return { accessLogs: rows.slice(0, Math.min(200, Number(params.get('limit')) || 100)).map((x) => ({ id: String(x.seq), subject_id: x.target ?? null, entity: String(x.action).replace('compliance.', '').replace(/_/g, ' '), accessed_at: iso(x.at) ?? new Date().toISOString(), actor_id: x.actor })) };
+}
+
+
+// ───────────── subject access (a person asks what you hold about them) ─────────────
+const plain = (data: DocumentData): Record<string, unknown> => {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(data)) out[k] = v && typeof (v as { toDate?: unknown }).toDate === 'function' ? (v as { toDate(): Date }).toDate().toISOString() : v;
+  return out;
+};
+/** Everything this workspace holds about one phone number or email address, ready to hand to the person. */
+export async function accessRequest(b: Record<string, unknown>): Promise<{ subject: string; generatedAt: string; data: Record<string, Record<string, unknown>[]> }> {
+  const c = await loadCtx(); requireAdmin(c); requireFeature(c, 'compliance');
+  const s = subjectOf(b.subjectId);
+  const bookings = await find(c, 'bookings', s.kind === 'phone' ? 'customerPhone' : 'customerEmail', s.value);
+  const contacts = await find(c, 'contacts', s.kind === 'phone' ? 'phone' : 'email', s.value);
+  const phone = s.kind === 'phone' ? s.value : bookings[0]?.data().customerPhone as string | undefined;
+  const messages = phone ? await find(c, 'messages', 'phone', phone) : [];
+  const enquiries = await find(c, 'enquiries', bookingField(s), s.value);
+  const consents = await find(c, 'consents', 'subjectId', s.value);
+  const rows = (docs: QueryDocumentSnapshot[]) => docs.map((d) => ({ id: d.id, ...plain(d.data()) }));
+  void audit(c, 'compliance.access_request', 'subject', s.value);
+  return { subject: s.value, generatedAt: new Date().toISOString(), data: { bookings: rows(bookings), contacts: rows(contacts), messages: rows(messages), enquiries: rows(enquiries), consents: rows(consents) } };
+}
+
+// ───────────── breach register (the Commission must be told within 72 hours of becoming aware) ─────────────
+export const BREACH_NOTICE_HOURS = 72;
+export async function listBreaches(): Promise<{ breaches: unknown[] }> {
+  const c = await loadCtx(); requireAdmin(c); requireFeature(c, 'compliance');
+  const s = await getDocs(query(wsCol(c, 'breaches'), orderBy('discoveredAt', 'desc'), qLimit(100)));
+  return { breaches: s.docs.map((d) => ({ id: d.id, title: d.data().title, description: d.data().description, affected: d.data().affected ?? null, discovered_at: iso(d.data().discoveredAt), notified_at: iso(d.data().notifiedAt), closed: d.data().closed === true })) };
+}
+export async function logBreach(b: Record<string, unknown>): Promise<{ id: string }> {
+  const c = await loadCtx(); requireAdmin(c); requireFeature(c, 'compliance');
+  const title = String(b.title ?? '').trim(), description = String(b.description ?? '').trim();
+  if (title.length < 3 || title.length > 120) throw new ApiError(400, 'Give the incident a short title.');
+  if (description.length < 10 || description.length > 2000) throw new ApiError(400, 'Describe what happened (10 to 2000 characters).');
+  const found = b.discoveredAt ? new Date(String(b.discoveredAt)) : new Date();
+  if (Number.isNaN(found.getTime()) || found.getTime() > Date.now() + 60_000) throw new ApiError(400, 'Enter when you found out, not a future time.');
+  const affected = b.affected === '' || b.affected == null ? null : Number(b.affected);
+  if (affected !== null && (!Number.isInteger(affected) || affected < 0 || affected > 10_000_000)) throw new ApiError(400, 'Enter a whole number of people affected, or leave it empty if you do not know.');
+  const ref = await addDoc(wsCol(c, 'breaches'), { title, description, affected, discoveredAt: Timestamp.fromDate(found), notifiedAt: null, closed: false, loggedBy: c.uid, loggedAt: serverTimestamp() });
+  void audit(c, 'compliance.breach_logged', 'breach', ref.id);
+  return { id: ref.id };
+}
+export async function updateBreach(id: string, b: Record<string, unknown>): Promise<{ ok: true }> {
+  const c = await loadCtx(); requireAdmin(c); requireFeature(c, 'compliance');
+  const patch: Record<string, unknown> = {};
+  if (b.notified === true) patch.notifiedAt = serverTimestamp();
+  if (b.closed === true) patch.closed = true;
+  if (!Object.keys(patch).length) throw new ApiError(400, 'Nothing to update.');
+  await updateDoc(wsDoc(c, 'breaches', id), patch);
+  void audit(c, 'compliance.breach_updated', 'breach', id);
+  return { ok: true };
 }
