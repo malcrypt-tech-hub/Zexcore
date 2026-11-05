@@ -4,10 +4,11 @@ import { fb } from './firebase';
 import { slotLimit } from './plan';
 import { normalizePhone } from './slots';
 
-export interface ServiceDto { id: string; name: string; description: string | null; durationMin: number; priceMinor: number; active: boolean }
+export interface IntakeField { key: string; label: string; type: 'text' | 'textarea' | 'select' | 'number' | 'url'; required: boolean; options?: string[]; placeholder?: string }
+export interface ServiceDto { id: string; name: string; description: string | null; durationMin: number; priceMinor: number; active: boolean; bookingMode?: 'appointment' | 'enquiry'; intakeFields?: IntakeField[]; consultationEnabled?: boolean }
 export interface StaffDto { id: string; name: string; title: string | null; active: boolean; auto?: boolean }
 
-const svc = (d: QueryDocumentSnapshot): ServiceDto => ({ id: d.id, name: d.data().name, description: d.data().description ?? null, durationMin: d.data().durationMin, priceMinor: d.data().priceMinor ?? 0, active: d.data().active !== false });
+const svc = (d: QueryDocumentSnapshot): ServiceDto => ({ id: d.id, name: d.data().name, description: d.data().description ?? null, durationMin: d.data().durationMin, priceMinor: d.data().priceMinor ?? 0, active: d.data().active !== false, bookingMode: d.data().bookingMode === 'enquiry' ? 'enquiry' : 'appointment', intakeFields: Array.isArray(d.data().intakeFields) ? d.data().intakeFields : [], consultationEnabled: d.data().consultationEnabled === true });
 const stf = (d: QueryDocumentSnapshot): StaffDto => ({ id: d.id, name: d.data().name, title: d.data().title ?? null, active: d.data().active !== false, auto: d.data().auto === true });
 const bySeq = (name: string, c: Ctx) => query(wsCol(c, name), orderBy('seq'));
 
@@ -32,6 +33,21 @@ function checkService(b: Record<string, unknown>, partial: boolean): Record<stri
     out.priceMinor = p;
   }
   if (b.description !== undefined) { const d = String(b.description ?? '').trim(); if (d.length > 500) throw new ApiError(400, 'Keep the description under 500 characters.'); out.description = d || null; }
+  if (b.bookingMode !== undefined) { const mode = String(b.bookingMode); if (mode !== 'appointment' && mode !== 'enquiry') throw new ApiError(400, 'Choose appointment or enquiry.'); out.bookingMode = mode; }
+  if (b.intakeFields !== undefined) {
+    if (!Array.isArray(b.intakeFields) || b.intakeFields.length > 12) throw new ApiError(400, 'Add no more than 12 intake questions.');
+    const fields = b.intakeFields.map((v) => {
+      const f = v as Record<string, unknown>; const key = String(f.key ?? '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 32);
+      const label = String(f.label ?? '').trim().slice(0, 80); const type = String(f.type ?? 'text');
+      if (!key || !label || !['text','textarea','select','number','url'].includes(type)) throw new ApiError(400, 'Each intake question needs a label and supported field type.');
+      const options = Array.isArray(f.options) ? f.options.map((x) => String(x).trim().slice(0, 80)).filter(Boolean).slice(0, 20) : [];
+      if (type === 'select' && !options.length) throw new ApiError(400, 'Select questions need at least one option.');
+      return { key, label, type, required: f.required === true, ...(options.length ? { options } : {}), ...(f.placeholder ? { placeholder: String(f.placeholder).slice(0, 100) } : {}) };
+    });
+    if (new Set(fields.map((f) => f.key)).size !== fields.length) throw new ApiError(400, 'Question keys must be unique.');
+    out.intakeFields = fields;
+  }
+  if (b.consultationEnabled !== undefined) out.consultationEnabled = b.consultationEnabled === true;
   if (b.active !== undefined) out.active = Boolean(b.active);
   return out;
 }
