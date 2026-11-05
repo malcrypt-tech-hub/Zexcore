@@ -353,6 +353,22 @@ service cloud.firestore {
     function cellOk(wid, d, i) {
       return d.cells.size() <= i || (d.cells[i] == d.cells[0] + i && existsAfter(cellDoc(wid, d.staffId, d.cells[i])));
     }
+    function enquiryCreateOk(wid) {
+      let d = request.resource.data;
+      let svc = get(/databases/$(database)/documents/workspaces/$(wid)/services/$(d.serviceId)).data;
+      return d.keys().hasOnly(['serviceId', 'serviceName', 'customerName', 'customerPhone', 'customerEmail', 'notes',
+                               'intakeAnswers', 'consultationRequested', 'status', 'source', 'createdAt'])
+        && d.status == 'new' && d.source == 'public' && d.createdAt == request.time
+        && d.customerName is string && d.customerName.size() >= 2 && d.customerName.size() <= 120
+        && d.customerPhone is string && d.customerPhone.size() >= 8 && d.customerPhone.size() <= 24
+        && (!('customerEmail' in d) || d.customerEmail == null || (d.customerEmail is string && d.customerEmail.size() <= 160))
+        && (!('notes' in d) || d.notes == null || (d.notes is string && d.notes.size() <= 1000))
+        && d.intakeAnswers is map && d.intakeAnswers.size() <= 12
+        && d.consultationRequested is bool
+        && svc.active == true && svc.bookingMode == 'enquiry'
+        && d.serviceName == svc.name;
+    }
+
     function publicBookingOk(wid) {
       let d = request.resource.data;
       let svc = get(/databases/$(database)/documents/workspaces/$(wid)/services/$(d.serviceId)).data;
@@ -376,6 +392,12 @@ service cloud.firestore {
         && cellOk(wid, d, 5) && cellOk(wid, d, 6) && cellOk(wid, d, 7)
         && existsAfter(cellDoc(wid, d.staffId, d.cells[0]));
     }
+      // Standalone enquiries do not consume calendar slots or booking capacity.
+      match /enquiries/{id} {
+        allow create: if enquiryCreateOk(wid);
+        allow read, update, delete: if isWorker(wid);
+      }
+
     // everything else is closed
     match /{document=**} { allow read, write: if false; }
   }
