@@ -5,7 +5,7 @@
 import type { Ctx } from '../env';
 import { requireMember } from '../auth';
 import { fsCommit, fsGet } from '../fs';
-import { HttpError, json, readJson, randomHex } from '../util';
+import { HttpError, json, readJson } from '../util';
 
 const keyBytes = (raw: string): Uint8Array => {
   let bytes: Uint8Array;
