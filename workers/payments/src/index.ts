@@ -21,6 +21,7 @@ import { certificate, download, runNow, scheduledBackups } from './routes/backup
 import { welcome } from './routes/welcome';
 import { insights, scheduledDigests } from './routes/insights';
 import { accept, invite, inviteInfo, remove, revoke, setRole } from './routes/team';
+import { whatsappConnect, whatsappDisconnect, whatsappStatus } from './routes/whatsapp';
 
 export type { Env, Deps } from './env';
 export { scheduledBackups } from './routes/backups';
@@ -64,6 +65,9 @@ const ROUTES: Record<string, Handler> = {
   'POST /api/team/revoke': revoke,
   'POST /api/team/role': setRole,
   'POST /api/team/remove': remove,
+  'POST /api/whatsapp/status': whatsappStatus,
+  'POST /api/whatsapp/connect': whatsappConnect,
+  'POST /api/whatsapp/disconnect': whatsappDisconnect,
   'POST /api/account/delete': deleteAccount,
   'POST /api/risk/assess': assess,
   'POST /api/public/waitlist': joinWaitlist,
