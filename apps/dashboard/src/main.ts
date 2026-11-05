@@ -20,7 +20,7 @@ const clearLegacySiteStyles = () => {
 setUnauthorizedHandler(() => navigate('/signin', true));
 
 const TITLES: Record<string, string> = {
-  '/app': 'Home', '/app/bookings': 'Bookings', '/app/calendar': 'Calendar', '/app/messages': 'Messages', '/app/more': 'More',
+  '/app': 'Home', '/app/bookings': 'Bookings', '/app/enquiries': 'Service enquiries', '/app/calendar': 'Calendar', '/app/messages': 'Messages', '/app/more': 'More',
   '/app/customers': 'Customers', '/app/services': 'Services', '/app/team': 'Bookable staff', '/app/access': 'Team access', '/app/insights': 'Business insights', '/app/waitlist': 'Revenue protection', '/app/export': 'Export data', '/app/backups': 'Backups', '/app/api-keys': 'API keys', '/app/booking-page': 'Booking page',
   '/app/billing': 'Plan & billing', '/app/audit': 'Audit log', '/app/settings': 'Settings', '/app/security': 'Security',
   '/app/crm': 'CRM', '/app/devices': 'Devices', '/app/automations': 'Automations', '/app/content': 'Website pages', '/app/compliance': 'Data protection',
@@ -140,6 +140,7 @@ const appRoute = (path: string, loader: () => Promise<(view: HTMLElement, ctx: {
 route('/app/onboarding', async () => { const { renderOnboarding } = await import('./views/onboarding'); await renderOnboarding(); });
 appRoute('/app', () => import('./views/home').then((m) => m.renderHome));
 appRoute('/app/bookings', () => import('./views/bookings').then((m) => m.renderBookings));
+appRoute('/app/enquiries', () => import('./views/enquiries').then((m) => m.renderEnquiries));
 appRoute('/app/calendar', () => import('./views/calendar').then((m) => (v, c) => m.renderCalendar(v, c.query.get('date'))));
 appRoute('/app/messages', () => import('./views/messages').then((m) => (v, c) => m.renderMessages(v, c.query.get('phone'))));
 appRoute('/app/more', () => import('./views/manage').then((m) => m.renderMore));

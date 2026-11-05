@@ -43,6 +43,14 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
         <p class="muted small" style="margin-top:16px">Save your reference. ${p.business.phone ? html`Questions? Call <a href="tel:${p.business.phone}" style="text-decoration:underline">${p.business.phone}</a>.` : ''}</p></div></div>`);
   };
 
+  const showEnquiryReceipt = (ref: string, serviceName: string): void => {
+    mount(root, html`<div class="public-wrap">${head(p.business.name, sub)}
+      <div class="receipt"><span class="icon-tile" style="margin:0 auto 12px;background:var(--success);color:#fff;border-radius:50%">${ic('check')}</span>
+        <h2>Enquiry sent</h2><p class="muted" style="margin:6px 0 18px">Thanks for getting in touch. The business will review your request and contact you shortly.</p>
+        <div class="booking-meta" style="text-align:left"><div class="l"><span class="muted">Service</span><b>${serviceName}</b></div><div class="l"><span class="muted">Reference</span><span class="ref">${ref}</span></div></div>
+        <p class="muted small" style="margin-top:16px">Save your reference. ${p.business.phone ? html`Questions? Call <a href="tel:${p.business.phone}" style="text-decoration:underline">${p.business.phone}</a>.` : ''}</p></div></div>`);
+  };
+
   const status = (ref: string): Promise<PayInfo> => api<PayInfo>(`/api/public/${slug}/payments/${encodeURIComponent(ref)}`, { auth: false });
   const waiting = (): void => mount(root, html`<div class="auth-wrap"><div class="auth-card" style="text-align:center"><div class="spinner" style="margin:0 auto 14px"></div><h3>Confirming your payment…</h3><p class="muted small" style="margin-top:6px">This usually takes a few seconds.</p></div></div>`);
 
@@ -84,8 +92,8 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
     if (dt && days.includes(dt)) st.date = dt;
   }
   const svc = () => p.services.find((s) => s.id === st.serviceId);
-  const needDeposit = p.deposit.enabled;
-  const dep = () => { const s = svc(); const price = s?.priceMinor ?? 0; return needDeposit ? (price > 0 ? Math.min(p.deposit.amountMinor, price) : p.deposit.amountMinor) : 0; };
+  const needDeposit = () => p.deposit.enabled && svc()?.bookingMode !== 'enquiry';
+  const dep = () => { const s = svc(); const price = s?.priceMinor ?? 0; return needDeposit() ? (price > 0 ? Math.min(p.deposit.amountMinor, price) : p.deposit.amountMinor) : 0; };
 
   const priceText = (usdMinor: number): string => {
     if (!usdMinor) return 'Free';
@@ -112,26 +120,26 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
       <form id="bf" novalidate>
       <section class="pub-section"><h2 style="margin-top:8px">1. Choose a service <small></small></h2>
         <div class="stack-sm" role="radiogroup" aria-label="Service">${p.services.map((s) => html`<button type="button" class="option-card" role="radio" aria-checked="${s.id === st.serviceId}" data-svc="${s.id}"><span class="radio-dot">${ic('check')}</span><span class="grow"><b>${s.name}</b><br><span class="muted small">${s.durationMin} min${s.description ? ` · ${s.description}` : ''}</span></span><b class="num" style="color:var(--primary)">${priceText(s.priceMinor)}</b></button>`)}</div></section>
-      ${p.staff.length ? html`<section class="pub-section"><h2>2. Choose who <small>Any available is fastest</small></h2>
+      ${svc()?.bookingMode !== 'enquiry' && p.staff.length ? html`<section class="pub-section"><h2>2. Choose who <small>Any available is fastest</small></h2>
         <div class="stack" style="grid-template-columns:1fr 1fr;gap:10px"><button type="button" class="option-card" role="radio" aria-checked="${st.staffId === ''}" data-staff="" style="background:${st.staffId === '' ? 'var(--primary-tint)' : '#fff'}"><span class="grow"><b>Any available</b><br><span class="muted small">Auto-assigned</span></span></button>
         ${p.staff.map((s) => html`<button type="button" class="option-card" role="radio" aria-checked="${s.id === st.staffId}" data-staff="${s.id}"><span class="avatar grey">${initials(s.name)}</span><span class="grow"><b>${s.name}</b><br><span class="muted small">${s.title ?? ''}</span></span></button>`)}</div></section>` : ''}
-      <section class="pub-section"><h2>${p.staff.length ? 3 : 2}. Pick a date & time <small>${off === 60 ? 'WAT (GMT+1)' : ''}</small></h2>
+      ${svc()?.bookingMode !== 'enquiry' ? html`<section class="pub-section"><h2>${p.staff.length ? 3 : 2}. Pick a date & time <small>${off === 60 ? 'WAT (GMT+1)' : ''}</small></h2>
         <div class="date-strip">${days.map((d) => { const dt = new Date(d + 'T00:00:00Z'); return html`<button type="button" class="date-chip" aria-pressed="${d === st.date}" data-date="${d}" ${open(d) ? '' : 'disabled'}><span>${DAY[dt.getUTCDay()]}</span><b>${dt.getUTCDate()}</b><span>${MON[dt.getUTCMonth()]}</span></button>`; })}</div>
-        <div id="slots" class="slot-grid" style="margin-top:12px" aria-live="polite"></div></section>
-      <section class="pub-section"><h2>${p.staff.length ? 4 : 3}. Your details</h2>
+        <div id="slots" class="slot-grid" style="margin-top:12px" aria-live="polite"></div></section>` : ''}
+      <section class="pub-section"><h2>Your details</h2>
         <div class="card card-pad form-grid">
           <div class="field"><label for="cn">Full name</label><input class="input" id="cn" autocomplete="name" required maxlength="160"></div>
           <div class="field"><label for="cp">WhatsApp / mobile number</label><input class="input" id="cp" type="tel" autocomplete="tel" required placeholder="0803 123 4567"></div>
-          <div class="field"><label for="ce">Email ${needDeposit ? '(for your receipt)' : html`<span class="faint">(optional)</span>`}</label><input class="input" id="ce" type="email" autocomplete="email" ${needDeposit ? 'required' : ''}></div>
+          <div class="field"><label for="ce">Email ${needDeposit() ? '(for your receipt)' : html`<span class="faint">(optional)</span>`}</label><input class="input" id="ce" type="email" autocomplete="email" ${needDeposit() ? 'required' : ''}></div>
         </div>
         ${(svc()?.intakeFields ?? []).length ? html`<div class="card card-pad form-grid" style="margin-top:12px"><h3>Tell us more</h3>${(svc()?.intakeFields ?? []).map((f) => html`<div class="field"><label for="intake-${f.key}">${f.label}${f.required ? ' *' : ''}</label>${f.type === 'textarea' ? html`<textarea class="input" id="intake-${f.key}" rows="3" maxlength="2000" placeholder="${f.placeholder ?? ''}"></textarea>` : f.type === 'select' ? html`<select class="input" id="intake-${f.key}"><option value="">Choose…</option>${(f.options ?? []).map((x) => html`<option value="${x}">${x}</option>`)}</select>` : html`<input class="input" id="intake-${f.key}" type="${f.type === 'number' ? 'number' : f.type === 'url' ? 'url' : 'text'}" maxlength="2000" placeholder="${f.placeholder ?? ''}">`}</div>`)}</div>` : ''}
         ${svc()?.consultationEnabled ? html`<label class="check" style="margin-top:12px"><input type="checkbox" id="consultation"> I would also like a consultation</label>` : ''}
         </section>
-      ${needDeposit ? html`<section class="pub-section"><h2>${p.staff.length ? 5 : 4}. Secure your slot</h2><div class="notice">${ic('info')}<div><b>${priceText(dep())} refundable deposit</b> is required to hold your appointment. You will pay securely by card.${svc() && svc()!.priceMinor > dep() ? html` The balance of <b>${priceText(svc()!.priceMinor - dep())}</b> is paid when you arrive.` : ''}<div class="muted small" style="margin-top:6px;font-size:0.75rem">Charged as ${money(depositNgn(), 'NGN')} via Paystack at checkout.</div></div></div></section>` : ''}
+      ${needDeposit() ? html`<section class="pub-section"><h2>${p.staff.length ? 5 : 4}. Secure your slot</h2><div class="notice">${ic('info')}<div><b>${priceText(dep())} refundable deposit</b> is required to hold your appointment. You will pay securely by card.${svc() && svc()!.priceMinor > dep() ? html` The balance of <b>${priceText(svc()!.priceMinor - dep())}</b> is paid when you arrive.` : ''}<div class="muted small" style="margin-top:6px;font-size:0.75rem">Charged as ${money(depositNgn(), 'NGN')} via Paystack at checkout.</div></div></div></section>` : ''}
       <div id="berr" class="alert alert-error hidden" style="margin-top:16px" role="alert"></div>
       </form>
-      <div class="pay-bar"><div><button class="btn btn-primary btn-lg btn-block" id="go">${needDeposit ? html`${ic('lock', 'ico-sm')} Pay ${money(depositNgn(), 'NGN')} deposit` : 'Request booking'}</button>
-        ${needDeposit ? html`<p class="muted small" style="text-align:center;margin-top:6px">Secured by Paystack (${priceText(dep())})</p>` : ''}</div></div></div>`);
+      <div class="pay-bar"><div><button class="btn btn-primary btn-lg btn-block" id="go">${needDeposit() ? html`${ic('lock', 'ico-sm')} Pay ${money(depositNgn(), 'NGN')} deposit` : (svc()?.bookingMode === 'enquiry' ? 'Send enquiry' : 'Request booking')}</button>
+        ${needDeposit() ? html`<p class="muted small" style="text-align:center;margin-top:6px">Secured by Paystack (${priceText(dep())})</p>` : ''}</div></div></div>`);
 
     $$('[data-cur]').forEach((b) => b.addEventListener('click', () => {
       displayCurrency = b.dataset.cur as SupportedCurrency;
@@ -141,7 +149,7 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
     $$('[data-svc]').forEach((b) => b.addEventListener('click', () => { st.serviceId = b.dataset.svc!; st.slot = ''; keep(); }));
     $$('[data-staff]').forEach((b) => b.addEventListener('click', () => { st.staffId = b.dataset.staff!; st.slot = ''; keep(); }));
     $$('[data-date]').forEach((b) => b.addEventListener('click', () => { st.date = b.dataset.date!; st.slot = ''; keep(); }));
-    void loadSlots();
+    if (svc()?.bookingMode !== 'enquiry') void loadSlots();
     $('#go')!.addEventListener('click', (e) => void submit(e.currentTarget as HTMLButtonElement));
   };
   const keep = () => { const v = { n: ($('#cn') as HTMLInputElement)?.value, p: ($('#cp') as HTMLInputElement)?.value, e: ($('#ce') as HTMLInputElement)?.value }; const y = window.scrollY; draw(); ($('#cn') as HTMLInputElement).value = v.n ?? ''; ($('#cp') as HTMLInputElement).value = v.p ?? ''; ($('#ce') as HTMLInputElement).value = v.e ?? ''; window.scrollTo(0, y); };
@@ -180,16 +188,17 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
     const err = $('#berr')!; err.classList.add('hidden');
     const fail = (m: string) => { err.textContent = m; err.classList.remove('hidden'); err.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
     const name = ($('#cn') as HTMLInputElement).value.trim(), phone = ($('#cp') as HTMLInputElement).value.trim(), email = ($('#ce') as HTMLInputElement).value.trim();
-    if (!st.slot) return fail('Please pick a time slot.');
+    if (svc()?.bookingMode !== 'enquiry' && !st.slot) return fail('Please pick a time slot.');
     if (name.length < 2) return fail('Please enter your full name.');
     if (!phone) return fail('Please enter your phone number.');
-    if (needDeposit && !/^\S+@\S+\.\S+$/.test(email)) return fail('Please enter a valid email for your receipt.');
+    if (needDeposit() && !/^\S+@\S+\.\S+$/.test(email)) return fail('Please enter a valid email for your receipt.');
     await busy(btn, async () => {
       try {
         const intakeAnswers: Record<string,string> = {}; for (const f of svc()?.intakeFields ?? []) { const el = document.getElementById('intake-' + f.key) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null; const value = el?.value.trim() ?? ''; if (f.required && !value) return fail('Please complete: ' + f.label); if (value) intakeAnswers[f.key] = value; }
-        const r = await api<{ booking: { ref: string; status: string; startsAt: string; serviceName: string }; payment: { reference: string; amountMinor: number; authorizationUrl: string } | null }>(`/api/public/${slug}/bookings`, { method: 'POST', auth: false, body: { serviceId: st.serviceId, staffId: st.staffId || null, customerName: name, customerPhone: phone, customerEmail: email || null, startsAt: st.slot, intakeAnswers, consultationRequested: (document.getElementById('consultation') as HTMLInputElement | null)?.checked === true } });
-        if (!r.payment) { showReceipt(r.booking.ref, r.booking.serviceName, r.booking.startsAt, r.booking.status, false); if (needDeposit) toast('Your request is in. The business will arrange your deposit with you.', 'info'); return; }
-        location.assign(r.payment.authorizationUrl);
+        const r = await api<{ booking?: { ref: string; status: string; startsAt: string; serviceName: string }; enquiry?: { ref: string; status: string; serviceName: string }; payment: { reference: string; amountMinor: number; authorizationUrl: string } | null }>(`/api/public/${slug}/bookings`, { method: 'POST', auth: false, body: { serviceId: st.serviceId, staffId: st.staffId || null, customerName: name, customerPhone: phone, customerEmail: email || null, ...(svc()?.bookingMode === 'enquiry' ? {} : { startsAt: st.slot }), intakeAnswers, consultationRequested: (document.getElementById('consultation') as HTMLInputElement | null)?.checked === true } });
+        if (r.enquiry) { showEnquiryReceipt(r.enquiry.ref, r.enquiry.serviceName); return; }
+        if (r.booking && !r.payment) { showReceipt(r.booking.ref, r.booking.serviceName, r.booking.startsAt, r.booking.status, false); if (needDeposit()) toast('Your request is in. The business will arrange your deposit with you.', 'info'); return; }
+        if (r.payment) location.assign(r.payment.authorizationUrl);
       } catch (e) { fail(e instanceof ApiError ? e.message : 'Could not complete your booking'); if (e instanceof ApiError && e.status === 409) void loadSlots(); }
     });
   }
