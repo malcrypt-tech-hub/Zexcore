@@ -32,14 +32,14 @@ export { toFs, fromFs } from './fs';
 export { resetTokenCache } from './google';
 export { resetJwksCache } from './auth';
 
-import { getLiveNgnRate } from './rates';
+import { getLiveRates } from './rates';
 
 type Handler = (c: Ctx) => Promise<Response>;
 const ROUTES: Record<string, Handler> = {
   'GET /api/health': async (c) => json({ status: 'ok', whatsapp: whatsappConfigured(c.env) }, 200, c.headers),
   'GET /api/rates': async (c) => {
-    const rate = await getLiveNgnRate(c.env, c.d);
-    return json({ base: 'USD', target: 'NGN', rate, updatedAt: c.d.now().toISOString() }, 200, c.headers);
+    const t = await getLiveRates(c.env, c.d);
+    return json({ base: 'USD', target: 'NGN', rate: t.rates.NGN, rates: t.rates, live: t.live, updatedAt: t.updatedAt }, 200, c.headers);
   },
   'POST /api/checkout': (c) => checkout(c.req, c.env, c.d, c.headers),
   'POST /api/paystack-webhook': (c) => webhook(c.req, c.env, c.d),

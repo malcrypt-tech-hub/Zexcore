@@ -159,6 +159,7 @@ export async function putSettings(b: Record<string, unknown>): Promise<{ setting
     s.waitlistEnabled = b.waitlistEnabled === true;
     if (s.waitlistEnabled && !c.settings.waitlistEnabled) requireFeature(c, 'waitlist');
   }
+  if (b.exchangeRateMode !== undefined) s.exchangeRateMode = b.exchangeRateMode === 'auto' ? 'auto' : 'manual';
   if (b.exchangeRate !== undefined) {
     const r = Number(b.exchangeRate);
     if (!Number.isFinite(r) || r < 100 || r > 100_000) throw new ApiError(400, 'Enter the naira value of $1, between 100 and 100,000.');
@@ -184,7 +185,7 @@ export async function putSettings(b: Record<string, unknown>): Promise<{ setting
     name: s.publicName || c.wsName, openMinutes: s.openMinutes, closeMinutes: s.closeMinutes, slotMinutes: s.slotMinutes,
     closedWeekdays: [0, 1, 2, 3, 4, 5, 6].filter((d) => !s.daysOpen.includes(d)), phone: s.phone, address: s.address,
     leadMinutes: s.leadMinutes, maxDaysAhead: s.maxDaysAhead, bookingCap: slotLimit(c.tier, 'bookingsPerMonth'),
-    depositEnabled: s.depositEnabled, depositMinor: s.depositMinor, exchangeRate: s.exchangeRate, currency: s.currency || 'USD', riskDeposit: s.riskDepositEnabled === true, waitlist: s.waitlistEnabled === true,
+    depositEnabled: s.depositEnabled, depositMinor: s.depositMinor, exchangeRate: s.exchangeRateMode === 'auto' ? null : s.exchangeRate, currency: s.currency || 'USD', riskDeposit: s.riskDepositEnabled === true, waitlist: s.waitlistEnabled === true,
   });
   void audit(c, 'settings.update', 'workspace', c.wid);
   await loadCtx(true);

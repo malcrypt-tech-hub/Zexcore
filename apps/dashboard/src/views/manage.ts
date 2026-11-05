@@ -8,6 +8,7 @@ import { loadSettings, bookingUrl, clearStore, type Service, type Staff } from '
 import { canAdmin, canEdit, current, loadMe, logout } from '../lib/session';
 import { navigate } from '../router';
 import { hasFeatureAccess } from '../lib/fb/plan';
+import { fetchLiveRates, formatInCurrency, ratesMeta, type SupportedCurrency } from '../lib/fx';
 
 const ro = (edit = false): Raw => (edit ? canEdit() : canAdmin()) ? html`` : html`<div class="alert alert-info" style="margin-bottom:16px">${ic('info', 'ico-sm')} ${edit ? 'Only owners, admins and editors can change this.' : 'Only owners and admins can change these settings.'}</div>`;
 
@@ -142,7 +143,7 @@ export async function renderBookingPage(view: HTMLElement): Promise<void> {
         <a class="btn btn-primary" href="${url}" target="_blank" rel="noopener noreferrer">${ic('external-link', 'ico-sm')} Open page</a>
         <a class="btn btn-secondary" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener noreferrer">${ic('message-circle', 'ico-sm')} Share on WhatsApp</a>
       </div>
-      <div class="alert alert-info">${ic('info', 'ico-sm')}<span>Deposits are ${s.depositEnabled ? html`<b>on</b> (${money(s.depositMinor, s.currency)} per booking)` : html`<b>off</b>`}. Change this in <a href="/app/settings" data-link style="text-decoration:underline">Settings</a>.</span></div>
+      <div class="alert alert-info">${ic('info', 'ico-sm')}<span>Deposits are ${s.depositEnabled ? html`<b>on</b> (${money(s.depositMinor, 'USD')} per booking)` : html`<b>off</b>`}. Change this in <a href="/app/settings" data-link style="text-decoration:underline">Settings</a>.</span></div>
     </div>`);
   $('[data-copy]', view)!.addEventListener('click', () => copyText(url));
 }
@@ -208,13 +209,13 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
         <div class="row between">
           <div>
             <h3>Upfront deposit & currency</h3>
-            <p class="muted small">Configure your business currency and slot deposits. Customer card payments settle directly to your bank account below.</p>
+            <p class="muted small">Choose the currency your booking page shows first, and set slot deposits (in US dollars). Customer card payments settle directly to your bank account below.</p>
           </div>
           <label class="switch"><input type="checkbox" id="dep" ${s.depositEnabled ? 'checked' : ''} ${dis} aria-label="Require deposit"><span></span></label>
         </div>
         <div class="form-grid two">
           <div class="field">
-            <label for="currency">Workspace currency</label>
+            <label for="currency">Show prices to customers in</label>
             <select class="select" id="currency" ${dis}>
               <option value="USD" ${(s.currency || 'USD') === 'USD' ? 'selected' : ''}>USD ($) — US Dollar</option>
               <option value="NGN" ${s.currency === 'NGN' ? 'selected' : ''}>NGN (₦) — Nigerian Naira</option>
@@ -224,7 +225,7 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
               <option value="KES" ${s.currency === 'KES' ? 'selected' : ''}>KES (KSh) — Kenyan Shilling</option>
               <option value="ZAR" ${s.currency === 'ZAR' ? 'selected' : ''}>ZAR (R) — South African Rand</option>
             </select>
-            <p class="muted small">Your services and upfront deposits are priced in this currency. Clients can also pick their local currency on your booking page.</p>
+            <p class="muted small">You set prices and deposits in US dollars. This is the currency your booking page shows first; customers can switch to another on the page.</p>
           </div>
           <div class="field ${s.depositEnabled ? '' : 'hidden'}" id="depf">
             <label for="depn">Deposit per booking</label>
@@ -233,11 +234,16 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
           </div>
         </div>
         <div class="field">
-          <label for="fx">Paystack settlement exchange rate (₦ per $1 USD)</label>
-          <input class="input" id="fx" type="number" min="100" max="100000" step="0.01" value="${s.exchangeRate || ''}" ${dis}>
-          <p class="muted small">Payments are processed securely via Paystack in naira to your local bank account. Used for currency conversions during customer checkout.</p>
+          <div class="row between"><div><b>Use the live naira rate</b><div class="muted small">Recommended. Card payments are converted to naira at the market rate, updated hourly.</div></div><label class="switch"><input type="checkbox" id="fxauto" ${s.exchangeRateMode === 'auto' ? 'checked' : ''} ${dis} aria-label="Use the live naira rate"><span></span></label></div>
+          <div class="${s.exchangeRateMode === 'auto' ? 'hidden' : ''}" id="fxm" style="margin-top:10px">
+            <label for="fx">Your fixed rate (₦ per $1 USD)</label>
+            <input class="input" id="fx" type="number" min="100" max="100000" step="0.01" value="${s.exchangeRate || ''}" ${dis}>
+            <p class="muted small">A fixed rate does not move with the market. If the naira weakens you will be paid less than the dollar price is worth, so check it often or switch to the live rate.</p>
+          </div>
+          <p class="muted small" id="fxlive"></p>
         </div>
       </section>
+      <section class="card card-pad form-grid" id="pricesCard"><div><h3>What you charge, in every currency</h3><p class="muted small">Your prices are in US dollars. This shows what customers see in each currency, so you never have to work it out.</p></div><div id="prices"><div class="skel" style="height:80px"></div></div></section>
       ${hasFeatureAccess(me.tenant.tier, 'insights') ? html`<section class="card card-pad form-grid"><div class="row between"><div><h3>Weekly summary email</h3><p class="muted small">Every Monday morning we email the owner last week's bookings, revenue at list price, no-show rate and busiest times. Switch it off here at any time.</p></div><label class="switch"><input type="checkbox" id="wd" ${s.weeklyDigest === false ? '' : 'checked'} ${dis} aria-label="Weekly summary email"><span></span></label></div></section>` : ''}
       ${hasFeatureAccess(me.tenant.tier, 'waitlist') ? html`<section class="card card-pad form-grid"><div class="row between"><div><h3>Revenue protection: waitlist</h3><p class="muted small">When a day is full, your booking page offers a waitlist. If a booking is cancelled, we email the people waiting for that service and day, and the first to book gets the time. See who is waiting under More, Revenue protection.</p></div><label class="switch"><input type="checkbox" id="wl" ${s.waitlistEnabled ? 'checked' : ''} ${dis} aria-label="Offer a waitlist"><span></span></label></div></section>` : ''}
       ${hasFeatureAccess(me.tenant.tier, 'risk') ? html`<section class="card card-pad form-grid"><div class="row between"><div><h3>No-show protection</h3><p class="muted small">Every booking gets a no-show risk score from that customer's history with you. When a booking scores as risky, the customer is asked for a deposit even if you do not ask everyone. Needs your payout account above.</p></div><label class="switch"><input type="checkbox" id="rd" ${s.riskDepositEnabled ? 'checked' : ''} ${dis} aria-label="Ask risky customers for a deposit"><span></span></label></div>
@@ -264,6 +270,25 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
     $('#depf', view)?.classList.toggle('hidden', !on);
   });
 
+  const fxAuto = (): boolean => ($('#fxauto', view) as HTMLInputElement | null)?.checked === true;
+  const cur7: SupportedCurrency[] = ['USD', 'NGN', 'GBP', 'EUR', 'GHS', 'KES', 'ZAR'];
+  const drawPrices = async (): Promise<void> => {
+    const host = $('#prices', view); if (!host) return;
+    try {
+      const [{ services }, rates] = await Promise.all([api<{ services: Service[] }>('/api/bookings/services'), fetchLiveRates()]);
+      const manual = fxAuto() ? null : Number(($('#fx', view) as HTMLInputElement | null)?.value) || null;
+      const rows = services.filter((x) => (x as Service & { active?: boolean }).active !== false);
+      const line = (usd: number) => cur7.filter((c) => c !== 'USD').map((c) => html`<div><span class="muted small">${c}</span><div class="num"><b>${usd ? formatInCurrency(usd, c, rates, c === 'NGN' ? manual ?? undefined : undefined) : 'Free'}</b></div></div>`);
+      const block = (name: string, usd: number) => html`<div class="list-item" style="display:block"><div class="row between"><b>${name}</b><b class="num">${usd ? money(usd, 'USD') : 'Free'}</b></div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:8px">${line(usd)}</div></div>`;
+      const dep = s.depositEnabled ? [block('Deposit per booking', s.depositMinor)] : [];
+      mount(host, html`${rows.length || dep.length ? html`<div class="list">${rows.map((x) => block(x.name, x.priceMinor))}${dep}</div>` : html`<p class="muted small">Add a service and its price will appear here in every currency.</p>`}
+        <p class="muted small" style="margin-top:8px">${ratesMeta.live ? `Live market rates, fetched ${new Date(ratesMeta.updatedAt ?? Date.now()).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} and refreshed hourly.` : 'Live rates could not be reached just now, so these use the last known rates and may be out of date.'}${manual ? ` The naira column uses your fixed rate of ₦${manual.toLocaleString('en-NG')} per $1.` : ''} Customers pay by card in naira, so the other currencies are a guide for them.</p>`);
+      const lv = $('#fxlive', view); if (lv) lv.textContent = `Today's market rate: ₦${Math.round(rates.NGN).toLocaleString('en-NG')} per $1${ratesMeta.live ? '' : ' (last known; live rate unavailable)'}.`;
+    } catch { mount(host, html`<p class="muted small">Could not load your prices. Reload to try again.</p>`); }
+  };
+  void drawPrices();
+  $('#fxauto', view)?.addEventListener('change', (e) => { $('#fxm', view)?.classList.toggle('hidden', (e.target as HTMLInputElement).checked); void drawPrices(); });
+  $('#fx', view)?.addEventListener('input', () => void drawPrices());
   $('#rd', view)?.addEventListener('change', (e) => $('#rdf', view)?.classList.toggle('hidden', !(e.target as HTMLInputElement).checked));
   if ($('#nwh', view)) void fetch(`${paymentsUrl()}/api/health`).then((r) => r.json()).then((j: { whatsapp?: boolean }) => {
     if (j.whatsapp !== true && $('#nwh', view)) $('#nwh', view)!.textContent = 'WhatsApp delivery is not switched on for ZexCore yet, so for now you get the email only, with a link to reply to the customer on WhatsApp. This turns into a real WhatsApp message once it is.';
@@ -351,6 +376,7 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
           slotMinutes: Number(($('#sl') as HTMLSelectElement).value), leadMinutes: Math.round(Number(($('#ld') as HTMLInputElement).value) * 60),
           currency: ($('#currency', view) as HTMLSelectElement)?.value || s.currency || 'USD',
           exchangeRate: Number(($('#fx') as HTMLInputElement).value) || s.exchangeRate || 1350,
+          exchangeRateMode: ($('#fxauto') as HTMLInputElement).checked ? 'auto' : 'manual',
           depositEnabled: depChecked,
           depositMinor: depMinor,
           ...($('#wd') ? { weeklyDigest: ($('#wd') as HTMLInputElement).checked } : {}),

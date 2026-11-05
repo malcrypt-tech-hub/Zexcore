@@ -1,6 +1,7 @@
 import { scoreRisk } from '../../workers/payments/src/risk';
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { creditDays } from '../../workers/payments/src/routes/billing.js';
+import { getLiveRates, FALLBACK_RATES } from '../../workers/payments/src/rates.js';
 import { SEATS } from '../../workers/payments/src/routes/team.js';
 import { KEEP, backupId, gunzip, open as openBackup, scheduledBackups } from '../../workers/payments/src/routes/backups.js';
 import { LIMITS } from '../../apps/dashboard/src/lib/fb/plan';
@@ -1025,5 +1026,37 @@ describe('business insights and the weekly summary', () => {
     expect(digestDue(Date.UTC(2026, 10, 3, 9, 0))).toBe(false);     // Tuesday
     expect(weekKey(Date.UTC(2026, 10, 2, 9, 0))).not.toBe(weekKey(Date.UTC(2026, 10, 9, 9, 0)));
     expect(weekKey(Date.UTC(2026, 10, 2, 9, 0))).toBe(weekKey(Date.UTC(2026, 10, 8, 9, 0)));
+  });
+});
+
+describe('live currency rates', () => {
+  const table = { USD: 1, NGN: 1612.5, GBP: 0.77, EUR: 0.91, GHS: 12.4, KES: 129.2, ZAR: 17.9 };
+  const dep = (fetcher: (url: string) => Promise<Response>, t = NOW) => ({ fetch: fetcher as never, now: () => t });
+  it('returns every supported currency from one market fetch and says it is live', async () => {
+    const urls: string[] = [];
+    const r = await getLiveRates({} as Env, dep(async (u) => { urls.push(u); return Response.json({ rates: table }); }, new Date(NOW.getTime() + 10 * 3_600_000 * 24)));
+    expect(r.live).toBe(true); expect(r.rates.NGN).toBe(1612.5); expect(r.rates.GBP).toBe(0.77);
+    expect(urls[0]).toContain('exchangerate-api');
+    const again = await getLiveRates({} as Env, dep(async () => { throw new Error('should be cached'); }, new Date(NOW.getTime() + 10 * 3_600_000 * 24 + 60_000)));
+    expect(again.rates.NGN).toBe(1612.5);
+  });
+  it('tries the second source, then reports stored defaults as not live instead of pretending', async () => {
+    const later = new Date(NOW.getTime() + 40 * 86_400_000);
+    const second = await getLiveRates({} as Env, dep(async (u) => u.includes('floatrates') ? Response.json(Object.fromEntries(Object.entries(table).map(([k, v]) => [k.toLowerCase(), { rate: v }]))) : new Response('no', { status: 500 }), later));
+    expect(second.live).toBe(true); expect(second.rates.KES).toBe(129.2);
+    const dead = await getLiveRates({} as Env, dep(async () => new Response('no', { status: 500 }), new Date(later.getTime() + 3 * 3_600_000)));
+    expect(dead.live).toBe(false); expect(dead.rates.NGN).toBe(1612.5);   // stale but real, flagged
+  });
+  it('refuses nonsense numbers and honours a fixed NGN_PER_USD override', async () => {
+    const t = new Date(NOW.getTime() + 90 * 86_400_000);
+    const bad = await getLiveRates({} as Env, dep(async () => Response.json({ rates: { ...table, NGN: 5 } }), t));
+    expect(bad.rates.NGN).not.toBe(5);
+    const fixed = await getLiveRates({ NGN_PER_USD: '1500' } as Env, dep(async () => Response.json({ rates: table }), new Date(t.getTime() + 5 * 3_600_000)));
+    expect(fixed.rates.NGN).toBe(1500); expect(FALLBACK_RATES.USD).toBe(1);
+  });
+  it('/api/rates serves the whole table with live and updatedAt', async () => {
+    const r = await handle(new Request('https://pay.example.workers.dev/api/rates'), env, { fetch: (async () => Response.json({ rates: table })) as never, now: () => new Date(NOW.getTime() + 200 * 86_400_000) });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ base: 'USD', live: true, rates: { USD: 1, GBP: 0.77 } });
   });
 });

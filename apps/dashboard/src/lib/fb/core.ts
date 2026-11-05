@@ -18,6 +18,8 @@ export interface WorkspaceSettings {
   waitlistEnabled?: boolean;
   /** Enterprise: the Monday-morning summary email to the owner. On unless switched off. */
   weeklyDigest?: boolean;
+  /** 'auto' uses the live market naira rate; otherwise the owner's fixed exchangeRate. Missing means fixed (older workspaces). */
+  exchangeRateMode?: 'auto' | 'manual';
   /** Owner notification preferences */
   notifyOwnerEmail?: boolean; notifyOwnerWhatsApp?: boolean; notifyWhatsAppPhone?: string | null;
 }
@@ -27,6 +29,7 @@ export const DEFAULT_SETTINGS: WorkspaceSettings = {
   businessType: 'other', publicName: null, phone: null, address: null, currency: 'USD', exchangeRate: getCachedNgnRate(), depositEnabled: false, depositMinor: 0,
   openMinutes: 540, closeMinutes: 1020, slotMinutes: 30, daysOpen: [1, 2, 3, 4, 5, 6], utcOffsetMinutes: 60, leadMinutes: 60, maxDaysAhead: 60, onboarded: false,
   logoUrl: null, rules: [], riskDepositEnabled: false, riskDepositLevel: 'high', riskDepositMinor: 500,
+  exchangeRateMode: 'auto',
 };
 
 export type Role = 'owner' | 'admin' | 'editor' | 'viewer' | 'staff';
@@ -95,7 +98,7 @@ export async function loadCtx(force = false): Promise<Ctx> {
       planExpiresAt: iso(w.planExpiresAt),
       tier,
       role: mem.data().role as Role,
-      settings: { ...DEFAULT_SETTINGS, ...(w.settings as Partial<WorkspaceSettings> | undefined) },
+      settings: { ...DEFAULT_SETTINGS, ...(w.settings as Partial<WorkspaceSettings> | undefined), exchangeRateMode: (w.settings as Partial<WorkspaceSettings> | undefined)?.exchangeRateMode ?? 'manual' },   // workspaces made before the live rate existed keep their fixed rate until the owner switches
     };
     void flushAudit();
     return cached;
