@@ -31,6 +31,7 @@ async function idToken(over: Record<string, unknown> = {}, key = idKey.privateKe
 // ── in-memory Firestore + Google + Paystack ──
 type Doc = { fields: Record<string, any>; v: number };
 let emails: any[] = [];
+let waSent: any[] = [];
 let deletedLogins: string[] = [];
 let store: Map<string, Doc>; let commits: any[]; let paystackInit: any[]; let paystackVerify: Record<string, any>; let paystackSub: any[];
 const fsPath = (u: string) => decodeURIComponent(u.split('/documents/')[1]!.split('?')[0]!);
@@ -57,6 +58,7 @@ function mockFetch(): typeof fetch {
       return Response.json({});
     }
     if (url.includes('identitytoolkit.googleapis.com') && url.endsWith('/accounts:delete')) { deletedLogins.push(JSON.parse(init.body).localId); return Response.json({}); }
+    if (url.startsWith('https://graph.facebook.com/')) { waSent.push({ url, auth: init.headers.authorization, body: JSON.parse(init.body) }); return Response.json({ messages: [{ id: 'wamid.1' }] }); }
     if (url === 'https://api.resend.com/emails') { emails.push(JSON.parse(init.body)); return Response.json({ id: 'e1' }); }
     if (url.endsWith(':runQuery')) {   // lists a collection under a parent; filters are not evaluated (tests seed only what they need)
       const parent = decodeURIComponent(url.split('/documents')[1]!.replace(/:runQuery$/, '')).replace(/^\//, '');
@@ -90,7 +92,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   resetTokenCache(); resetJwksCache();
-  emails = []; store = new Map(); commits = []; paystackInit = []; paystackVerify = {}; paystackSub = [];
+  emails = []; waSent = []; store = new Map(); commits = []; paystackInit = []; paystackVerify = {}; paystackSub = [];
   env = { PAYSTACK_SECRET_KEY: SECRET, ALLOW_TEST_PAYMENTS: 'true', FIREBASE_PROJECT_ID: PROJECT, APP_URL: 'https://zexcore.com.ng', ALLOWED_ORIGINS: 'https://zexcore.com.ng,https://zexcore-5d6c0.web.app', NGN_PER_USD: '1500',
     FIREBASE_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'w@x.iam.gserviceaccount.com', private_key: saPem }) };
   seedDoc(`workspaces/${WID}`, { name: 'Sade Salon', plan: 'free', ownerUid: 'owner1', slug: 'sade-salon' });
@@ -606,6 +608,46 @@ describe('formal e-mails', () => {
     expect(await (await welcomeReq({ email_verified: false })).json()).toMatchObject({ sent: false, reason: 'unverified' });
     expect(emails).toHaveLength(0);
     expect(await (await welcomeReq()).json()).toMatchObject({ sent: true });
+  });
+  describe('owner WhatsApp alert', () => {
+    const bookingId = () => `${NOW.toISOString().slice(0, 7).replace('-', '')}_1`;
+    const setup = (settings: Record<string, unknown>) => {
+      seedDoc(`slugs/sade-salon`, { wid: WID });
+      seedDoc(`workspaces/${WID}`, { name: 'Sade Salon', plan: 'free', ownerUid: 'owner1', slug: 'sade-salon', settings: { utcOffsetMinutes: 60, ...settings } });
+      seedDoc(`workspaces/${WID}/members/owner1`, { role: 'owner', email: 'sade@example.com', name: 'Sade Bello' });
+      seedDoc(`workspaces/${WID}/services/s_0`, { name: 'Braids', priceMinor: 5000 });
+      seedDoc(`workspaces/${WID}/bookings/${bookingId()}`, { customerName: 'Ada Obi', customerPhone: '+2348031234567', serviceId: 's_0', status: 'pending', source: 'public', startsAt: new Date(NOW.getTime() + 86_400_000), createdAt: new Date(NOW.getTime() - 60_000) });
+    };
+    const booked = () => call('/api/public/booked', { body: JSON.stringify({ slug: 'sade-salon', bookingId: bookingId() }), headers: { 'content-type': 'application/json', origin: 'https://zexcore.com.ng' } });
+    beforeEach(() => { env = { ...env, RESEND_API_KEY: 're_test' }; });
+
+    it('sends the approved template to the number the owner gave, with the booking details, when WhatsApp is set up', async () => {
+      env = { ...env, WHATSAPP_TOKEN: 'wa_tok', WHATSAPP_PHONE_ID: '12345' };
+      setup({ notifyOwnerWhatsApp: true, notifyWhatsAppPhone: '0803 000 1111' });
+      expect((await booked()).status).toBe(200);
+      expect(waSent).toHaveLength(1);
+      expect(waSent[0].url).toContain('/12345/messages'); expect(waSent[0].auth).toBe('Bearer wa_tok');
+      expect(waSent[0].body).toMatchObject({ to: '2348030001111', type: 'template', template: { name: 'new_booking_request', language: { code: 'en' } } });
+      expect(waSent[0].body.template.components[0].parameters.map((x: any) => x.text).slice(0, 3)).toEqual(['Sade Salon', 'Ada Obi', 'Braids']);
+    });
+    it('sends nothing when the owner has not turned it on, gave no valid number, or ZexCore has no WhatsApp account configured', async () => {
+      env = { ...env, WHATSAPP_TOKEN: 'wa_tok', WHATSAPP_PHONE_ID: '12345' };
+      setup({ notifyOwnerWhatsApp: false, notifyWhatsAppPhone: '08030001111' }); await booked();
+      store.delete(`workspaces/${WID}/automationMarkers/${bookingId()}`);
+      setup({ notifyOwnerWhatsApp: true, notifyWhatsAppPhone: '123' }); await booked();
+      store.delete(`workspaces/${WID}/automationMarkers/${bookingId()}`);
+      env = { ...env, WHATSAPP_TOKEN: undefined };
+      setup({ notifyOwnerWhatsApp: true, notifyWhatsAppPhone: '08030001111' });
+      expect((await booked()).status).toBe(200);
+      expect(waSent).toHaveLength(0);
+    });
+    it('can switch the email off and the booking still goes through when WhatsApp refuses', async () => {
+      env = { ...env, WHATSAPP_TOKEN: 'wa_tok', WHATSAPP_PHONE_ID: '12345' };
+      setup({ notifyOwnerEmail: false, notifyOwnerWhatsApp: true, notifyWhatsAppPhone: '08030001111' });
+      expect((await booked()).status).toBe(200);
+      expect(emails.filter((m) => String(m.subject).startsWith('New booking request'))).toHaveLength(0);
+      expect(waSent).toHaveLength(1);
+    });
   });
   it('booking requests carry the details and escape anything a customer typed', async () => {
     seedDoc(`slugs/sade-salon`, { wid: WID });

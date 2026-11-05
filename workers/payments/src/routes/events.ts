@@ -5,6 +5,7 @@ import { fireEvent, ownerContact } from '../automation';
 import type { Ctx } from '../env';
 import { FsConflict, fsCommit, fsGet } from '../fs';
 import { sendFormal } from '../mail';
+import { sendBookingAlert, waNumber, whatsappConfigured } from '../whatsapp';
 import { HttpError, ID_RE, json, localWhen, readJson } from '../util';
 
 const BOOKING_RE = /^\d{6}_\d{1,6}$/;
@@ -64,9 +65,13 @@ export async function publicBooked(c: Ctx): Promise<Response> {
   const wsSettings = ws?.data.settings as Record<string, unknown> | undefined;
   const emailEnabled = wsSettings?.notifyOwnerEmail !== false; // default: on
   const waEnabled = Boolean(wsSettings?.notifyOwnerWhatsApp);
-  const waPhone = String(wsSettings?.notifyWhatsAppPhone ?? '').replace(/\D/g, '');
+  const waPhone = waNumber(String(wsSettings?.notifyWhatsAppPhone ?? '')) ?? '';
   const customerWaPhone = String(bk.customerPhone ?? '').replace(/\D/g, '');
   const price = Number(bk.priceMinor ?? 0);
+  // A real WhatsApp message to the owner (only when ZexCore's WhatsApp Business account is set up and the owner gave a number).
+  if (waEnabled && waPhone && whatsappConfigured(c.env)) {
+    await sendBookingAlert(c.env, c.d, waPhone, [String(ws?.data.name ?? 'your business'), String(bk.customerName), String(bk.service || 'a service'), localWhen(String(bk.startsAt), off)]);
+  }
   if (emailEnabled) {
     await sendFormal(c.env, c.d, owner.email, `New booking request: ${String(bk.customerName)}`, {
       heading: 'You have a new booking request', preheader: `${String(bk.customerName)} wants to book ${String(bk.service)}`, greeting: `Hello ${owner.name},`,

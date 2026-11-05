@@ -21,7 +21,7 @@ const RECENT_SIGN_IN_S = 300;
 const WID_RE = /^[A-Za-z0-9_-]{20}$/;
 /** Everything in a workspace that is business or customer data. auditChain and auditMeta are deliberately not listed. */
 const WIPE = ['services', 'staff', 'contacts', 'stages', 'leads', 'customers', 'pages', 'bookings', 'locks', 'payments', 'devices', 'alertRules', 'alerts', 'rules',
-  'automationRuns', 'automationMarkers', 'payout', 'depositPayments', 'messages', 'convState', 'retention', 'erasures', 'consents', 'backups', 'appointments', 'invites', 'apiKeys', 'audit'] as const;
+  'automationRuns', 'automationMarkers', 'payout', 'depositPayments', 'messages', 'convState', 'retention', 'erasures', 'consents', 'backups', 'appointments', 'invites', 'apiKeys', 'seen', 'waitlist', 'audit'] as const;
 const PAGE = 300;
 const MAX_ROUNDS = 80;
 

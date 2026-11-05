@@ -13,6 +13,8 @@ export interface Env {
   ALLOW_TEST_PAYMENTS?: string;
   /** Largest single card charge for a plan, in naira. Above it the buyer is asked to contact us. Default 1,000,000. */
   MAX_CHECKOUT_NGN?: string;
+  /** WhatsApp Business Cloud API (owner alerts). Off unless both token and phone id are set. */
+  WHATSAPP_TOKEN?: string; WHATSAPP_PHONE_ID?: string; WHATSAPP_TEMPLATE_BOOKING?: string; WHATSAPP_TEMPLATE_LANG?: string;
   FIREBASE_SERVICE_ACCOUNT: string;
   FIREBASE_PROJECT_ID: string;
   APP_URL: string;

@@ -1,3 +1,4 @@
+import { paymentsUrl } from '../lib/fb/firebase';
 import { html, mount, $, $$, type Raw } from '../lib/html';
 import { ic, type IconName } from '../lib/icons';
 import { api, ApiError } from '../lib/api';
@@ -197,10 +198,10 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
         <div class="field"><label for="ld">Minimum notice (hours)</label><input class="input" id="ld" type="number" min="0" max="168" value="${s.leadMinutes / 60}" ${dis}></div></div></section>
 
       <section class="card card-pad form-grid"><h3>Notifications</h3>
-        <p class="muted small">Choose how you're alerted when customers book or message you.</p>
+        <p class="muted small">Choose how you are told when a customer makes a booking request. Inside ZexCore, the bell and the Bookings and Messages tabs show a count of what is new until you open it.</p>
         <div class="row between"><div><b>Email alerts</b><div class="muted small">Get an email for every new booking request</div></div><label class="switch"><input type="checkbox" id="ne" ${s.notifyOwnerEmail !== false ? 'checked' : ''} ${dis}><span></span></label></div>
-        <div class="row between"><div><b>WhatsApp quick-reply link</b><div class="muted small">Add a "Reply via WhatsApp" button to your booking emails</div></div><label class="switch"><input type="checkbox" id="nw" ${s.notifyOwnerWhatsApp ? 'checked' : ''} ${dis}><span></span></label></div>
-        <div class="field ${s.notifyOwnerWhatsApp ? '' : 'hidden'}" id="nwf"><label for="nwp">Your WhatsApp number</label><input class="input" id="nwp" type="tel" placeholder="e.g. 08012345678" value="${s.notifyWhatsAppPhone ?? ''}" ${dis}><span class="hint">We'll add a "Reply via WhatsApp" button in booking notification emails so you can reply directly.</span></div>
+        <div class="row between"><div><b>WhatsApp alerts</b><div class="muted small">A WhatsApp message to you for every new booking request</div></div><label class="switch"><input type="checkbox" id="nw" ${s.notifyOwnerWhatsApp ? 'checked' : ''} ${dis}><span></span></label></div>
+        <div class="field ${s.notifyOwnerWhatsApp ? '' : 'hidden'}" id="nwf"><label for="nwp">Your WhatsApp number</label><input class="input" id="nwp" type="tel" placeholder="e.g. 08012345678" value="${s.notifyWhatsAppPhone ?? ''}" ${dis}><span class="hint" id="nwh">Include your country code if it is not Nigeria, for example +44 7700 900123. Booking emails also carry a link to reply to the customer on WhatsApp.</span></div>
       </section>
       <section class="card card-pad form-grid" id="payout"><h3>Where deposits are paid</h3><p class="muted small">Loading…</p></section>
       <section class="card card-pad form-grid"><div class="row between"><div><h3>Upfront deposit</h3><p class="muted small">Customers pay this by card through Paystack to secure their slot. The money goes straight to your bank account below.</p></div><label class="switch"><input type="checkbox" id="dep" ${s.depositEnabled ? 'checked' : ''} ${dis} aria-label="Require deposit"><span></span></label></div>
@@ -233,6 +234,9 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
   });
 
   $('#rd', view)?.addEventListener('change', (e) => $('#rdf', view)?.classList.toggle('hidden', !(e.target as HTMLInputElement).checked));
+  if ($('#nwh', view)) void fetch(`${paymentsUrl()}/api/health`).then((r) => r.json()).then((j: { whatsapp?: boolean }) => {
+    if (j.whatsapp !== true && $('#nwh', view)) $('#nwh', view)!.textContent = 'WhatsApp delivery is not switched on for ZexCore yet, so for now you get the email only, with a link to reply to the customer on WhatsApp. This turns into a real WhatsApp message once it is.';
+  }).catch(() => undefined);
   $('#nw', view)?.addEventListener('change', (e) => $('#nwf', view)?.classList.toggle('hidden', !(e.target as HTMLInputElement).checked));
 
   // Logo file picker & preview handling

@@ -8,6 +8,7 @@
 import { deleteAccount } from './routes/account';
 import { assess } from './routes/risk';
 import { joinWaitlist } from './routes/waitlist';
+import { whatsappConfigured } from './whatsapp';
 import { createKey, revokeKey, v1Bookings, v1Customers } from './routes/apikeys';
 import { realDeps, type Ctx, type Deps, type Env } from './env';
 import { HttpError, cors, json } from './util';
@@ -35,7 +36,7 @@ import { getLiveNgnRate } from './rates';
 
 type Handler = (c: Ctx) => Promise<Response>;
 const ROUTES: Record<string, Handler> = {
-  'GET /api/health': async (c) => json({ status: 'ok' }, 200, c.headers),
+  'GET /api/health': async (c) => json({ status: 'ok', whatsapp: whatsappConfigured(c.env) }, 200, c.headers),
   'GET /api/rates': async (c) => {
     const rate = await getLiveNgnRate(c.env, c.d);
     return json({ base: 'USD', target: 'NGN', rate, updatedAt: c.d.now().toISOString() }, 200, c.headers);

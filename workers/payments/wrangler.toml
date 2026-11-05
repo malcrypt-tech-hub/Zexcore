@@ -25,6 +25,7 @@ crons = ["7 * * * *"]
 #   FIREBASE_SERVICE_ACCOUNT   service-account JSON with the "Cloud Datastore User" role only
 
 # Optional secrets: RESEND_API_KEY and MAIL_FROM turn on e-mail alerts to the workspace owner.
+# Optional WhatsApp alerts to the owner (see docs/whatsapp-alerts.md): secret WHATSAPP_TOKEN, variable WHATSAPP_PHONE_ID; template name defaults to new_booking_request.
 
 # Optional: rate limit the public (signed-out) routes per visitor. Uncomment after enabling Rate Limiting for your account,
 # then redeploy. Without it the Worker still works; add a Cloudflare dashboard rate-limit rule instead.

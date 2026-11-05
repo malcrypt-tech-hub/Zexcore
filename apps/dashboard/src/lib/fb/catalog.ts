@@ -2,6 +2,7 @@ import { deleteDoc, doc, getDoc, getDocs, updateDoc, query, orderBy, type QueryD
 import { ApiError, DEFAULT_SETTINGS, audit, claimSlot, loadCtx, requireAdmin, requireEditor, requireFeature, wsCol, wsDoc, type Ctx, type WorkspaceSettings } from './core';
 import { fb } from './firebase';
 import { slotLimit } from './plan';
+import { normalizePhone } from './slots';
 
 export interface ServiceDto { id: string; name: string; description: string | null; durationMin: number; priceMinor: number; active: boolean }
 export interface StaffDto { id: string; name: string; title: string | null; active: boolean; auto?: boolean }
@@ -168,6 +169,7 @@ export async function putSettings(b: Record<string, unknown>): Promise<{ setting
   if (b.notifyOwnerEmail !== undefined) s.notifyOwnerEmail = b.notifyOwnerEmail !== false;
   if (b.notifyOwnerWhatsApp !== undefined) s.notifyOwnerWhatsApp = Boolean(b.notifyOwnerWhatsApp);
   if (b.notifyWhatsAppPhone !== undefined) s.notifyWhatsAppPhone = String(b.notifyWhatsAppPhone ?? '').trim().slice(0, 32) || null;
+  if (s.notifyOwnerWhatsApp && !(s.notifyWhatsAppPhone && normalizePhone(s.notifyWhatsAppPhone))) throw new ApiError(400, 'Enter the WhatsApp number to alert, for example 0803 123 4567 or +44 7700 900123.');
   s.utcOffsetMinutes = 60; s.currency = 'USD';
 
   await updateDoc(wsDoc(c), { settings: s });

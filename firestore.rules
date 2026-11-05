@@ -297,6 +297,13 @@ service cloud.firestore {
       // Encrypted backup records (the files live in R2). Written only by the Worker.
       match /backups/{id} { allow read: if isAdmin(wid); allow write: if false; }
 
+      // What each person has already seen (for the new-booking badge): one tiny document per member, theirs alone.
+      match /seen/{uid} {
+        allow read: if isMember(wid) && request.auth.uid == uid;
+        allow create, update: if isMember(wid) && request.auth.uid == uid && noExtraKeys(['bookingsAt']) && request.resource.data.bookingsAt == request.time;
+        allow delete: if false;
+      }
+
       // Waitlist (Enterprise). Visitors join through the Worker only; the team can read entries and remove them.
       match /waitlist/{id} { allow read, delete: if isWorker(wid); allow create, update: if false; }
 
