@@ -3,7 +3,7 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ── Prevent horizontal overflow globally ── */
-html, body { max-width: 100%; overflow-x: hidden; }
+html, body { max-width: 100%; overflow-x: clip; }
 *, *::before, *::after { box-sizing: border-box; }
 
 /* ── Touch target hygiene ── */

@@ -10,6 +10,7 @@ import { DEMO_SLUG, demoBook, demoProfile, demoSlots } from './demo';
 interface PublicPage {
   wid: string; name: string; phone: string | null; address: string | null; openMinutes: number; closeMinutes: number; slotMinutes: number;
   daysOpen: number[]; leadMinutes: number; maxDaysAhead: number; bookingCap: number; bookingEnabled: boolean; depositEnabled: boolean; depositMinor: number; exchangeRate: number; riskDeposit: boolean; waitlist: boolean;
+  currency?: string;
 }
 const cache = new Map<string, { at: number; page: PublicPage }>();
 
@@ -29,6 +30,7 @@ async function page(slug: string): Promise<PublicPage> {
     exchangeRate: Number(d.exchangeRate) > 0 ? Number(d.exchangeRate) : getCachedNgnRate(),
     riskDeposit: d.riskDeposit === true, waitlist: d.waitlist === true,
     depositEnabled: d.depositEnabled === true && Number(d.depositMinor) > 0, depositMinor: d.depositEnabled === true ? Math.max(0, Number(d.depositMinor) || 0) : 0,
+    currency: (d.currency as string) || 'USD',
   };
   cache.set(slug, { at: Date.now(), page: p });
   return p;
@@ -52,7 +54,7 @@ export async function profile(slug: string): Promise<unknown> {
   const p = await page(slug);
   let cat; try { cat = await catalog(p.wid); } catch (e) { throw toApiError(e); }
   return {
-    business: { slug, name: p.name, type: 'business', phone: p.phone, address: p.address }, currency: 'USD', exchangeRate: p.exchangeRate, deposit: { enabled: p.depositEnabled, amountMinor: p.depositMinor }, waitlist: p.waitlist,
+    business: { slug, name: p.name, type: 'business', phone: p.phone, address: p.address, currency: p.currency || 'USD' }, currency: p.currency || 'USD', exchangeRate: p.exchangeRate, deposit: { enabled: p.depositEnabled, amountMinor: p.depositMinor }, waitlist: p.waitlist,
     hours: { openMinutes: p.openMinutes, closeMinutes: p.closeMinutes, daysOpen: p.daysOpen, utcOffsetMinutes: 60, maxDaysAhead: p.maxDaysAhead },
     paystackPublicKey: null, services: cat.services, staff: cat.staff,
   };

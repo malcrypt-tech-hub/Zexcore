@@ -164,20 +164,27 @@ export async function putSettings(b: Record<string, unknown>): Promise<{ setting
     if (!Number.isFinite(r) || r < 100 || r > 100_000) throw new ApiError(400, 'Enter the naira value of $1, between 100 and 100,000.');
     s.exchangeRate = Math.round(r * 100) / 100;
   }
+  if (b.currency !== undefined) {
+    const cur = String(b.currency).trim().toUpperCase();
+    if (['USD', 'NGN', 'GBP', 'EUR', 'GHS', 'KES', 'ZAR'].includes(cur)) {
+      s.currency = cur;
+    }
+  }
   if (b.logoUrl !== undefined) s.logoUrl = b.logoUrl ? String(b.logoUrl) : null;
   if (b.onboarded !== undefined) s.onboarded = Boolean(b.onboarded);
   if (b.notifyOwnerEmail !== undefined) s.notifyOwnerEmail = b.notifyOwnerEmail !== false;
   if (b.notifyOwnerWhatsApp !== undefined) s.notifyOwnerWhatsApp = Boolean(b.notifyOwnerWhatsApp);
   if (b.notifyWhatsAppPhone !== undefined) s.notifyWhatsAppPhone = String(b.notifyWhatsAppPhone ?? '').trim().slice(0, 32) || null;
   if (s.notifyOwnerWhatsApp && !(s.notifyWhatsAppPhone && normalizePhone(s.notifyWhatsAppPhone))) throw new ApiError(400, 'Enter the WhatsApp number to alert, for example 0803 123 4567 or +44 7700 900123.');
-  s.utcOffsetMinutes = 60; s.currency = 'USD';
+  s.utcOffsetMinutes = 60;
+  s.currency = s.currency || 'USD';
 
   await updateDoc(wsDoc(c), { settings: s });
   await updateDoc(doc(fb().db, 'slugs', c.slug), {
     name: s.publicName || c.wsName, openMinutes: s.openMinutes, closeMinutes: s.closeMinutes, slotMinutes: s.slotMinutes,
     closedWeekdays: [0, 1, 2, 3, 4, 5, 6].filter((d) => !s.daysOpen.includes(d)), phone: s.phone, address: s.address,
     leadMinutes: s.leadMinutes, maxDaysAhead: s.maxDaysAhead, bookingCap: slotLimit(c.tier, 'bookingsPerMonth'),
-    depositEnabled: s.depositEnabled, depositMinor: s.depositMinor, exchangeRate: s.exchangeRate, currency: 'USD', riskDeposit: s.riskDepositEnabled === true, waitlist: s.waitlistEnabled === true,
+    depositEnabled: s.depositEnabled, depositMinor: s.depositMinor, exchangeRate: s.exchangeRate, currency: s.currency || 'USD', riskDeposit: s.riskDepositEnabled === true, waitlist: s.waitlistEnabled === true,
   });
   void audit(c, 'settings.update', 'workspace', c.wid);
   await loadCtx(true);
