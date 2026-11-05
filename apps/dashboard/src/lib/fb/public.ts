@@ -96,7 +96,7 @@ export async function book(slug: string, b: Record<string, unknown>): Promise<un
     const name = String(b.customerName ?? '').trim();
     const phone = String(b.customerPhone ?? '').trim();
     if (name.length < 2 || name.length > 120) throw new ApiError(400, 'Please enter your full name.');
-    if (!/^\\+?[0-9 ()-]{8,20}$/.test(phone)) throw new ApiError(400, 'Enter a valid phone number.');
+    if (!/^\+?[0-9 ()-]{8,20}$/.test(phone)) throw new ApiError(400, 'Enter a valid phone number.');
     const ref = doc(collection(fb().db, 'workspaces', p.wid, 'enquiries'));
     await setDoc(ref, {
       serviceId: service.id, serviceName: service.name, customerName: name, customerPhone: phone,

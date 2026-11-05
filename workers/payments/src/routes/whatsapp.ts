@@ -14,7 +14,7 @@ const keyBytes = (raw: string): Uint8Array => {
   return bytes;
 };
 async function aesKey(raw: string): Promise<CryptoKey> {
-  return crypto.subtle.importKey('raw', keyBytes(raw), 'AES-GCM', false, ['encrypt', 'decrypt']);
+  return crypto.subtle.importKey('raw', keyBytes(raw) as BufferSource, 'AES-GCM', false, ['encrypt', 'decrypt']);
 }
 async function encrypt(raw: string, secret: string): Promise<{ ciphertext: string; iv: string }> {
   const iv = crypto.getRandomValues(new Uint8Array(12));

@@ -163,7 +163,7 @@ export async function scheduledWhatsApp(env: Env, d: Deps): Promise<number> {
           ? [{ type: 'body', parameters: (job.data.bodyParameters as string[]).map(text => ({ type: 'text', text })) }] : [];
         const response = await d.fetch(`https://graph.facebook.com/v21.0/${connection.phoneNumberId}/messages`, {
           method: 'POST', headers: { authorization: `Bearer ${connection.token}`, 'content-type': 'application/json' },
-          body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: String(job.data.phone).replace(/^\\+/, ''),
+          body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: String(job.data.phone).replace(/^\+/, ''),
             type: 'template', template: { name: job.data.templateName, language: { code: job.data.language }, ...(components.length ? { components } : {}) } }),
           signal: AbortSignal.timeout(10_000),
         }).catch(() => null);
