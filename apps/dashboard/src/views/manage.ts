@@ -204,9 +204,40 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
         <div class="field ${s.notifyOwnerWhatsApp ? '' : 'hidden'}" id="nwf"><label for="nwp">Your WhatsApp number</label><input class="input" id="nwp" type="tel" placeholder="e.g. 08012345678" value="${s.notifyWhatsAppPhone ?? ''}" ${dis}><span class="hint" id="nwh">Include your country code if it is not Nigeria, for example +44 7700 900123. Booking emails also carry a link to reply to the customer on WhatsApp.</span></div>
       </section>
       <section class="card card-pad form-grid" id="payout"><h3>Where deposits are paid</h3><p class="muted small">Loading…</p></section>
-      <section class="card card-pad form-grid"><div class="row between"><div><h3>Upfront deposit</h3><p class="muted small">Customers pay this by card through Paystack to secure their slot. The money goes straight to your bank account below.</p></div><label class="switch"><input type="checkbox" id="dep" ${s.depositEnabled ? 'checked' : ''} ${dis} aria-label="Require deposit"><span></span></label></div>
-        <div class="field ${s.depositEnabled ? '' : 'hidden'}" id="depf"><label for="depn">Deposit per booking ($)</label><input class="input" id="depn" type="number" min="0" value="${s.depositMinor / 100}" ${dis}></div>
-        <div class="field"><label for="fx">Exchange rate (₦ per $1)</label><input class="input" id="fx" type="number" min="100" max="100000" step="0.01" value="${s.exchangeRate || ''}" ${dis}><p class="muted small">Prices and deposits are in dollars. Customers pay deposits in naira at this rate. It applies only to payments for your own business, never to ZexCore's plan prices.</p></div></section>
+      <section class="card card-pad form-grid">
+        <div class="row between">
+          <div>
+            <h3>Upfront deposit & currency</h3>
+            <p class="muted small">Configure your business currency and slot deposits. Customer card payments settle directly to your bank account below.</p>
+          </div>
+          <label class="switch"><input type="checkbox" id="dep" ${s.depositEnabled ? 'checked' : ''} ${dis} aria-label="Require deposit"><span></span></label>
+        </div>
+        <div class="form-grid two">
+          <div class="field">
+            <label for="currency">Workspace currency</label>
+            <select class="select" id="currency" ${dis}>
+              <option value="USD" ${(s.currency || 'USD') === 'USD' ? 'selected' : ''}>USD ($) — US Dollar</option>
+              <option value="NGN" ${s.currency === 'NGN' ? 'selected' : ''}>NGN (₦) — Nigerian Naira</option>
+              <option value="GBP" ${s.currency === 'GBP' ? 'selected' : ''}>GBP (£) — British Pound</option>
+              <option value="EUR" ${s.currency === 'EUR' ? 'selected' : ''}>EUR (€) — Euro</option>
+              <option value="GHS" ${s.currency === 'GHS' ? 'selected' : ''}>GHS (GH₵) — Ghanaian Cedi</option>
+              <option value="KES" ${s.currency === 'KES' ? 'selected' : ''}>KES (KSh) — Kenyan Shilling</option>
+              <option value="ZAR" ${s.currency === 'ZAR' ? 'selected' : ''}>ZAR (R) — South African Rand</option>
+            </select>
+            <p class="muted small">Your services and upfront deposits are priced in this currency. Clients can also pick their local currency on your booking page.</p>
+          </div>
+          <div class="field ${s.depositEnabled ? '' : 'hidden'}" id="depf">
+            <label for="depn">Deposit per booking</label>
+            <input class="input" id="depn" type="number" min="0" value="${s.depositMinor / 100}" ${dis}>
+            <p class="muted small">Upfront amount required from customers to confirm their booking slot.</p>
+          </div>
+        </div>
+        <div class="field">
+          <label for="fx">Paystack settlement exchange rate (₦ per $1 USD)</label>
+          <input class="input" id="fx" type="number" min="100" max="100000" step="0.01" value="${s.exchangeRate || ''}" ${dis}>
+          <p class="muted small">Payments are processed securely via Paystack in naira to your local bank account. Used for currency conversions during customer checkout.</p>
+        </div>
+      </section>
       ${hasFeatureAccess(me.tenant.tier, 'insights') ? html`<section class="card card-pad form-grid"><div class="row between"><div><h3>Weekly summary email</h3><p class="muted small">Every Monday morning we email the owner last week's bookings, revenue at list price, no-show rate and busiest times. Switch it off here at any time.</p></div><label class="switch"><input type="checkbox" id="wd" ${s.weeklyDigest === false ? '' : 'checked'} ${dis} aria-label="Weekly summary email"><span></span></label></div></section>` : ''}
       ${hasFeatureAccess(me.tenant.tier, 'waitlist') ? html`<section class="card card-pad form-grid"><div class="row between"><div><h3>Revenue protection: waitlist</h3><p class="muted small">When a day is full, your booking page offers a waitlist. If a booking is cancelled, we email the people waiting for that service and day, and the first to book gets the time. See who is waiting under More, Revenue protection.</p></div><label class="switch"><input type="checkbox" id="wl" ${s.waitlistEnabled ? 'checked' : ''} ${dis} aria-label="Offer a waitlist"><span></span></label></div></section>` : ''}
       ${hasFeatureAccess(me.tenant.tier, 'risk') ? html`<section class="card card-pad form-grid"><div class="row between"><div><h3>No-show protection</h3><p class="muted small">Every booking gets a no-show risk score from that customer's history with you. When a booking scores as risky, the customer is asked for a deposit even if you do not ask everyone. Needs your payout account above.</p></div><label class="switch"><input type="checkbox" id="rd" ${s.riskDepositEnabled ? 'checked' : ''} ${dis} aria-label="Ask risky customers for a deposit"><span></span></label></div>
@@ -318,6 +349,7 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
           publicName: ($('#pn') as HTMLInputElement).value.trim(), phone: ($('#ph') as HTMLInputElement).value.trim(), address: ($('#ad') as HTMLInputElement).value.trim(),
           openMinutes: timeToMinutes(($('#op') as HTMLInputElement).value), closeMinutes: timeToMinutes(($('#cl') as HTMLInputElement).value), daysOpen: days,
           slotMinutes: Number(($('#sl') as HTMLSelectElement).value), leadMinutes: Math.round(Number(($('#ld') as HTMLInputElement).value) * 60),
+          currency: ($('#currency', view) as HTMLSelectElement)?.value || s.currency || 'USD',
           exchangeRate: Number(($('#fx') as HTMLInputElement).value) || s.exchangeRate || 1350,
           depositEnabled: depChecked,
           depositMinor: depMinor,
@@ -351,11 +383,32 @@ async function paintPayout(view: HTMLElement, depositsOn: boolean): Promise<void
       <div id="po-err" class="alert alert-error hidden" role="alert"></div>
       <div class="form-grid two">
         <div class="field">
-          <label for="po-bank-input">Bank</label>
-          <input class="input" id="po-bank-input" list="po-banks-list" placeholder="Type or choose your bank…" autocomplete="off">
+          <label for="po-bank-input">Bank <span class="muted small" style="font-weight:normal">(type to search or pick)</span></label>
+          <div style="position:relative;display:flex;align-items:center">
+            <input
+              class="input"
+              id="po-bank-input"
+              list="po-banks-list"
+              placeholder="Type to search (e.g. Access, GTB, Kuda, Zenith)…"
+              autocomplete="off"
+              style="color:#18191b !important;-webkit-text-fill-color:#18191b !important;background-color:#ffffff !important;caret-color:#e50920 !important;font-size:0.9375rem;padding-right:28px"
+            >
+            <span style="position:absolute;right:10px;pointer-events:none;color:#8e9bae;font-size:11px">▼</span>
+          </div>
           <datalist id="po-banks-list"></datalist>
         </div>
-        <div class="field"><label for="po-acct">Account number</label><input class="input" id="po-acct" inputmode="numeric" maxlength="10" placeholder="10 digits" autocomplete="off"></div>
+        <div class="field">
+          <label for="po-acct">Account number</label>
+          <input
+            class="input"
+            id="po-acct"
+            inputmode="numeric"
+            maxlength="10"
+            placeholder="10 digits"
+            autocomplete="off"
+            style="color:#18191b !important;-webkit-text-fill-color:#18191b !important;background-color:#ffffff !important;caret-color:#e50920 !important;font-size:0.9375rem"
+          >
+        </div>
       </div>
       <div class="row" style="gap:8px"><button class="btn btn-primary" type="button" id="po-save">Verify and save</button>${p.setUp ? html`<button class="btn btn-ghost" type="button" id="po-cancel">Cancel</button>` : ''}</div>`);
     const bankInput = $('#po-bank-input', box) as HTMLInputElement;
@@ -363,14 +416,37 @@ async function paintPayout(view: HTMLElement, depositsOn: boolean): Promise<void
     let bankList: { name: string; code: string }[] = [];
     void api<{ banks: { name: string; code: string }[] }>('/api/payout/banks').then((r) => {
       bankList = r.banks;
-      datalist.innerHTML = r.banks.map((b) => `<option value="${b.name.replace(/[<>&"]/g, '')}" data-code="${b.code}"></option>`).join('');
+      datalist.innerHTML = r.banks.map((b) => `<option value="${b.name.replace(/[<>&"]/g, '')}">${b.name.replace(/[<>&"]/g, '')}</option>`).join('');
     }).catch((e) => { const er = $('#po-err', box)!; er.textContent = e instanceof ApiError ? e.message : 'Could not load banks.'; er.classList.remove('hidden'); });
     $('#po-cancel', box)?.addEventListener('click', () => show(false));
     $('#po-save', box)?.addEventListener('click', (ev) => {
       void busy(ev.currentTarget as HTMLButtonElement, async () => {
         const er = $('#po-err', box)!; er.classList.add('hidden');
-        const typedName = bankInput.value.trim().toLowerCase();
-        const found = bankList.find((b) => b.name.toLowerCase() === typedName || b.name.toLowerCase().includes(typedName));
+        const typed = bankInput.value.trim().toLowerCase();
+        const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const normTyped = norm(typed);
+
+        const acronyms: Record<string, string[]> = {
+          gtb: ['guaranty trust', 'gtbank', 'gt bank', 'guaranty'],
+          gtbank: ['guaranty trust', 'gtbank', 'gt bank', 'guaranty'],
+          fbn: ['first bank'],
+          firstbank: ['first bank'],
+          uba: ['united bank for africa'],
+          ibtc: ['stanbic'],
+          stanbic: ['stanbic ibtc'],
+          kuda: ['kuda'],
+          opay: ['opay', 'paycom'],
+          palmpay: ['palmpay'],
+        };
+        const aliases = acronyms[normTyped] ?? [typed];
+
+        const found = bankList.find((b) => {
+          const bLower = b.name.toLowerCase();
+          const bNorm = norm(b.name);
+          if (bLower === typed || bNorm === normTyped) return true;
+          return aliases.some((a) => bLower.includes(a.toLowerCase()) || bNorm.includes(norm(a)));
+        }) ?? bankList.find((b) => b.name.toLowerCase().includes(typed));
+
         if (!found) {
           er.textContent = 'Please choose a valid bank from the suggestions.';
           er.classList.remove('hidden');

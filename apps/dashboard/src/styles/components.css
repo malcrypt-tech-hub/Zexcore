@@ -27,12 +27,21 @@
 .field > label, .label { font-size: 0.8125rem; font-weight: 600; color: var(--ink); }
 .hint { font-size: 0.75rem; color: var(--slate); }
 .err { font-size: 0.8125rem; color: var(--primary); }
-.input, .select, .textarea {
-  width: 100%; height: 42px; padding: 0 12px; background: #fff; color: var(--ink); font: inherit; font-size: 0.9375rem;
+.input, .select, .textarea, input.input, select.select, textarea.textarea {
+  width: 100%; height: 42px; padding: 0 12px;
+  background-color: #ffffff !important;
+  color: var(--ink, #18191b) !important;
+  -webkit-text-fill-color: var(--ink, #18191b) !important;
+  caret-color: var(--primary, #e50920) !important;
+  color-scheme: light !important;
+  font: inherit; font-size: 0.9375rem;
   border: 1px solid var(--border); border-radius: var(--r); transition: border-color .15s, box-shadow .15s;
 }
 .textarea { height: auto; min-height: 88px; padding: 10px 12px; resize: vertical; line-height: 1.5; }
-.input::placeholder, .textarea::placeholder { color: var(--muted); }
+.input::placeholder, .textarea::placeholder, input::placeholder, textarea::placeholder {
+  color: var(--muted, #8e9bae) !important;
+  -webkit-text-fill-color: var(--muted, #8e9bae) !important;
+}
 .input:focus, .select:focus, .textarea:focus { outline: none; border-color: var(--primary); box-shadow: var(--halo); }
 .input-icon { position: relative; }
 .input-icon > .ico { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }

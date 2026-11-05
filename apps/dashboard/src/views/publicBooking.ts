@@ -64,7 +64,7 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
   // ── Booking flow ──
   let rates = getCachedRates();
   void fetchLiveRates().then((r) => { rates = r; draw(); }).catch(() => undefined);
-  let displayCurrency: SupportedCurrency = 'USD';
+  let displayCurrency: SupportedCurrency = (['USD', 'NGN', 'GBP', 'EUR', 'GHS', 'KES', 'ZAR'].includes(p.currency) ? (p.currency as SupportedCurrency) : 'USD');
   try {
     const saved = localStorage.getItem('zx.display_currency') as SupportedCurrency;
     if (saved && ['USD', 'NGN', 'GBP', 'EUR', 'GHS', 'KES', 'ZAR'].includes(saved)) {
