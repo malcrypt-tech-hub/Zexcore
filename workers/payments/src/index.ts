@@ -23,6 +23,7 @@ import { insights, scheduledDigests } from './routes/insights';
 import { accept, invite, inviteInfo, remove, revoke, setRole } from './routes/team';
 import { whatsappConnect, whatsappDisconnect, whatsappStatus } from './routes/whatsapp';
 import { manageWhatsAppSequences, setWhatsAppConsent, scheduledWhatsApp } from './routes/whatsappAutomation';
+import { whatsappWebhook, whatsappWebhookVerify } from './routes/whatsappWebhook';
 
 export type { Env, Deps } from './env';
 export { scheduledBackups } from './routes/backups';
@@ -38,6 +39,8 @@ import { getLiveRates } from './rates';
 
 type Handler = (c: Ctx) => Promise<Response>;
 const ROUTES: Record<string, Handler> = {
+  'GET /api/whatsapp/webhook': whatsappWebhookVerify,
+  'POST /api/whatsapp/webhook': whatsappWebhook,
   'GET /api/health': async (c) => json({ status: 'ok', whatsapp: whatsappConfigured(c.env) }, 200, c.headers),
   'GET /api/rates': async (c) => {
     const t = await getLiveRates(c.env, c.d);
