@@ -92,8 +92,8 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
     if (dt && days.includes(dt)) st.date = dt;
   }
   const svc = () => p.services.find((s) => s.id === st.serviceId);
-  const needDeposit = p.deposit.enabled;
-  const dep = () => { const s = svc(); const price = s?.priceMinor ?? 0; return needDeposit ? (price > 0 ? Math.min(p.deposit.amountMinor, price) : p.deposit.amountMinor) : 0; };
+  const needDeposit = () => p.deposit.enabled && svc()?.bookingMode !== 'enquiry';
+  const dep = () => { const s = svc(); const price = s?.priceMinor ?? 0; return needDeposit() ? (price > 0 ? Math.min(p.deposit.amountMinor, price) : p.deposit.amountMinor) : 0; };
 
   const priceText = (usdMinor: number): string => {
     if (!usdMinor) return 'Free';
@@ -130,7 +130,7 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
         <div class="card card-pad form-grid">
           <div class="field"><label for="cn">Full name</label><input class="input" id="cn" autocomplete="name" required maxlength="160"></div>
           <div class="field"><label for="cp">WhatsApp / mobile number</label><input class="input" id="cp" type="tel" autocomplete="tel" required placeholder="0803 123 4567"></div>
-          <div class="field"><label for="ce">Email ${needDeposit ? '(for your receipt)' : html`<span class="faint">(optional)</span>`}</label><input class="input" id="ce" type="email" autocomplete="email" ${needDeposit ? 'required' : ''}></div>
+          <div class="field"><label for="ce">Email ${needDeposit() ? '(for your receipt)' : html`<span class="faint">(optional)</span>`}</label><input class="input" id="ce" type="email" autocomplete="email" ${needDeposit ? 'required' : ''}></div>
         </div>
         ${(svc()?.intakeFields ?? []).length ? html`<div class="card card-pad form-grid" style="margin-top:12px"><h3>Tell us more</h3>${(svc()?.intakeFields ?? []).map((f) => html`<div class="field"><label for="intake-${f.key}">${f.label}${f.required ? ' *' : ''}</label>${f.type === 'textarea' ? html`<textarea class="input" id="intake-${f.key}" rows="3" maxlength="2000" placeholder="${f.placeholder ?? ''}"></textarea>` : f.type === 'select' ? html`<select class="input" id="intake-${f.key}"><option value="">Choose…</option>${(f.options ?? []).map((x) => html`<option value="${x}">${x}</option>`)}</select>` : html`<input class="input" id="intake-${f.key}" type="${f.type === 'number' ? 'number' : f.type === 'url' ? 'url' : 'text'}" maxlength="2000" placeholder="${f.placeholder ?? ''}">`}</div>`)}</div>` : ''}
         ${svc()?.consultationEnabled ? html`<label class="check" style="margin-top:12px"><input type="checkbox" id="consultation"> I would also like a consultation</label>` : ''}
@@ -138,7 +138,7 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
       ${needDeposit ? html`<section class="pub-section"><h2>${p.staff.length ? 5 : 4}. Secure your slot</h2><div class="notice">${ic('info')}<div><b>${priceText(dep())} refundable deposit</b> is required to hold your appointment. You will pay securely by card.${svc() && svc()!.priceMinor > dep() ? html` The balance of <b>${priceText(svc()!.priceMinor - dep())}</b> is paid when you arrive.` : ''}<div class="muted small" style="margin-top:6px;font-size:0.75rem">Charged as ${money(depositNgn(), 'NGN')} via Paystack at checkout.</div></div></div></section>` : ''}
       <div id="berr" class="alert alert-error hidden" style="margin-top:16px" role="alert"></div>
       </form>
-      <div class="pay-bar"><div><button class="btn btn-primary btn-lg btn-block" id="go">${needDeposit ? html`${ic('lock', 'ico-sm')} Pay ${money(depositNgn(), 'NGN')} deposit` : 'Request booking'}</button>
+      <div class="pay-bar"><div><button class="btn btn-primary btn-lg btn-block" id="go">${needDeposit ? html`${ic('lock', 'ico-sm')} Pay ${money(depositNgn(), 'NGN')} deposit` : (svc()?.bookingMode === 'enquiry' ? 'Send enquiry' : 'Request booking')}</button>
         ${needDeposit ? html`<p class="muted small" style="text-align:center;margin-top:6px">Secured by Paystack (${priceText(dep())})</p>` : ''}</div></div></div>`);
 
     $$('[data-cur]').forEach((b) => b.addEventListener('click', () => {
@@ -191,13 +191,13 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
     if (svc()?.bookingMode !== 'enquiry' && !st.slot) return fail('Please pick a time slot.');
     if (name.length < 2) return fail('Please enter your full name.');
     if (!phone) return fail('Please enter your phone number.');
-    if (needDeposit && !/^\S+@\S+\.\S+$/.test(email)) return fail('Please enter a valid email for your receipt.');
+    if (needDeposit() && !/^\S+@\S+\.\S+$/.test(email)) return fail('Please enter a valid email for your receipt.');
     await busy(btn, async () => {
       try {
         const intakeAnswers: Record<string,string> = {}; for (const f of svc()?.intakeFields ?? []) { const el = document.getElementById('intake-' + f.key) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null; const value = el?.value.trim() ?? ''; if (f.required && !value) return fail('Please complete: ' + f.label); if (value) intakeAnswers[f.key] = value; }
         const r = await api<{ booking?: { ref: string; status: string; startsAt: string; serviceName: string }; enquiry?: { ref: string; status: string; serviceName: string }; payment: { reference: string; amountMinor: number; authorizationUrl: string } | null }>(`/api/public/${slug}/bookings`, { method: 'POST', auth: false, body: { serviceId: st.serviceId, staffId: st.staffId || null, customerName: name, customerPhone: phone, customerEmail: email || null, ...(svc()?.bookingMode === 'enquiry' ? {} : { startsAt: st.slot }), intakeAnswers, consultationRequested: (document.getElementById('consultation') as HTMLInputElement | null)?.checked === true } });
         if (r.enquiry) { showEnquiryReceipt(r.enquiry.ref, r.enquiry.serviceName); return; }
-        if (r.booking && !r.payment) { showReceipt(r.booking.ref, r.booking.serviceName, r.booking.startsAt, r.booking.status, false); if (needDeposit) toast('Your request is in. The business will arrange your deposit with you.', 'info'); return; }
+        if (r.booking && !r.payment) { showReceipt(r.booking.ref, r.booking.serviceName, r.booking.startsAt, r.booking.status, false); if (needDeposit()) toast('Your request is in. The business will arrange your deposit with you.', 'info'); return; }
         if (r.payment) location.assign(r.payment.authorizationUrl);
       } catch (e) { fail(e instanceof ApiError ? e.message : 'Could not complete your booking'); if (e instanceof ApiError && e.status === 409) void loadSlots(); }
     });
