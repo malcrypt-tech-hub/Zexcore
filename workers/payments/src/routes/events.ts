@@ -85,7 +85,7 @@ export async function publicBooked(c: Ctx): Promise<Response> {
       greeting: `Hello ${firstName(String(bk.customerName ?? ''), customerEmail)},`,
       paragraphs: ['Thank you for booking with this business. Your request has been received and is awaiting confirmation. The business will contact you if any changes are needed.'],
       details: [['Business', String(ws?.data.name ?? 'The business')], ['Service', String(bk.service || 'Service')], ['Requested time', localWhen(String(bk.startsAt), off)], ['Reference', String(bk.ref)]],
-      button: { text: 'View booking page', url: `${c.env.APP_URL.replace(/\\/$/, '')}/${slug}` },
+      button: { text: 'View booking page', url: `${c.env.APP_URL.replace(/\/$/, '')}/${slug}` },
       note: 'This is an acknowledgement that your request was received, not confirmation that the appointment has been accepted.',
     });
   }
