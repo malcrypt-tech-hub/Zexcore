@@ -1,5 +1,5 @@
 import { paymentsUrl } from './firebase';
-import { doc, getDoc, getDocs, query, orderBy, collection } from 'firebase/firestore';
+import { doc, getDoc, getDocs, query, orderBy, collection, setDoc, serverTimestamp } from 'firebase/firestore';
 import { fb } from './firebase';
 import { ApiError, DEFAULT_SETTINGS, toApiError } from './core';
 import { availability, createBooking, refOf } from './bookings';
@@ -78,24 +78,40 @@ export async function book(slug: string, b: Record<string, unknown>): Promise<un
   const service = cat.services.find((s) => s.id === b.serviceId);
   if (!service) throw new ApiError(400, 'Choose a service.');
   const candidates = b.staffId ? cat.staff.filter((s) => s.id === b.staffId).map((s) => s.id) : cat.staff.map((s) => s.id);
+  const cleanAnswers = (() => {
+    const raw = b.intakeAnswers && typeof b.intakeAnswers === 'object' ? b.intakeAnswers as Record<string, unknown> : {};
+    const fields = Array.isArray(service.intakeFields) ? service.intakeFields : [];
+    const clean: Record<string,string> = {};
+    for (const f of fields) {
+      const value = String(raw[f.key] ?? '').trim().slice(0, 2000);
+      if (f.required && !value) throw new ApiError(400, `Please complete: ${f.label}`);
+      if (value && f.type === 'select' && !f.options?.includes(value)) throw new ApiError(400, `Choose a valid option for ${f.label}.`);
+      if (value && f.type === 'url' && !/^https?:\\/\\//i.test(value)) throw new ApiError(400, `Enter a valid URL for ${f.label}.`);
+      if (value && f.type === 'number' && !Number.isFinite(Number(value))) throw new ApiError(400, `Enter a number for ${f.label}.`);
+      if (value) clean[f.key] = value;
+    }
+    return clean;
+  })();
+  if (service.bookingMode === 'enquiry') {
+    const name = String(b.customerName ?? '').trim();
+    const phone = String(b.customerPhone ?? '').trim();
+    if (name.length < 2 || name.length > 120) throw new ApiError(400, 'Please enter your full name.');
+    if (!/^\\+?[0-9 ()-]{8,20}$/.test(phone)) throw new ApiError(400, 'Enter a valid phone number.');
+    const ref = doc(collection(fb().db, 'workspaces', p.wid, 'enquiries'));
+    await setDoc(ref, {
+      serviceId: service.id, serviceName: service.name, customerName: name, customerPhone: phone,
+      customerEmail: b.customerEmail ? String(b.customerEmail).trim().slice(0, 160) : null,
+      notes: b.notes ? String(b.notes).trim().slice(0, 1000) : null, intakeAnswers: cleanAnswers,
+      consultationRequested: service.consultationEnabled === true && b.consultationRequested === true,
+      status: 'new', source: 'public', createdAt: serverTimestamp(),
+    }).catch((e) => { throw toApiError(e); });
+    return { enquiry: { ref: ref.id, serviceName: service.name, status: 'new' }, payment: null };
+  }
   const made = await createBooking({
     wid: p.wid, source: 'public', service, staffCandidates: candidates, customerName: String(b.customerName ?? ''), customerPhone: String(b.customerPhone ?? ''),
     customerEmail: b.customerEmail ? String(b.customerEmail).slice(0, 160) : null,
     notes: b.notes ? String(b.notes).slice(0, 500) : null,
-    intakeAnswers: (() => {
-      const raw = b.intakeAnswers && typeof b.intakeAnswers === 'object' ? b.intakeAnswers as Record<string, unknown> : {};
-      const fields = Array.isArray(service.intakeFields) ? service.intakeFields : [];
-      const clean: Record<string,string> = {};
-      for (const f of fields) {
-        const value = String(raw[f.key] ?? '').trim().slice(0, 2000);
-        if (f.required && !value) throw new ApiError(400, `Please complete: ${f.label}`);
-        if (value && f.type === 'select' && !f.options?.includes(value)) throw new ApiError(400, `Choose a valid option for ${f.label}.`);
-        if (value && f.type === 'url' && !/^https?:\/\//i.test(value)) throw new ApiError(400, `Enter a valid URL for ${f.label}.`);
-        if (value && f.type === 'number' && !Number.isFinite(Number(value))) throw new ApiError(400, `Enter a number for ${f.label}.`);
-        if (value) clean[f.key] = value;
-      }
-      return clean;
-    })(),
+    intakeAnswers: cleanAnswers,
     consultationRequested: service.consultationEnabled === true && b.consultationRequested === true,
     startMs: new Date(String(b.startsAt)).getTime(),
     status: 'pending', maxTries: 24,
