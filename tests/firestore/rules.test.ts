@@ -257,6 +257,12 @@ describe('team roles', () => {
     await assertFails(setDoc(doc(ad, 'workspaces', W, 'apiKeys', 'k1'), { name: 'x' }));
     await assertFails(getDocs(collection(asRole('editor1'), 'workspaces', W, 'apiKeys')));
     await assertFails(getDocs(collection(asRole('viewer1'), 'workspaces', W, 'apiKeys')));
+    // The "seen" marker is each member's own: they can set it to the current time, nobody can read or write someone else's
+    await assertSucceeds(setDoc(doc(ad, 'workspaces', W, 'seen', 'admin1'), { bookingsAt: serverTimestamp() }));
+    await assertSucceeds(getDoc(doc(ad, 'workspaces', W, 'seen', 'admin1')));
+    await assertFails(setDoc(doc(ad, 'workspaces', W, 'seen', 'admin1'), { bookingsAt: Timestamp.fromDate(new Date('2020-01-01')) }));
+    await assertFails(setDoc(doc(ad, 'workspaces', W, 'seen', 'owner1'), { bookingsAt: serverTimestamp() }));
+    await assertFails(getDoc(doc(other(), 'workspaces', W, 'seen', 'admin1')));
     // Waitlist: the team can read and remove entries, nobody creates or edits them from a browser, viewers and strangers see nothing
     await assertSucceeds(getDocs(collection(ad, 'workspaces', W, 'waitlist')));
     await assertSucceeds(getDocs(collection(asRole('editor1'), 'workspaces', W, 'waitlist')));

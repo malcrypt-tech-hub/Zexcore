@@ -9,7 +9,7 @@ import './styles/mobile-app.css';
 import { route, setNotFound, setGuard, setAfter, startRouter, navigate } from './router';
 import { setUnauthorizedHandler } from './lib/api';
 import { loadMe, isSignedIn, current } from './lib/session';
-import { appLayout, leaveApp } from './layouts';
+import { appLayout, leaveApp, syncTitle } from './layouts';
 import { html, mount } from './lib/html';
 import { errorState } from './lib/ui';
 
@@ -63,7 +63,7 @@ function setMeta(path: string): void {
     } else robots?.remove();
   }
 }
-setAfter((ctx) => { if (TITLES[ctx.path]) document.title = `${TITLES[ctx.path]} — ZexCore`; setMeta(ctx.path); });
+setAfter((ctx) => { if (TITLES[ctx.path]) { document.title = `${TITLES[ctx.path]} — ZexCore`; syncTitle(); } setMeta(ctx.path); });
 
 const loadLegacy = () => import('./legacySite').then((m) => m.renderLegacySite);
 const legacyRoute = (path: string, page: string) =>

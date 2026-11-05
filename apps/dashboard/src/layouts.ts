@@ -2,7 +2,7 @@ import { html, mount, $, $$, type Raw } from './lib/html';
 import { ic, type IconName } from './lib/icons';
 import { current, logout } from './lib/session';
 import { api } from './lib/api';
-import { toast } from './lib/ui';
+import { toast, openModal } from './lib/ui';
 import { initials } from './lib/format';
 import { navigate } from './router';
 import { clearStore, loadSettings } from './lib/store';
@@ -49,36 +49,46 @@ export function brand(size = '', logoUrl?: string | null): Raw {
   return html`<span class="brand ${size}"><img class="brand-lockup" src="/zexcore-logo-light.png" alt="ZexCore" height="${h}" style="height:${h}px;width:auto;display:block"></span>`;
 }
 
-let unread = 0;
-let pending = 0;
-let prevPending = -1;
+let unread = 0;       // unread customer messages
+let fresh = 0;        // new bookings since this person last opened Bookings
+let prevFresh = -1;
 let pollInterval: ReturnType<typeof setInterval> | null = null;
+
+const onBookings = (): boolean => location.pathname === '/app/bookings' || location.pathname.startsWith('/app/bookings/');
+const baseTitle = (): string => document.title.replace(/^\(\d+\) /, '');
+
+/** Re-applies the "(3)" in the tab title after a page sets its own title. */
+export function syncTitle(): void { const t = unread + fresh; document.title = t > 0 ? `(${t}) ${baseTitle()}` : baseTitle(); }
+
+function paint(): void {
+  const total = unread + fresh;
+  $$('[data-unread]').forEach((el) => { el.textContent = unread > 99 ? '99+' : String(unread); el.classList.toggle('hidden', unread === 0); });
+  $$('[data-booking-badge]').forEach((el) => { el.textContent = fresh > 99 ? '99+' : String(fresh); el.classList.toggle('hidden', fresh === 0); });
+  $$('[data-unread-pip]').forEach((el) => { el.textContent = total > 99 ? '99+' : String(total); el.classList.toggle('hidden', total === 0); });
+  syncTitle();
+}
+
+/** Opening Bookings is "looking": clear the count here and on the server so it stays cleared after a refresh. */
+export async function bookingsViewed(): Promise<void> {
+  fresh = 0; prevFresh = 0; paint();
+  await api('/api/notifications/seen', { method: 'POST' }).catch(() => undefined);
+}
 
 export async function refreshUnread(): Promise<void> {
   try {
-    const r = await api<{ counts: { waiting: number } }>('/api/bookings/conversations');
-    unread = r.counts.waiting;
-  } catch { unread = 0; }
-  try {
-    const rb = await api<{ attention: { pending: number } }>('/api/bookings/summary');
-    pending = rb.attention?.pending ?? 0;
-  } catch { pending = 0; }
-
-  // Show toast when new pending bookings arrive (not on the very first poll)
-  if (prevPending >= 0 && pending > prevPending) {
-    const diff = pending - prevPending;
-    toast(`${diff} new booking${diff > 1 ? 's' : ''} waiting`, 'info');
-  }
-  prevPending = pending;
-
-  $$('[data-unread]').forEach((el) => { el.textContent = String(unread); el.classList.toggle('hidden', unread === 0); });
-  $$('[data-booking-badge]').forEach((el) => { el.textContent = String(pending); el.classList.toggle('hidden', pending === 0); });
-  $$('[data-unread-pip]').forEach((el) => el.classList.toggle('hidden', unread === 0 && pending === 0));
+    const n = await api<{ bookings: number; messages: number }>('/api/notifications');
+    unread = n.messages; fresh = n.bookings;
+  } catch { return; }   // a failed check must not make the counts vanish or flicker
+  if (onBookings() && fresh > 0) { await bookingsViewed(); return; }   // already looking at them: like an open WhatsApp chat
+  if (prevFresh >= 0 && fresh > prevFresh) { const d = fresh - prevFresh; toast(`${d} new booking${d > 1 ? 's' : ''}`, 'info'); }
+  prevFresh = fresh;
+  paint();
 }
 
 export function startPolling(): void {
   if (pollInterval) return;
-  pollInterval = setInterval(() => { void refreshUnread(); }, 60_000);
+  pollInterval = setInterval(() => { if (!document.hidden) void refreshUnread(); }, 30_000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) void refreshUnread(); });
 }
 
 export function stopPolling(): void {
@@ -131,7 +141,7 @@ export async function appLayout(path: string, onNew: () => void): Promise<HTMLEl
               ${ic('globe', 'ico-sm')}<span>Back to website</span>
             </a>
             <button class="btn btn-primary btn-sm" data-new>${ic('plus', 'ico-sm')} New</button>
-            <a class="icon-circle" href="/app/messages" data-link aria-label="Messages">${ic('bell')}<span class="pip hidden" data-unread-pip></span></a>
+            <button class="icon-circle" data-bell aria-label="Notifications" aria-haspopup="dialog">${ic('bell')}<span class="pip hidden" data-unread-pip></span></button>
             <div class="menu-wrap">
               <button class="avatar-btn" data-menu aria-haspopup="true" aria-label="Account menu">${initials(me.user.name || me.tenant.name)}</button>
               <div class="menu hidden" data-menu-panel role="menu">
@@ -191,6 +201,7 @@ export async function appLayout(path: string, onNew: () => void): Promise<HTMLEl
     menu.addEventListener('click', (e) => { e.stopPropagation(); panel.classList.toggle('hidden'); });
     document.addEventListener('click', () => panel.classList.add('hidden'));
     $('[data-logout]')!.addEventListener('click', () => { logout(); clearStore(); navigate('/signin'); });
+    $('[data-bell]')!.addEventListener('click', () => openNotifications());
     void refreshUnread();
     startPolling();
     void import('./lib/reminders').then((m) => m.startReminders());
@@ -206,24 +217,13 @@ export async function appLayout(path: string, onNew: () => void): Promise<HTMLEl
   $$('[data-nav]').forEach((a) => { isActive(a.dataset.nav!, path) ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'); });
   const moreActive = !['/app', '/app/bookings', '/app/calendar', '/app/messages'].some((h) => isActive(h, path));
   $('.bottom-nav [data-nav="/app/more"]')?.[moreActive ? 'setAttribute' : 'removeAttribute']('aria-current', 'page');
-  // Clear badges when user navigates to the relevant section
-  if (isActive('/app/messages', path)) {
-    unread = 0;
-    $$('[data-unread]').forEach((el) => { el.textContent = '0'; el.classList.add('hidden'); });
-    $$('[data-unread-pip]').forEach((el) => el.classList.toggle('hidden', pending === 0));
-  }
-  if (isActive('/app/bookings', path)) {
-    pending = 0;
-    prevPending = 0;
-    $$('[data-booking-badge]').forEach((el) => { el.textContent = '0'; el.classList.add('hidden'); });
-    $$('[data-unread-pip]').forEach((el) => el.classList.toggle('hidden', unread === 0));
-  }
+  if (isActive('/app/bookings', path)) void bookingsViewed();   // Messages clear per conversation, as in WhatsApp
   return view;
 }
 
 export function leaveApp(): void {
   stopPolling();
-  prevPending = -1;
+  prevFresh = -1; unread = 0; fresh = 0;
   if ($('.app')) mount(root(), '');
 }
 
@@ -239,4 +239,17 @@ export function authLayout(inner: Raw, showBack = true): void {
       <span>Protected workspace access. Your business data stays isolated.</span>
     </footer>
   </div>`);
+}
+
+/** The bell: what is new, with a way straight to it. Looking at the new bookings counts as seeing them. */
+function openNotifications(): void {
+  const row = (href: string, icon: IconName, n: number, one: string, many: string): Raw => html`<a class="list-item" href="${href}" data-link data-close>${ic(icon)}<span class="grow"><b>${n}</b> ${n === 1 ? one : many}</span>${ic('chevron-right', 'ico-sm')}</a>`;
+  openModal({
+    title: 'Notifications',
+    body: fresh + unread === 0 ? html`<p class="muted" style="padding:8px 0">You are all caught up.</p>`
+      : html`<div class="list">${fresh ? row('/app/bookings', 'calendar-check', fresh, 'new booking request', 'new booking requests') : ''}${unread ? row('/app/messages', 'message-square', unread, 'unread customer message', 'unread customer messages') : ''}</div>`,
+    footer: html`<button class="btn btn-secondary" data-close>Close</button>`,
+    onMount: (el, close) => el.querySelectorAll('a[data-link]').forEach((a) => a.addEventListener('click', () => close())),
+  });
+  if (fresh) void bookingsViewed();
 }

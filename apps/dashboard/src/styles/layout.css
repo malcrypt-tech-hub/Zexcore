@@ -17,7 +17,8 @@
 .topbar .spacer { flex: 1; }
 .icon-circle { position: relative; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--slate); }
 .icon-circle:hover { background: var(--canvas); color: var(--ink); }
-.icon-circle .pip { position: absolute; top: 8px; right: 9px; width: 9px; height: 9px; border-radius: 50%; background: var(--primary); border: 2px solid #fff; }
+.icon-circle .pip { position: absolute; top: 0; right: -2px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: var(--primary); border: 2px solid #fff; box-sizing: border-box; color: #fff; font-size: .625rem; font-weight: 700; line-height: 14px; text-align: center; }
+.icon-circle { border: 0; background: transparent; cursor: pointer; }
 .avatar-btn { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--border); background: #fff; display: grid; place-items: center; font-weight: 700; font-size: .75rem; color: var(--primary); }
 .menu { position: absolute; right: 0; top: calc(100% + 8px); width: 240px; background: #fff; border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow-3); padding: 6px; z-index: 60; }
 .menu a, .menu button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border-radius: 8px; font-size: .875rem; font-weight: 500; text-align: left; }
