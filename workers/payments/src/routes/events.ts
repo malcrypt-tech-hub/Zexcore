@@ -7,7 +7,7 @@ import { FsConflict, fsCommit, fsGet } from '../fs';
 import { sendFormal } from '../mail';
 import { sendBookingAlert, waNumber, whatsappConfigured } from '../whatsapp';
 import { enqueueWhatsAppEvent } from './whatsappAutomation';
-import { HttpError, ID_RE, json, localWhen, readJson } from '../util';
+import { HttpError, ID_RE, firstName, json, localWhen, readJson } from '../util';
 
 const BOOKING_RE = /^\d{6}_\d{1,6}$/;
 
@@ -73,6 +73,21 @@ export async function publicBooked(c: Ctx): Promise<Response> {
   // A real WhatsApp message to the owner (only when ZexCore's WhatsApp Business account is set up and the owner gave a number).
   if (waEnabled && waPhone && whatsappConfigured(c.env)) {
     await sendBookingAlert(c.env, c.d, waPhone, [String(ws?.data.name ?? 'your business'), String(bk.customerName), String(bk.service || 'a service'), localWhen(String(bk.startsAt), off)]);
+  }
+  // Send the customer a transactional acknowledgement. This confirms receipt of the request,
+  // not acceptance of the appointment; the business still confirms it from the dashboard.
+  const bookingDoc = await fsGet(c.env, c.d, `workspaces/${wid}/bookings/${bookingId}`);
+  const customerEmail = String(bookingDoc?.data.customerEmail ?? '').trim();
+  if (/^[^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+$/.test(customerEmail)) {
+    await sendFormal(c.env, c.d, customerEmail, 'We received your booking request', {
+      heading: 'Your booking request was received',
+      preheader: `Your request to book ${String(bk.service || 'a service')} has been sent.`,
+      greeting: `Hello ${firstName(String(bk.customerName ?? ''), customerEmail)},`,
+      paragraphs: ['Thank you for booking with this business. Your request has been received and is awaiting confirmation. The business will contact you if any changes are needed.'],
+      details: [['Business', String(ws?.data.name ?? 'The business')], ['Service', String(bk.service || 'Service')], ['Requested time', localWhen(String(bk.startsAt), off)], ['Reference', String(bk.ref)]],
+      button: { text: 'View booking page', url: `${c.env.APP_URL.replace(/\/$/, '')}/${slug}` },
+      note: 'This is an acknowledgement that your request was received, not confirmation that the appointment has been accepted.',
+    });
   }
   if (emailEnabled) {
     await sendFormal(c.env, c.d, owner.email, `New booking request: ${String(bk.customerName)}`, {
