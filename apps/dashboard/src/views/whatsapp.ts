@@ -109,7 +109,7 @@ export async function renderWhatsApp(view: HTMLElement): Promise<void> {
   const paintSequences = () => {
     if (!sequences.length) { mount(seqHost, html`<div class="empty-state"><p class="muted small">No follow-up sequences yet. Create one below to start.</p></div>`); return; }
     mount(seqHost, html`<div class="list">${sequences.map(s => html`<div class="list-item"><span class="icon-tile">↗</span><div class="grow"><b>${s.name}</b><div class="muted small">${s.trigger} · ${s.steps.length} step(s) · ${s.steps[0]?.templateName ?? 'No template'}</div></div><span class="badge">${s.enabled ? 'Enabled' : 'Paused'}</span><button class="btn btn-secondary btn-sm" data-wa-edit="${s.id}">Edit</button><button class="btn btn-soft-danger btn-sm" data-wa-delete="${s.id}">Delete</button></div>` )}</div>`);
-    $$<HTMLElement>('[data-wa-edit]', seqHost).forEach(b => b.addEventListener('click', () => {
+    $('[data-wa-edit]', seqHost).forEach(b => b.addEventListener('click', () => {
       const s = sequences.find(x => x.id === b.dataset.waEdit); if (!s) return;
       editingId = s.id;
       ($('#wa-seq-name', view) as HTMLInputElement).value = s.name;
@@ -121,7 +121,7 @@ export async function renderWhatsApp(view: HTMLElement): Promise<void> {
       ($('#wa-seq-enabled', view) as HTMLInputElement).checked = s.enabled;
       $('#wa-seq-heading', view)!.textContent = 'Edit sequence'; seqSave.textContent = 'Update sequence'; seqCancel.classList.remove('hidden');
     }));
-    $$<HTMLElement>('[data-wa-delete]', seqHost).forEach(b => b.addEventListener('click', () => void confirmDialog({ title: 'Delete this sequence?', message: 'Future events will no longer queue messages from this sequence.', confirmLabel: 'Delete sequence', danger: true }).then(async ok => {
+    $('[data-wa-delete]', seqHost).forEach(b => b.addEventListener('click', () => void confirmDialog({ title: 'Delete this sequence?', message: 'Future events will no longer queue messages from this sequence.', confirmLabel: 'Delete sequence', danger: true }).then(async ok => {
       if (!ok) return;
       try { await worker('/api/whatsapp/sequences', { method: 'POST', body: { workspaceId: wid, action: 'delete', id: b.dataset.waDelete } }); sequences = sequences.filter(s => s.id !== b.dataset.waDelete); paintSequences(); toast('Sequence deleted.', 'success'); }
       catch (e) { showError(e, seqError); }
