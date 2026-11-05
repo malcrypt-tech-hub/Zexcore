@@ -1,4 +1,5 @@
-import { ApiError, toApiError, unavailable, loadCtx } from './core';
+import { worker } from './worker';
+import { ApiError, toApiError, loadCtx } from './core';
 import { fb } from './firebase';
 import * as authApi from './auth';
 import * as cat from './catalog';
@@ -39,10 +40,9 @@ on('POST', '/api/auth/password/change', async ({ body }) => { await authApi.chan
 on('POST', '/api/auth/email/verify', async ({ body }) => { await authApi.verifyEmail(body.token); return { ok: true }; });
 on('GET', '/api/auth/email/status', () => authApi.emailStatus());
 on('POST', '/api/auth/email/resend', async () => { await authApi.resendVerification(); return { ok: true }; });
-// Firebase signs a device out from the Firebase console / by password change; per-device session lists are not exposed.
-on('GET', '/api/auth/sessions', () => ({ sessions: [] }));
-on('POST', '/api/auth/sessions/revoke-others', () => { throw unavailable('Signing out other devices'); });
-on('DELETE', '/api/auth/sessions/:id', () => { throw unavailable('Signing out other devices'); });
+// Security Watch: devices come from the Worker's record of sign-ins; Firebase cannot end one device's session on its own, so the only sign-out is "everywhere".
+on('GET', '/api/security/devices', () => worker('/api/security/devices'));
+on('POST', '/api/security/revoke-all', () => worker('/api/security/revoke-all', { method: 'POST', body: {} }));
 
 on('GET', '/api/account/method', () => ({ method: authApi.signInMethod() }));
 on('POST', '/api/account/delete', async ({ body }) => { await authApi.deleteAccount(body.password, String(body.confirm ?? '')); return { ok: true }; });

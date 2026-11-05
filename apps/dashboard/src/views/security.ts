@@ -1,4 +1,4 @@
-import { html, mount, $, $$ } from '../lib/html';
+import { html, mount, $ } from '../lib/html';
 import { ic } from '../lib/icons';
 import { api, ApiError, setToken } from '../lib/api';
 import { ago } from '../lib/format';
@@ -9,15 +9,7 @@ import { navigate } from '../router';
 import { formModal } from './shared';
 import { inp } from './shared';
 
-interface SessionRow { id: string; createdAt: string; lastSeenAt: string; userAgent: string | null; ip: string | null; current: boolean }
-
-/** A short human label from a user-agent string. Good enough to recognise your own devices. */
-function deviceName(ua: string | null): string {
-  if (!ua) return 'Unknown device';
-  const browser = /Edg\//.test(ua) ? 'Edge' : /OPR\/|Opera/.test(ua) ? 'Opera' : /Brave/.test(ua) ? 'Brave' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'Browser';
-  const os = /Android/.test(ua) ? 'Android' : /iPhone|iPad|iOS/.test(ua) ? 'iOS' : /Windows/.test(ua) ? 'Windows' : /Mac OS X|Macintosh/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : '';
-  return os ? `${browser} on ${os}` : browser;
-}
+interface DeviceRow { id: string; label: string; country: string | null; firstSeenAt: string | null; lastSeenAt: string | null; count: number }
 
 export async function renderSecurity(view: HTMLElement): Promise<void> {
   const me = current()!;
@@ -33,7 +25,7 @@ export async function renderSecurity(view: HTMLElement): Promise<void> {
         <div class="row between"><div><b>Delete account</b><div class="muted small">Permanently deletes your sign-in${me.role === 'owner' ? ` and closes ${me.tenant.name}, erasing its bookings, customers, payments and messages` : ' and removes you from the workspaces you joined'}. The deletion is recorded in the audit log.</div></div><button class="btn btn-soft-danger btn-sm" data-del>${ic('trash-2', 'ico-sm')} Delete account</button></div>
       </section>
       <section class="card">
-        <div class="card-head"><div><b>Devices signed in</b><div class="muted small">If you do not recognise one, sign it out and change your password.</div></div><button class="btn btn-soft-danger btn-sm hidden" data-others>Sign out others</button></div>
+        <div class="card-head"><div><b>Where you have signed in</b><div class="muted small">We email you when a new device signs in. If you do not recognise one, change your password and sign out everywhere.</div></div><button class="btn btn-soft-danger btn-sm" data-others>Sign out everywhere</button></div>
         <div id="ss">${skeletonRows(2)}</div>
       </section>
     </div>`);
@@ -75,25 +67,20 @@ export async function renderSecurity(view: HTMLElement): Promise<void> {
   });
 
   const host = $('#ss', view)!;
+  const country = (cc: string | null): string => { if (!cc) return 'Unknown place'; try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(cc) ?? cc; } catch { return cc; } };
   async function load(): Promise<void> {
     try {
-      const { sessions } = await api<{ sessions: SessionRow[] }>('/api/auth/sessions');
-      $('[data-others]', view)!.classList.toggle('hidden', sessions.length < 2);
-      if (!sessions.length) { mount(host, emptyState({ icon: 'shield-check', title: 'No other sessions', text: 'Only this device is signed in.' })); return; }
-      mount(host, html`<div class="list">${sessions.map((s) => html`<div class="list-item"><span class="icon-tile">${ic('globe')}</span>
-        <div class="grow"><b>${deviceName(s.userAgent)}</b> ${s.current ? html`<span class="badge badge-success">This device</span>` : ''}
-          <div class="muted small">${s.ip ?? 'Unknown location'} · active ${ago(s.lastSeenAt)}</div></div>
-        ${s.current ? '' : html`<button class="btn btn-ghost btn-sm" data-revoke="${s.id}">Sign out</button>`}</div>`)}</div>`);
-      $$('[data-revoke]', host).forEach((b) => b.addEventListener('click', async () => {
-        try { await api(`/api/auth/sessions/${b.dataset.revoke}`, { method: 'DELETE' }); toast('Device signed out', 'success'); void load(); }
-        catch (x) { toast(x instanceof ApiError ? x.message : 'Could not sign that device out', 'error'); }
-      }));
+      const { devices } = await api<{ devices: DeviceRow[] }>('/api/security/devices');
+      if (!devices.length) { mount(host, emptyState({ icon: 'shield-check', title: 'Nothing recorded yet', text: 'Devices appear here the next time you sign in.' })); return; }
+      mount(host, html`<div class="list">${devices.map((d) => html`<div class="list-item"><span class="icon-tile">${ic('globe')}</span>
+        <div class="grow"><b>${d.label}</b>
+          <div class="muted small">${country(d.country)} · last active ${d.lastSeenAt ? ago(d.lastSeenAt) : 'unknown'}${d.firstSeenAt ? ` · first seen ${ago(d.firstSeenAt)}` : ''}</div></div></div>`)}</div>`);
     } catch (x) { mount(host, errorState(x instanceof ApiError ? x.message : 'Could not load your devices')); $('[data-retry]', host)?.addEventListener('click', () => void load()); }
   }
   $('[data-others]', view)!.addEventListener('click', async () => {
-    if (!(await confirmDialog({ title: 'Sign out other devices?', message: 'Everywhere except this device will need to sign in again.', confirmLabel: 'Sign out others', danger: true }))) return;
-    try { const r = await api<{ revoked: number }>('/api/auth/sessions/revoke-others', { method: 'POST' }); toast(`${r.revoked} device${r.revoked === 1 ? '' : 's'} signed out`, 'success'); void load(); }
-    catch (x) { toast(x instanceof ApiError ? x.message : 'Could not sign out other devices', 'error'); }
+    if (!(await confirmDialog({ title: 'Sign out everywhere?', message: 'Every device, including this one, will need to sign in again. Pages already open elsewhere can keep working for up to an hour.', confirmLabel: 'Sign out everywhere', danger: true }))) return;
+    try { await api('/api/security/revoke-all', { method: 'POST' }); toast('Signed out everywhere', 'success'); clearStore(); resetSession(); navigate('/login', true); }
+    catch (x) { toast(x instanceof ApiError ? x.message : 'Could not sign out', 'error'); }
   });
   await load();
 }

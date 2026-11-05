@@ -46,7 +46,7 @@ export async function loadMe(force = false): Promise<Me | null> {
     me = await api<Me>('/api/auth/me');
     _validated = true;
     ssWrite(me);
-    greetOnce();
+    greetOnce(); recordSignInOnce();
   } catch (e) {
     if (e instanceof ApiError && (e.status === 401 || e.status === 400 || e.status === 403)) {
       setToken(null); me = null; ssWrite(null); return null;
@@ -81,6 +81,13 @@ export function logout(): void {
   // Revoke the session on the server first (best effort), so a copied token stops working immediately.
   if (getToken()) void api('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
   setToken(null); me = null; _validated = false; ssWrite(null);
+}
+
+/** Tells the Worker this device signed in (once per browser session), so Security Watch can list it and flag a new one. Failures are ignored. */
+function recordSignInOnce(): void {
+  try { if (sessionStorage.getItem('zx.signin')) return; } catch { /* still try once */ }
+  void import('./fb/worker').then(({ worker }) => worker('/api/security/signin', { method: 'POST', body: {} }))
+    .then(() => { try { sessionStorage.setItem('zx.signin', '1'); } catch { /* ignore */ } }).catch(() => undefined);
 }
 
 /** Asks the Worker to send the one-time welcome e-mail. It decides whether this person is due one; failures are ignored. */

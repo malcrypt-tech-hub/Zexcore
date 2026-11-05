@@ -33,6 +33,7 @@ async function idToken(over: Record<string, unknown> = {}, key = idKey.privateKe
 // ── in-memory Firestore + Google + Paystack ──
 type Doc = { fields: Record<string, any>; v: number };
 let emails: any[] = [];
+let revokedLogins: any[] = [];
 let waSent: any[] = [];
 let deletedLogins: string[] = [];
 let store: Map<string, Doc>; let commits: any[]; let paystackInit: any[]; let paystackVerify: Record<string, any>; let paystackSub: any[];
@@ -59,6 +60,7 @@ function mockFetch(): typeof fetch {
       commits.push(writes);
       return Response.json({});
     }
+    if (url.includes('identitytoolkit.googleapis.com') && url.endsWith('/accounts:update')) { revokedLogins.push(JSON.parse(init.body)); return Response.json({}); }
     if (url.includes('identitytoolkit.googleapis.com') && url.endsWith('/accounts:delete')) { deletedLogins.push(JSON.parse(init.body).localId); return Response.json({}); }
     if (url.startsWith('https://graph.facebook.com/')) { waSent.push({ url, auth: init.headers.authorization, body: JSON.parse(init.body) }); return Response.json({ messages: [{ id: 'wamid.1' }] }); }
     if (url === 'https://api.resend.com/emails') { emails.push(JSON.parse(init.body)); return Response.json({ id: 'e1' }); }
@@ -94,7 +96,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   resetTokenCache(); resetJwksCache();
-  emails = []; waSent = []; store = new Map(); commits = []; paystackInit = []; paystackVerify = {}; paystackSub = [];
+  emails = []; revokedLogins = []; waSent = []; store = new Map(); commits = []; paystackInit = []; paystackVerify = {}; paystackSub = [];
   env = { PAYSTACK_SECRET_KEY: SECRET, ALLOW_TEST_PAYMENTS: 'true', FIREBASE_PROJECT_ID: PROJECT, APP_URL: 'https://zexcore.com.ng', ALLOWED_ORIGINS: 'https://zexcore.com.ng,https://zexcore-5d6c0.web.app', NGN_PER_USD: '1500',
     FIREBASE_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'w@x.iam.gserviceaccount.com', private_key: saPem }) };
   seedDoc(`workspaces/${WID}`, { name: 'Sade Salon', plan: 'free', ownerUid: 'owner1', slug: 'sade-salon' });
@@ -1097,5 +1099,43 @@ describe('unpaid risk-deposit bookings expire', () => {
     bk('202611_7');
     expect((await scheduledDepositExpiry(env, { fetch: mockFetch(), now: () => NOW })).expired).toBe(1);
     expect((await scheduledDepositExpiry(env, { fetch: mockFetch(), now: () => NOW })).expired).toBe(0);
+  });
+});
+
+describe('Security Watch', () => {
+  const signin = async (ua: string, country = 'NG', over: Record<string, unknown> = {}, t = NOW) =>
+    handle(new Request('https://pay.example.workers.dev/api/security/signin', { method: 'POST', body: '{}', headers: { ...(await authed(over)), 'user-agent': ua, 'cf-ipcountry': country } }), { ...env, RESEND_API_KEY: 're_test' }, { fetch: mockFetch(), now: () => t });
+  const CHROME_WIN = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36';
+  const SAFARI_IOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Safari/604.1';
+  const devices = async () => (await (await handle(new Request('https://pay.example.workers.dev/api/security/devices', { headers: await authed() }), env, { fetch: mockFetch(), now: () => NOW })).json() as any).devices;
+
+  it('records the first device quietly, then emails when a different device signs in', async () => {
+    expect(await (await signin(CHROME_WIN)).json()).toMatchObject({ ok: true, newDevice: false });
+    expect(emails).toHaveLength(0);
+    expect(await (await signin(SAFARI_IOS, 'GB')).json()).toMatchObject({ ok: true, newDevice: true });
+    expect(emails).toHaveLength(1);
+    expect(emails[0].to[0] ?? emails[0].to).toBe('sade@example.com');
+    expect(emails[0].subject).toBe('New sign-in to your ZexCore account');
+    expect(emails[0].html ?? emails[0].text).toMatch(/Safari on iOS/);
+    expect((await devices()).map((d: any) => d.label).sort()).toEqual(['Chrome on Windows', 'Safari on iOS']);
+  });
+
+  it('does not email again for a device it already knows, and counts repeat visits only every ten minutes', async () => {
+    await signin(CHROME_WIN); await signin(SAFARI_IOS);
+    emails = [];
+    expect(await (await signin(SAFARI_IOS)).json()).toMatchObject({ newDevice: false });
+    await signin(SAFARI_IOS, 'GB', {}, new Date(NOW.getTime() + 11 * 60_000));
+    expect(emails).toHaveLength(0);
+    expect((await devices()).find((d: any) => d.label === 'Safari on iOS').count).toBe(2);
+  });
+
+  it('needs a valid sign-in, and sign out everywhere needs a recent one', async () => {
+    expect((await handle(new Request('https://pay.example.workers.dev/api/security/signin', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json', origin: 'https://zexcore.com.ng' } }), env, { fetch: mockFetch(), now: () => NOW })).status).toBe(401);
+    const stale = await call('/api/security/revoke-all', { headers: await authed({ auth_time: Math.floor(NOW.getTime() / 1000) - 3600 }), body: '{}' });
+    expect(stale.status).toBe(401);
+    expect(revokedLogins).toHaveLength(0);
+    const ok = await call('/api/security/revoke-all', { headers: await authed({ auth_time: Math.floor(NOW.getTime() / 1000) - 30 }), body: '{}' });
+    expect(ok.status).toBe(200);
+    expect(revokedLogins[0]).toMatchObject({ localId: 'owner1', validSince: String(Math.floor(NOW.getTime() / 1000)) });
   });
 });
