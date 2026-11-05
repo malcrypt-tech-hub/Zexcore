@@ -96,7 +96,9 @@ export async function enqueueWhatsAppEvent(c: { env: Env; d: Deps }, wid: string
     const steps = Array.isArray(seq.data.steps) ? seq.data.steps as Step[] : [];
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i]!;
-      const id = `${eventId}_${seq.id}_${i}`.slice(0, 48);
+      const identity = new TextEncoder().encode(`${wid}:${eventId}:${seq.id}:${i}`);
+      const digest = await crypto.subtle.digest('SHA-256', identity);
+      const id = Array.from(new Uint8Array(digest).slice(0, 20), b => b.toString(16).padStart(2, '0')).join('');
       writes.push({ path: `workspaces/${wid}/whatsappJobs/${id}`, fields: {
         sequenceId: seq.id, sequenceName: String(seq.data.name ?? ''), eventId, event, step: i,
         phone, templateName: step.templateName, language: step.language, bodyParameters: step.bodyParameters ?? [],
@@ -113,51 +115,74 @@ export async function enqueueWhatsAppEvent(c: { env: Env; d: Deps }, wid: string
   return writes.length;
 }
 
-/** One cron pass. A lease is the Firestore updateTime precondition; duplicate cron invocations cannot send the same job. */
+/** One cron pass. Paginates every workspace and reclaims expired sender leases safely. */
 export async function scheduledWhatsApp(env: Env, d: Deps): Promise<number> {
-  const workspaces = await fsQuery(env, d, { collection: 'workspaces', limit: 50 });
   let sent = 0;
-  for (const ws of workspaces) {
-    const wid = ws.id;
-    const due = await fsQuery(env, d, { parent: `workspaces/${wid}`, collection: 'whatsappJobs',
-      where: [{ field: 'status', op: 'EQUAL', value: 'queued' }, { field: 'runAt', op: 'LESS_THAN_OR_EQUAL', value: d.now() }],
-      orderBy: [{ field: 'runAt' }], limit: 10 });
-    for (const job of due) {
-      const leaseUntil = new Date(d.now().getTime() + 90_000);
-      try {
-        await fsCommit(env, d, [{ path: job.path, fields: { status: 'sending', leaseUntil, attempts: Number(job.data.attempts ?? 0) + 1 },
-          mask: ['status', 'leaseUntil', 'attempts'], precondition: { updateTime: job.updateTime } }]);
-      } catch (e) { if (e instanceof FsConflict) continue; throw e; }
-      const consent = await fsGet(env, d, consentPath(wid, String(job.data.phone)));
-      if (consent?.data.optedIn !== true) {
-        await fsCommit(env, d, [{ path: job.path, fields: { status: 'cancelled', reason: 'consent_revoked', completedAt: d.now() }, mask: ['status', 'reason', 'completedAt'] }]);
-        continue;
+  let cursor: string | undefined;
+  do {
+    const workspaces = await fsQuery(env, d, { collection: 'workspaces', orderBy: [{ field: '__name__' }], limit: 50, ...(cursor ? { startAfterId: cursor } : {}) });
+    if (!workspaces.length) break;
+    for (const ws of workspaces) {
+      const wid = ws.id;
+      const now = d.now();
+      // A Worker may be terminated after claiming a job. Expired leases are returned to
+      // the queue (or failed after the retry budget) instead of remaining stuck forever.
+      const expired = await fsQuery(env, d, { parent: `workspaces/${wid}`, collection: 'whatsappJobs',
+        where: [{ field: 'status', op: 'EQUAL', value: 'sending' }, { field: 'leaseUntil', op: 'LESS_THAN_OR_EQUAL', value: now }], limit: 20 });
+      for (const job of expired) {
+        const attempts = Number(job.data.attempts ?? 0);
+        try {
+          await fsCommit(env, d, [{ path: job.path, fields: {
+            status: attempts < 5 ? 'queued' : 'failed',
+            ...(attempts < 5 ? { runAt: now } : { completedAt: now, lastError: 'sender_lease_expired' }),
+            leaseUntil: null, lastError: 'sender_lease_expired',
+          }, mask: ['status', 'runAt', 'leaseUntil', 'lastError', 'completedAt'].filter(k => k !== 'completedAt' || attempts >= 5),
+          precondition: { updateTime: job.updateTime } }]);
+        } catch (e) { if (!(e instanceof FsConflict)) throw e; }
       }
-      const connection = await tenantWhatsAppToken({ env, d } as any, wid);
-      if (!connection) {
-        await fsCommit(env, d, [{ path: job.path, fields: { status: 'failed', reason: 'whatsapp_not_connected', completedAt: d.now() }, mask: ['status', 'reason', 'completedAt'] }]);
-        continue;
-      }
-      const components = job.data.bodyParameters && (job.data.bodyParameters as string[]).length
-        ? [{ type: 'body', parameters: (job.data.bodyParameters as string[]).map(text => ({ type: 'text', text })) }] : [];
-      const response = await d.fetch(`https://graph.facebook.com/v21.0/${connection.phoneNumberId}/messages`, {
-        method: 'POST', headers: { authorization: `Bearer ${connection.token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: String(job.data.phone).replace(/^\+/, ''),
-          type: 'template', template: { name: job.data.templateName, language: { code: job.data.language }, ...(components.length ? { components } : {}) } }),
-        signal: AbortSignal.timeout(10_000),
-      }).catch(() => null);
-      if (response?.ok) {
-        const result = await response.json().catch(() => ({})) as any;
-        await fsCommit(env, d, [{ path: job.path, fields: { status: 'sent', providerMessageId: result?.messages?.[0]?.id ?? null, sentAt: d.now() }, mask: ['status', 'providerMessageId', 'sentAt'] }]);
-        sent++;
-      } else {
-        const attempts = Number(job.data.attempts ?? 0) + 1;
-        const retry = attempts < 5;
-        await fsCommit(env, d, [{ path: job.path, fields: { status: retry ? 'queued' : 'failed',
-          runAt: new Date(d.now().getTime() + Math.min(6 * 3600000, 60_000 * 2 ** attempts)),
-          lastError: response ? `meta_http_${response.status}` : 'network_error', leaseUntil: null }, mask: ['status', 'runAt', 'lastError', 'leaseUntil'] }]);
+      const due = await fsQuery(env, d, { parent: `workspaces/${wid}`, collection: 'whatsappJobs',
+        where: [{ field: 'status', op: 'EQUAL', value: 'queued' }, { field: 'runAt', op: 'LESS_THAN_OR_EQUAL', value: d.now() }],
+        orderBy: [{ field: 'runAt' }], limit: 10 });
+      for (const job of due) {
+        const leaseUntil = new Date(d.now().getTime() + 90_000);
+        try {
+          await fsCommit(env, d, [{ path: job.path, fields: { status: 'sending', leaseUntil, attempts: Number(job.data.attempts ?? 0) + 1 },
+            mask: ['status', 'leaseUntil', 'attempts'], precondition: { updateTime: job.updateTime } }]);
+        } catch (e) { if (e instanceof FsConflict) continue; throw e; }
+        const consent = await fsGet(env, d, consentPath(wid, String(job.data.phone)));
+        if (consent?.data.optedIn !== true) {
+          await fsCommit(env, d, [{ path: job.path, fields: { status: 'cancelled', reason: 'consent_revoked', completedAt: d.now(), leaseUntil: null }, mask: ['status', 'reason', 'completedAt', 'leaseUntil'] }]);
+          continue;
+        }
+        const connection = await tenantWhatsAppToken({ env, d } as any, wid);
+        if (!connection) {
+          await fsCommit(env, d, [{ path: job.path, fields: { status: 'failed', reason: 'whatsapp_not_connected', completedAt: d.now(), leaseUntil: null }, mask: ['status', 'reason', 'completedAt', 'leaseUntil'] }]);
+          continue;
+        }
+        const components = job.data.bodyParameters && (job.data.bodyParameters as string[]).length
+          ? [{ type: 'body', parameters: (job.data.bodyParameters as string[]).map(text => ({ type: 'text', text })) }] : [];
+        const response = await d.fetch(`https://graph.facebook.com/v21.0/${connection.phoneNumberId}/messages`, {
+          method: 'POST', headers: { authorization: `Bearer ${connection.token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: String(job.data.phone).replace(/^\\+/, ''),
+            type: 'template', template: { name: job.data.templateName, language: { code: job.data.language }, ...(components.length ? { components } : {}) } }),
+          signal: AbortSignal.timeout(10_000),
+        }).catch(() => null);
+        if (response?.ok) {
+          const result = await response.json().catch(() => ({})) as any;
+          await fsCommit(env, d, [{ path: job.path, fields: { status: 'sent', providerMessageId: result?.messages?.[0]?.id ?? null, sentAt: d.now(), leaseUntil: null }, mask: ['status', 'providerMessageId', 'sentAt', 'leaseUntil'] }]);
+          sent++;
+        } else {
+          const attempts = Number(job.data.attempts ?? 0) + 1;
+          const retry = attempts < 5;
+          await fsCommit(env, d, [{ path: job.path, fields: { status: retry ? 'queued' : 'failed',
+            runAt: new Date(d.now().getTime() + Math.min(6 * 3600000, 60_000 * 2 ** attempts)),
+            lastError: response ? `meta_http_${response.status}` : 'network_error', leaseUntil: null,
+            ...(!retry ? { completedAt: d.now() } : {}) }, mask: ['status', 'runAt', 'lastError', 'leaseUntil', ...(!retry ? ['completedAt'] : [])] }]);
+        }
       }
     }
-  }
+    cursor = workspaces[workspaces.length - 1]!.id;
+    if (workspaces.length < 50) break;
+  } while (cursor);
   return sent;
 }
