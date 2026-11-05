@@ -284,6 +284,20 @@ service cloud.firestore {
         allow update: if isAdmin(wid) && hasStarter(wid) && onlyChanges(['status', 'completedAt', 'summary']);
         allow delete: if false;
       }
+      match /breaches/{id} {
+        allow read: if isAdmin(wid) && hasStarter(wid);
+        allow create: if isAdmin(wid) && hasStarter(wid) && noExtraKeys(['title', 'description', 'affected', 'discoveredAt', 'notifiedAt', 'closed', 'loggedBy', 'loggedAt'])
+          && request.resource.data.title is string && request.resource.data.title.size() >= 3 && request.resource.data.title.size() <= 120
+          && request.resource.data.description is string && request.resource.data.description.size() >= 10 && request.resource.data.description.size() <= 2000
+          && (request.resource.data.affected == null || (request.resource.data.affected is int && request.resource.data.affected >= 0))
+          && request.resource.data.discoveredAt is timestamp && request.resource.data.discoveredAt <= request.time
+          && request.resource.data.notifiedAt == null && request.resource.data.closed == false
+          && request.resource.data.loggedBy == request.auth.uid && request.resource.data.loggedAt == request.time;
+        allow update: if isAdmin(wid) && hasStarter(wid) && onlyChanges(['notifiedAt', 'closed'])
+          && (request.resource.data.notifiedAt == resource.data.notifiedAt || (resource.data.notifiedAt == null && request.resource.data.notifiedAt == request.time))
+          && (request.resource.data.closed == resource.data.closed || (resource.data.closed == false && request.resource.data.closed == true));
+        allow delete: if false;
+      }
       match /consents/{id} {
         allow read: if isMember(wid) && hasStarter(wid);
         allow create: if isWorker(wid) && hasStarter(wid) && noExtraKeys(['subjectId', 'purpose', 'legalBasis', 'grantedAt', 'revokedAt', 'by'])

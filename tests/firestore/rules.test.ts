@@ -163,6 +163,23 @@ describe('tenant isolation', () => {
     await assertSucceeds(updateDoc(doc(owner(), 'workspaces', W, 'consents', 'k1'), { revokedAt: serverTimestamp() }));
     await assertFails(getDoc(doc(other(), 'workspaces', W, 'consents', 'k1')));
   });
+  it('keeps the breach register admin-only, append-only and shaped (starter plan and above)', async () => {
+    const breach = (extra = {}) => ({ title: 'Lost laptop', description: 'A laptop with the customer list was lost.', affected: 40, discoveredAt: Timestamp.fromMillis(Date.now() - 3_600_000), notifiedAt: null, closed: false, loggedBy: 'owner1', loggedAt: serverTimestamp(), ...extra });
+    await assertFails(setDoc(doc(owner(), 'workspaces', W, 'breaches', 'b1'), breach()));          // free plan
+    await setPlan('starter');
+    await assertSucceeds(setDoc(doc(owner(), 'workspaces', W, 'breaches', 'b1'), breach()));
+    await assertFails(setDoc(doc(owner(), 'workspaces', W, 'breaches', 'b2'), breach({ title: 'x' })));
+    await assertFails(setDoc(doc(owner(), 'workspaces', W, 'breaches', 'b3'), breach({ loggedBy: 'someone-else' })));
+    await assertFails(setDoc(doc(owner(), 'workspaces', W, 'breaches', 'b4'), breach({ discoveredAt: Timestamp.fromMillis(Date.now() + 86_400_000) })));
+    await assertFails(setDoc(doc(owner(), 'workspaces', W, 'breaches', 'b5'), breach({ notifiedAt: serverTimestamp() })));
+    await assertFails(getDoc(doc(other(), 'workspaces', W, 'breaches', 'b1')));
+    await assertFails(updateDoc(doc(owner(), 'workspaces', W, 'breaches', 'b1'), { title: 'Edited' }));
+    await assertSucceeds(updateDoc(doc(owner(), 'workspaces', W, 'breaches', 'b1'), { notifiedAt: serverTimestamp() }));
+    await assertFails(updateDoc(doc(owner(), 'workspaces', W, 'breaches', 'b1'), { notifiedAt: Timestamp.fromMillis(0) }));
+    await assertSucceeds(updateDoc(doc(owner(), 'workspaces', W, 'breaches', 'b1'), { closed: true }));
+    await assertFails(updateDoc(doc(owner(), 'workspaces', W, 'breaches', 'b1'), { closed: false }));
+    await assertFails(deleteDoc(doc(owner(), 'workspaces', W, 'breaches', 'b1')));
+  });
   it('limits devices and rules to growth plan, keeps readings Worker-only, and makes rules wait for approval', async () => {
     const hash = 'a'.repeat(64);
     const dev = (extra = {}) => ({ name: 'Cold room', deviceKey: 'cold-1', kind: 'sensor', tokenHash: hash, createdAt: serverTimestamp(), seq: 0, ...extra });
