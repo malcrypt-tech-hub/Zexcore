@@ -357,12 +357,22 @@ service cloud.firestore {
       let d = request.resource.data;
       let svc = get(/databases/$(database)/documents/workspaces/$(wid)/services/$(d.serviceId)).data;
       return d.keys().hasOnly(['serviceId', 'staffId', 'customerName', 'customerPhone', 'customerEmail', 'notes',
-                              'startsAt', 'endsAt', 'cells', 'status', 'source', 'createdAt'])
+                              'intakeAnswers', 'consultationRequested', 'startsAt', 'endsAt', 'cells', 'status', 'source', 'createdAt'])
         && d.status == 'pending' && d.source == 'public' && d.createdAt == request.time
         && d.customerName is string && d.customerName.size() >= 2 && d.customerName.size() <= 120
-        && d.customerPhone is string && d.customerPhone.matches('^\\+[0-9]{8,15}$')
+        && d.customerPhone is string && d.customerPhone.matches('^\\+[0-9]{8,15}
+    }
+
+    // everything else is closed
+    match /{document=**} { allow read, write: if false; }
+  }
+}
+)
         && (!('customerEmail' in d) || d.customerEmail == null || (d.customerEmail is string && d.customerEmail.size() <= 160))
         && (!('notes' in d) || d.notes == null || (d.notes is string && d.notes.size() <= 1000))
+        // Custom service intake is stored as bounded structured answers, never arbitrary nested payloads.
+        && (!('intakeAnswers' in d) || (d.intakeAnswers is map && d.intakeAnswers.size() <= 12))
+        && (!('consultationRequested' in d) || d.consultationRequested is bool)
         && d.startsAt is timestamp && d.endsAt is timestamp && d.startsAt > request.time
         && d.startsAt < request.time + duration.value(180, 'd')
         && svc.active == true
