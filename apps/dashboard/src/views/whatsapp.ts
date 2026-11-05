@@ -1,4 +1,5 @@
-import { html, mount, $, busy } from '../lib/html';
+import { html, mount, $ } from '../lib/html';
+import { busy } from '../lib/ui';
 import { ic } from '../lib/icons';
 import { worker } from '../lib/fb/worker';
 import { ApiError } from '../lib/api';
@@ -85,19 +86,19 @@ export async function renderWhatsApp(view: HTMLElement): Promise<void> {
     });
   });
   disconnect.addEventListener('click', () => {
-    confirmDialog({
+    void confirmDialog({
       title: 'Disconnect WhatsApp Business?',
       message: 'ZexCore will disable this workspace connection and clear the encrypted access token. Existing customer conversations in WhatsApp are not deleted.',
       confirmLabel: 'Disconnect',
       danger: true,
-      onConfirm: async () => {
-        try {
+    }).then(async (confirmed) => {
+      if (!confirmed) return;
+      try {
           await worker('/api/whatsapp/disconnect', { method: 'POST', body: { workspaceId: wid } });
           connection = { connected: false, phoneNumberId: null, displayPhoneNumber: null, verifiedName: null, connectedAt: null };
           paint();
           toast('WhatsApp Business disconnected.', 'success');
-        } catch (e) { showError(e); }
-      },
+      } catch (e) { showError(e); }
     });
   });
   if (!canAdmin()) {
