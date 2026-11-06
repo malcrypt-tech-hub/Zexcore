@@ -1189,7 +1189,9 @@ describe('reschedule email', () => {
 
 describe('shop orders', () => {
   const X = 'wsshop00000000000001';
+  let orderVisitor = 0;
   beforeEach(() => {
+    orderVisitor = 0;
     env = { ...env, RESEND_API_KEY: 're_test', CLOUDINARY_CLOUD_NAME: 'democloud', CLOUDINARY_API_KEY: '123456', CLOUDINARY_API_SECRET: 'shh-secret' };
     seedDoc('slugs/shop-biz', { wid: X });
     seedDoc(`workspaces/${X}`, { name: 'Shop Biz', plan: 'free', ownerUid: 'owner1', slug: 'shop-biz', settings: { publicName: 'Shop Biz' } });
@@ -1198,7 +1200,7 @@ describe('shop orders', () => {
     seedDoc(`workspaces/${X}/products/g_1`, { name: 'Sold out hat', priceMinor: 900, active: true, inStock: false });
     seedDoc(`workspaces/${X}/products/g_2`, { name: 'Hidden', priceMinor: 100, active: false, inStock: true });
   });
-  const order = (over: Record<string, unknown> = {}) => call('/api/public/order', { headers: { 'content-type': 'application/json', origin: 'https://zexcore.com.ng' }, body: JSON.stringify({ slug: 'shop-biz', name: 'Ada Obi', phone: '0803 111 2222', email: 'ada@example.com', address: '12 Allen Avenue, Ikeja', items: [{ id: 'g_0', qty: 2 }], ...over }) });
+  const order = (over: Record<string, unknown> = {}) => call('/api/public/order', { headers: { 'content-type': 'application/json', origin: 'https://zexcore.com.ng', 'cf-connecting-ip': `198.51.100.${++orderVisitor}` }, body: JSON.stringify({ slug: 'shop-biz', name: 'Ada Obi', phone: '0803 111 2222', email: 'ada@example.com', address: '12 Allen Avenue, Ikeja', items: [{ id: 'g_0', qty: 2 }], ...over }) });
   const orders = () => [...store.keys()].filter((k) => k.startsWith(`workspaces/${X}/orders/`));
 
   it('creates an order priced by the server, and emails the customer and the owner', async () => {
