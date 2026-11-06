@@ -20,7 +20,8 @@ import { normalizePhone } from './waitlist';
 
 const SLUG_RE = /^[a-z0-9-]{3,40}$/;
 const EMAIL_RE = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
-const MAX_LINES = 20, MAX_QTY = 99, MAX_OPEN_ORDERS = 200;
+const MAX_LINES = 20, MAX_QTY = 99, MAX_OPEN_ORDERS = 500, MAX_OPEN_PER_PHONE = 3;
+const REQUEST_ID_RE = /^[A-Za-z0-9-]{8,64}$/;
 export const ORDER_STATUSES = ['new', 'confirmed', 'shipped', 'delivered', 'cancelled'] as const;
 const usd = (minor: number): string => `$${(minor / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const clean = (v: unknown, max: number): string => String(v ?? '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').trim().slice(0, max);
@@ -52,13 +53,21 @@ export async function placeOrder(c: Ctx): Promise<Response> {
     if (!p || p.data.active === false || p.data.inStock === false) throw new HttpError(409, `${p ? String(p.data.name) : 'An item'} is no longer available. Please refresh and try again.`, 'unavailable');
     items.push({ productId: id, name: String(p.data.name ?? 'Item'), unitMinor: Math.max(0, Math.round(Number(p.data.priceMinor) || 0)), qty });
   }
+  // One person cannot fill the queue: a few waiting orders per phone number, and a generous cap for the whole shop.
+  const mine = await fsQuery(c.env, c.d, { parent: `workspaces/${wid}`, collection: 'orders', where: [{ field: 'customerPhone', op: 'EQUAL', value: phone }], limit: 25 });
+  const requestId = String(b.requestId ?? '');
+  const id = REQUEST_ID_RE.test(requestId) ? (await sha256Hex(`${wid}:${requestId}`)).slice(0, 16) : randomHex(8);
+  const again = mine.find((o) => o.id === id);
+  if (again) return json({ ok: true, ref: String(again.data.ref), totalMinor: Number(again.data.totalMinor) || 0, duplicate: true }, 200, c.headers);   // same order sent twice
+  if (mine.filter((o) => o.data.customerPhone === phone && o.data.status === 'new').length >= MAX_OPEN_PER_PHONE) throw new HttpError(429, 'You already have orders waiting for this business to confirm. Please wait for them to contact you.', 'busy');
   const open = await fsQuery(c.env, c.d, { parent: `workspaces/${wid}`, collection: 'orders', where: [{ field: 'status', op: 'EQUAL', value: 'new' }], limit: MAX_OPEN_ORDERS + 1 });
   if (open.filter((o) => o.data.status === 'new').length >= MAX_OPEN_ORDERS) throw new HttpError(429, 'This shop has a lot of waiting orders right now. Please try again later.', 'busy');
   const totalMinor = items.reduce((n, i) => n + i.unitMinor * i.qty, 0);
-  const id = randomHex(8);
   const ref = `ZO-${(await sha256Hex(id)).slice(0, 6).toUpperCase()}`;
-  await fsCommit(c.env, c.d, [{ path: `workspaces/${wid}/orders/${id}`, precondition: { exists: false },
-    fields: { ref, customerName: name, customerPhone: phone, customerEmail: email || null, address, notes: notes || null, items, totalMinor, status: 'new', createdAt: c.d.now() } }]);
+  try {
+    await fsCommit(c.env, c.d, [{ path: `workspaces/${wid}/orders/${id}`, precondition: { exists: false },
+      fields: { ref, customerName: name, customerPhone: phone, customerEmail: email || null, address, notes: notes || null, items, totalMinor, status: 'new', createdAt: c.d.now() } }]);
+  } catch (e) { if (e instanceof FsConflict) return json({ ok: true, ref, totalMinor, duplicate: true }, 200, c.headers); throw e; }
 
   const st = ws.data.settings as Record<string, unknown> | undefined;
   const biz = String(st?.publicName ?? ws.data.name ?? 'the business');

@@ -1,7 +1,7 @@
 import { describe, it, beforeAll, beforeEach, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { initializeTestEnvironment, assertSucceeds, assertFails, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, getDoc, getDocs, collection, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, getDocs, query, where, collection, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp, Timestamp } from 'firebase/firestore';
 
 let env: RulesTestEnvironment;
 const W = 'Ws1AbCdEfGhIjKlMnOpQ';
@@ -242,6 +242,12 @@ describe('team roles', () => {
     const prod = (extra = {}) => ({ name: 'Ankara bag', description: null, priceMinor: 2500, active: true, inStock: true, imageUrl: null, seq: 0, createdAt: serverTimestamp(), ...extra });
     await assertSucceeds(setDoc(doc(ed, 'workspaces', W, 'products', 'g_0'), prod()));
     await assertSucceeds(getDoc(doc(anon(), 'workspaces', W, 'products', 'g_0')));
+    await assertSucceeds(updateDoc(doc(ed, 'workspaces', W, 'products', 'g_0'), { active: false }));            // switched off: hidden from the public, still there for the team
+    await assertFails(getDoc(doc(anon(), 'workspaces', W, 'products', 'g_0')));
+    await assertFails(getDocs(collection(anon(), 'workspaces', W, 'products')));
+    await assertSucceeds(getDocs(query(collection(anon(), 'workspaces', W, 'products'), where('active', '==', true))));
+    await assertSucceeds(getDoc(doc(v, 'workspaces', W, 'products', 'g_0')));
+    await assertSucceeds(updateDoc(doc(ed, 'workspaces', W, 'products', 'g_0'), { active: true }));
     await assertFails(setDoc(doc(v, 'workspaces', W, 'products', 'g_1'), prod({ seq: 1 })));                         // viewers cannot
     await assertFails(setDoc(doc(ed, 'workspaces', W, 'products', 'g_5'), prod({ seq: 5 })));                       // free plan: 5 products (g_0..g_4)
     await assertFails(setDoc(doc(ed, 'workspaces', W, 'products', 'g_2'), prod({ seq: 2, imageUrl: 'https://evil.example/x.png' })));

@@ -1,9 +1,9 @@
 import { paymentsUrl } from './firebase';
-import { doc, getDoc, getDocs, query, orderBy, collection, setDoc, serverTimestamp, type QueryDocumentSnapshot } from 'firebase/firestore';
+import { doc, getDoc, getDocs, query, orderBy, where, collection, setDoc, serverTimestamp, type QueryDocumentSnapshot } from 'firebase/firestore';
 import { fb } from './firebase';
 import { ApiError, DEFAULT_SETTINGS, toApiError } from './core';
 import { availability, createBooking, refOf } from './bookings';
-import type { SlotSettings } from './slots';
+import { normalizePhone, type SlotSettings } from './slots';
 import { getCachedNgnRate } from '../fx';
 import { DEMO_SLUG, demoBook, demoProfile, demoSlots } from './demo';
 
@@ -45,7 +45,7 @@ async function catalog(wid: string) {
   ]);
   return {
     services: s.docs.filter((d) => d.data().active !== false).map((d) => ({ id: d.id, name: d.data().name as string, description: (d.data().description ?? null) as string | null, durationMin: d.data().durationMin as number, priceMinor: (d.data().priceMinor ?? 0) as number, bookingMode: d.data().bookingMode === 'enquiry' ? 'enquiry' : 'appointment', intakeFields: Array.isArray(d.data().intakeFields) ? d.data().intakeFields : [], consultationEnabled: d.data().consultationEnabled === true })),
-    products: (await getDocs(query(collection(db, 'workspaces', wid, 'products'), orderBy('seq'))).catch(() => ({ docs: [] as QueryDocumentSnapshot[] }))).docs.filter((d) => d.data().active !== false).map((d) => ({ id: d.id, name: d.data().name as string, description: (d.data().description ?? null) as string | null, priceMinor: Number(d.data().priceMinor) || 0, inStock: d.data().inStock !== false, imageUrl: (typeof d.data().imageUrl === 'string' && d.data().imageUrl.startsWith('https://res.cloudinary.com/') ? d.data().imageUrl : null) as string | null })),
+    products: (await getDocs(query(collection(db, 'workspaces', wid, 'products'), where('active', '==', true))).catch(() => ({ docs: [] as QueryDocumentSnapshot[] }))).docs.sort((a, b) => Number(a.data().seq ?? 0) - Number(b.data().seq ?? 0)).map((d) => ({ id: d.id, name: d.data().name as string, description: (d.data().description ?? null) as string | null, priceMinor: Number(d.data().priceMinor) || 0, inStock: d.data().inStock !== false, imageUrl: (typeof d.data().imageUrl === 'string' && d.data().imageUrl.startsWith('https://res.cloudinary.com/') ? d.data().imageUrl : null) as string | null })),
     staff: t.docs.filter((d) => d.data().active !== false).map((d) => ({ id: d.id, name: d.data().name as string, title: (d.data().title ?? null) as string | null })),
   };
 }
@@ -95,9 +95,9 @@ export async function book(slug: string, b: Record<string, unknown>): Promise<un
   })();
   if (service.bookingMode === 'enquiry') {
     const name = String(b.customerName ?? '').trim();
-    const phone = String(b.customerPhone ?? '').trim();
+    const phone = normalizePhone(String(b.customerPhone ?? '').trim());   // same form as bookings, so the customer is one person everywhere
     if (name.length < 2 || name.length > 120) throw new ApiError(400, 'Please enter your full name.');
-    if (!/^\+?[0-9 ()-]{8,20}$/.test(phone)) throw new ApiError(400, 'Enter a valid phone number.');
+    if (!phone) throw new ApiError(400, 'Enter a valid phone number, for example 0803 123 4567.');
     const ref = doc(collection(fb().db, 'workspaces', p.wid, 'enquiries'));
     await setDoc(ref, {
       serviceId: service.id, serviceName: service.name, customerName: name, customerPhone: phone,
@@ -146,15 +146,21 @@ export async function joinWaitlist(slug: string, b: Record<string, unknown>): Pr
   return j;
 }
 
+/** One id per identical order, so a double-click or a retry after a bad connection cannot create the order twice. */
+const orderIds = new Map<string, string>();
 export async function placeOrder(slug: string, b: Record<string, unknown>): Promise<unknown> {
   await page(slug);
+  const sig = `${slug}|${JSON.stringify(b)}`;
+  let requestId = orderIds.get(sig);
+  if (!requestId) { requestId = crypto.randomUUID(); orderIds.set(sig, requestId); }
   const base = paymentsUrl();
   if (!base) throw new ApiError(503, 'Ordering is not available right now.', 'unavailable');
   let r: Response;
-  try { r = await fetch(`${base}/api/public/order`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...b, slug }) }); }
+  try { r = await fetch(`${base}/api/public/order`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...b, slug, requestId }) }); }
   catch { throw new ApiError(0, 'Cannot reach the server. Check your connection.', 'network'); }
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown> & { error?: string };
   if (!r.ok) throw new ApiError(r.status, j.error ?? 'Could not send your order.');
+  orderIds.delete(sig);
   return j;
 }
 
