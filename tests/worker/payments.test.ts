@@ -1247,14 +1247,15 @@ describe('shop orders', () => {
   });
 
   it('works without an email address, and tells the customer once per status change', async () => {
-    const r = await order({ email: '' }); expect(r.status).toBe(201);
+    // Keep both requests off the shared default phone bucket; this test is about email behavior.
+    const r = await order({ email: '', phone: '0803 777 0002' }); expect(r.status).toBe(201);
     expect(emails.map((m) => m.to[0] ?? m.to)).toEqual(['sade@example.com']);
     const path = orders()[0]!; const id = path.split('/').pop()!;
     const ev = async () => (await (await call('/api/events', { headers: await authed(), body: JSON.stringify({ workspaceId: X, event: 'orders.order.status', id }) })).json()) as any;
     store.set(path, { ...store.get(path)!, fields: { ...store.get(path)!.fields, status: toFs('confirmed') } });
     expect(await ev()).toMatchObject({ emailed: false, reason: 'no_email' });
     // with an address on the order the customer is emailed once
-    const r2 = await order(); expect(r2.status).toBe(201);
+    const r2 = await order({ phone: '0803 777 0003' }); expect(r2.status).toBe(201);
     const p2 = orders().find((k) => k !== path)!; const id2 = p2.split('/').pop()!;
     store.set(p2, { ...store.get(p2)!, fields: { ...store.get(p2)!.fields, status: toFs('shipped') } });
     emails = [];
