@@ -65,7 +65,11 @@ export async function uploadPhoto(file: File): Promise<string> {
   try { r = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(s.cloudName)}/image/upload`, { method: 'POST', body: f }); }
   catch { throw new ApiError(0, 'Could not reach the photo service. Check your connection.', 'network'); }
   const j = (await r.json().catch(() => ({}))) as { secure_url?: string; error?: { message?: string } };
-  if (!r.ok || !j.secure_url || !IMG_RE.test(j.secure_url)) throw new ApiError(502, 'The picture could not be uploaded. Please try again.');
+  if (!r.ok || !j.secure_url || !IMG_RE.test(j.secure_url)) {
+    // Cloudinary says why (wrong cloud name, key or secret, file type, size). Show it so a set-up mistake is not a guessing game.
+    const why = j.error?.message ? ` Cloudinary said: ${String(j.error.message).slice(0, 160)}` : ` (status ${r.status})`;
+    throw new ApiError(502, `The picture could not be uploaded.${why}`);
+  }
   return j.secure_url;
 }
 
