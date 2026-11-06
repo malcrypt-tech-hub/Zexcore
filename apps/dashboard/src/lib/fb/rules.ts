@@ -62,3 +62,9 @@ export async function runs(): Promise<{ runs: unknown[] }> {
 export function emit(event: 'bookings.booking.created' | 'bookings.booking.cancelled' | 'crm.lead.created', wid: string, id: string): void {
   void worker('/api/events', { body: { workspaceId: wid, event, id } }).catch(() => undefined);
 }
+
+/** The customer is emailed that their appointment moved. Resolves to whether an email went out (false when there is no address or sending failed). */
+export async function emitRescheduled(wid: string, id: string, previousStartsAt: string): Promise<boolean> {
+  try { return (await worker<{ emailed?: boolean }>('/api/events', { body: { workspaceId: wid, event: 'bookings.booking.rescheduled', id, previousStartsAt } })).emailed === true; }
+  catch { return false; }
+}

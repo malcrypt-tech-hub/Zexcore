@@ -152,7 +152,16 @@ function openReschedule(b: Booking, reload: () => void): void {
     onMount: (el, close) => {
       const save = $('[data-save]', el) as HTMLButtonElement;
       slotPicker($('#rs', el)!, () => b.serviceId, () => b.staffId ?? '', (iso) => { pick = iso; save.disabled = !iso; });
-      save.addEventListener('click', () => void busy(save, async () => { if (pick && await patch(b.id, { startsAt: pick }, 'Booking moved')) { close(); reload(); } }));
+      save.addEventListener('click', () => void busy(save, async () => {
+        if (!pick) return;
+        try {
+          const r = await api<{ customerEmailed?: boolean | null }>(`/api/bookings/${b.id}`, { method: 'PATCH', body: { startsAt: pick } });
+          if (r.customerEmailed === true) toast('Booking moved. The customer has been emailed.', 'success');
+          else if (r.customerEmailed === null) toast('Booking moved. This customer has no email on file, so let them know yourself.', 'info');
+          else toast('Booking moved, but the email to the customer could not be sent. Please tell them yourself.', 'error');
+          close(); reload();
+        } catch (e) { toast(e instanceof ApiError ? e.message : 'Update failed', 'error'); }
+      }));
     },
   });
 }

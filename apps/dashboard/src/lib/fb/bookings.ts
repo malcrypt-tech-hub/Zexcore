@@ -5,7 +5,7 @@ import { listServices, listStaff, type ServiceDto, type StaffDto } from './catal
 import { CELL_MS, cellsFor, generateSlotStarts, localDateOf, localMidnightUtc, normalizePhone, weekdayOf, type SlotSettings } from './slots';
 import { hasFeatureAccess, slotLimit } from './plan';
 import { worker } from './worker';
-import { emit } from './rules';
+import { emit, emitRescheduled } from './rules';
 
 export interface BookingDto {
   id: string; ref: string; status: string; serviceId: string; serviceName: string; durationMin: number; staffId: string | null; staffName: string | null;
@@ -170,7 +170,7 @@ export async function listBookings(params: URLSearchParams): Promise<{ bookings:
   return { bookings: rows.slice(0, Math.min(500, Number(params.get('limit')) || 100)), counts };
 }
 
-export async function patchBooking(id: string, b: Record<string, unknown>): Promise<{ ok: true; id: string }> {
+export async function patchBooking(id: string, b: Record<string, unknown>): Promise<{ ok: true; id: string; customerEmailed?: boolean | null }> {
   const c = await loadCtx();
   const { db } = fb();
   const ref = wsDoc(c, 'bookings', id);
@@ -210,7 +210,8 @@ export async function patchBooking(id: string, b: Record<string, unknown>): Prom
     for (const n of cells.filter((x) => !oldCells.includes(x))) batch.set(doc(db, 'workspaces', c.wid, 'locks', `${cur.staffId}_${n}`), { bookingId: newId, createdAt: serverTimestamp() });
     try { await batch.commit(); } catch (e) { throw (e as { code?: string }).code === 'permission-denied' ? new ApiError(409, 'That time was just taken. Pick another.', 'conflict') : toApiError(e); }
     void audit(c, 'booking.move', 'booking', newId);
-    return { ok: true, id: newId };
+    if (!cur.customerEmail) return { ok: true, id: newId, customerEmailed: null };   // nobody to tell by email
+    return { ok: true, id: newId, customerEmailed: await emitRescheduled(c.wid, newId, cur.startsAt.toDate().toISOString()) };
   }
 
   if (b.status !== undefined) {
