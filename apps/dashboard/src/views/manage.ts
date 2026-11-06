@@ -205,6 +205,11 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
         <div class="form-grid two"><div class="field"><label for="sl">Slot length (minutes)</label><select class="select" id="sl" ${dis}>${[15, 20, 30, 45, 60].map((n) => html`<option value="${n}" ${n === s.slotMinutes ? 'selected' : ''}>${n}</option>`)}</select></div>
         <div class="field"><label for="ld">Minimum notice (hours)</label><input class="input" id="ld" type="number" min="0" max="168" value="${s.leadMinutes / 60}" ${dis}></div></div></section>
 
+      <section class="card card-pad form-grid"><h3>Emails to your customers</h3>
+        <p class="muted small">These go only to customers who gave an email address when they booked.</p>
+        <div class="row between"><div><b>Appointment reminder</b><div class="muted small">About a day before a confirmed appointment. Not sent for bookings made less than a day ahead.</div></div><label class="switch"><input type="checkbox" id="re" ${s.reminderEmails === true ? 'checked' : ''} ${dis}><span></span></label></div>
+        <div class="row between"><div><b>Thank-you after a visit</b><div class="muted small">A day after you mark a booking completed, with a link to book again.</div></div><label class="switch"><input type="checkbox" id="fu" ${s.followUpEmails === true ? 'checked' : ''} ${dis}><span></span></label></div></section>
+
       <section class="card card-pad form-grid"><h3>Notifications</h3>
         <p class="muted small">Choose how you are told when a customer makes a booking request. Inside ZexCore, the bell and the Bookings and Messages tabs show a count of what is new until you open it.</p>
         <div class="row between"><div><b>Email alerts</b><div class="muted small">Get an email for every new booking request</div></div><label class="switch"><input type="checkbox" id="ne" ${s.notifyOwnerEmail !== false ? 'checked' : ''} ${dis}><span></span></label></div>
@@ -390,6 +395,8 @@ export async function renderSettings(view: HTMLElement): Promise<void> {
           ...($('#wl') ? { waitlistEnabled: ($('#wl') as HTMLInputElement).checked } : {}),
           ...($('#rd') ? { riskDepositEnabled: ($('#rd') as HTMLInputElement).checked, riskDepositLevel: ($('#rl') as HTMLSelectElement).value, riskDepositMinor: Math.round(Number(($('#rdn') as HTMLInputElement).value) * 100) } : {}),
           logoUrl: currentLogo,
+          reminderEmails: ($('#re') as HTMLInputElement | null)?.checked ?? false,
+          followUpEmails: ($('#fu') as HTMLInputElement | null)?.checked ?? false,
           notifyOwnerEmail: ($('#ne') as HTMLInputElement | null)?.checked ?? true,
           notifyOwnerWhatsApp: ($('#nw') as HTMLInputElement | null)?.checked ?? false,
           notifyWhatsAppPhone: ($('#nwp') as HTMLInputElement | null)?.value.trim() || null,

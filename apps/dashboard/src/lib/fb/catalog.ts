@@ -171,6 +171,8 @@ export async function putSettings(b: Record<string, unknown>): Promise<{ setting
     }
   }
   if (b.weeklyDigest !== undefined) s.weeklyDigest = b.weeklyDigest === true;
+  if (b.reminderEmails !== undefined) s.reminderEmails = b.reminderEmails === true;
+  if (b.followUpEmails !== undefined) s.followUpEmails = b.followUpEmails === true;
   if (b.waitlistEnabled !== undefined) {
     s.waitlistEnabled = b.waitlistEnabled === true;
     if (s.waitlistEnabled && !c.settings.waitlistEnabled) requireFeature(c, 'waitlist');
