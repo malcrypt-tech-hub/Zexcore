@@ -1214,7 +1214,9 @@ describe('shop orders', () => {
   it('falls back to the owner user profile when the workspace member email is missing', async () => {
     seedDoc(`workspaces/${X}/members/owner1`, { role: 'owner', name: 'Sade' });
     seedDoc('users/owner1', { name: 'Sade Obi', email: 'profile-owner@example.com' });
-    const r = await order();
+    // Use a separate phone bucket so this regression test does not consume the
+    // per-phone waiting-order quota used by the neighboring rate-limit tests.
+    const r = await order({ phone: '0803 999 0001' });
     expect(r.status).toBe(201);
     expect(emails.map((m) => m.to[0] ?? m.to).sort()).toEqual(['ada@example.com', 'profile-owner@example.com']);
   });
