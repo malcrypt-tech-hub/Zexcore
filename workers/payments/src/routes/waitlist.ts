@@ -12,6 +12,7 @@
 import type { Ctx } from '../env';
 import { FsConflict, fsCommit, fsGet, fsQuery, type FsDoc } from '../fs';
 import { sendFormal } from '../mail';
+import { queueFormal } from '../outbox';
 import { HttpError, json, localWhen, randomHex, readJson } from '../util';
 import { riskPlanOk } from './risk';
 
@@ -79,12 +80,12 @@ export async function backfillSlot(c: Ctx, wid: string, bookingId: string): Prom
   let told = 0;
   for (const w of chosen) {
     await fsCommit(c.env, c.d, [{ path: w.path, fields: { status: 'offered', offeredAt: c.d.now(), offeredStartsAt: new Date(startsAt), offeredFrom: bookingId }, mask: ['status', 'offeredAt', 'offeredStartsAt', 'offeredFrom'], precondition: { exists: true } }]).catch(() => undefined);
-    const sent = await sendFormal(c.env, c.d, String(w.data.email), `A time has opened up at ${biz}`, {
+    const sent = await queueFormal(c.env, c.d, `offer:${wid}:${bookingId}:${w.id}`, String(w.data.email), `A time has opened up at ${biz}`, {
       heading: 'A time has opened up', preheader: `${String(svc?.data.name ?? 'Your service')} on ${when}`, greeting: `Hello ${String(w.data.name).split(' ')[0]},`,
       paragraphs: [`You asked to be told if a time opened up at ${biz}. One just did.`, 'It is first come, first served: we told up to three people on the waitlist, and the first to book gets the time.'],
       details: [['Business', biz], ['Service', String(svc?.data.name ?? 'Service')], ['When', when]],
       button: { text: 'Book this time', url: link }, note: 'You are receiving this because you joined the waitlist on the booking page. If the time is gone when you open the link, you stay on the list for other cancellations.' }).catch(() => false);
-    if (sent) told++;
+    if (sent !== 'dead') told++;
   }
   return told;
 }

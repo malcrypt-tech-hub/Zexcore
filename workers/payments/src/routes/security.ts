@@ -15,6 +15,7 @@ import { verifyFirebaseIdToken, type Caller } from '../auth';
 import { fsCommit, fsGet, fsQuery } from '../fs';
 import { accessToken } from '../google';
 import { sendFormal } from '../mail';
+import { queueFormal } from '../outbox';
 import { HttpError, json, localWhen, sha256Hex } from '../util';
 
 const SEEN_EVERY_MS = 10 * 60_000;
@@ -52,7 +53,7 @@ export async function recordSignIn(c: Ctx): Promise<Response> {
   await fsCommit(c.env, c.d, [{ path, fields: { label, firstCountry: country, lastCountry: country, firstSeenAt: now, lastSeenAt: now, count: 1 }, precondition: { exists: false } }]);
   const newDevice = others.length > 0;   // the very first device on an account is just the person signing up
   if (newDevice && who.email) {
-    await sendFormal(c.env, c.d, who.email, 'New sign-in to your ZexCore account', {
+    await queueFormal(c.env, c.d, `newdevice:${who.uid}:${id}`, who.email, 'New sign-in to your ZexCore account', {
       heading: 'New sign-in to your account', preheader: `${label} signed in.`, greeting: 'Hello,',
       paragraphs: ['Your ZexCore account was just signed in to from a device we have not seen before.', 'If this was you, no action is needed. If it was not, change your password straight away and sign out everywhere from the Security page.'],
       details: [['Device', label], ['Country', country ?? 'Unknown'], ['Time', localWhen(now.toISOString(), 60)]],

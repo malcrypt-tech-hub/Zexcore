@@ -9,6 +9,7 @@
 import type { Ctx, Deps, Env } from '../env';
 import { fsCommit, fsGet, fsQuery } from '../fs';
 import { sendFormal } from '../mail';
+import { queueFormal } from '../outbox';
 import { localWhen } from '../util';
 import { activePlan } from './billing';
 import { backfillSlot } from './waitlist';
@@ -39,7 +40,7 @@ export async function expireUnpaidDeposits(env: Env, d: Deps, wid: string): Prom
     const email = String(b.data.customerEmail ?? '').trim();
     if (/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email)) {
       const first = String(b.data.customerName ?? '').trim().split(/\s+/)[0] || 'there';
-      await sendFormal(env, d, email, `Your booking with ${biz} was released`, {
+      await queueFormal(env, d, `expire:${wid}:${b.id}`, email, `Your booking with ${biz} was released`, {
         heading: 'Your booking was released', preheader: `The deposit was not paid within ${HOLD_HOURS} hours.`, greeting: `Hello ${first},`,
         paragraphs: [`Your booking with ${biz} needed a deposit to be held, and it was not paid within ${HOLD_HOURS} hours, so the time has been released.`, 'You are welcome to book again and pay the deposit to keep your time.'],
         details: [['Business', biz], ['Service', String(b.data.service ?? 'Service')], ['Time', localWhen(new Date(starts).toISOString(), off)]],
