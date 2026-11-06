@@ -1212,6 +1212,21 @@ describe('shop orders', () => {
     expect(orders()).toHaveLength(0); expect(emails).toHaveLength(0);
   });
 
+  it('does not create the order twice when the same request is sent again, and limits waiting orders per phone', async () => {
+    const a = await order({ requestId: 'req-12345678', items: [{ id: 'g_0', qty: 1 }] });
+    expect(a.status).toBe(201);
+    const ref = ((await a.json()) as { ref: string }).ref;
+    emails.length = 0;
+    const again = await order({ requestId: 'req-12345678', items: [{ id: 'g_0', qty: 1 }] });
+    expect(again.status).toBe(200);
+    expect(await again.json()).toMatchObject({ ref, duplicate: true });
+    expect(orders()).toHaveLength(1); expect(emails).toHaveLength(0);
+    expect((await order({ requestId: 'req-22222222', items: [{ id: 'g_0', qty: 1 }] })).status).toBe(201);
+    expect((await order({ requestId: 'req-33333333', items: [{ id: 'g_0', qty: 1 }] })).status).toBe(201);
+    expect((await order({ requestId: 'req-44444444', items: [{ id: 'g_0', qty: 1 }] })).status).toBe(429);   // three waiting orders for one phone
+    expect(orders()).toHaveLength(3);
+  });
+
   it('works without an email address, and tells the customer once per status change', async () => {
     const r = await order({ email: '' }); expect(r.status).toBe(201);
     expect(emails.map((m) => m.to[0] ?? m.to)).toEqual(['sade@example.com']);

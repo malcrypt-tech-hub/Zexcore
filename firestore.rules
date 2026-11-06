@@ -156,9 +156,10 @@ service cloud.firestore {
         allow create: if isEditor(wid) && slotId(wid, 's', 'services', id);
         allow update, delete: if isEditor(wid);
       }
-      // The shop. Anyone can see products (the booking page lists them); only editors change them. Orders are created by the Worker only.
+      // The shop. Anyone can see products that are switched on; only editors change them. Orders are created by the Worker only.
       match /products/{id} {
-        allow get, list: if true;
+        // The public sees only products that are switched on (the booking page asks for exactly those); the team sees all of them.
+        allow get, list: if resource.data.active == true || isMember(wid);
         allow create: if isEditor(wid) && slotId(wid, 'g', 'products', id) && productOk();
         allow update: if isEditor(wid) && productOk();
         allow delete: if isEditor(wid);

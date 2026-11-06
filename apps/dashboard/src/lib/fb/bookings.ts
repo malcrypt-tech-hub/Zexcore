@@ -228,20 +228,38 @@ export async function patchBooking(id: string, b: Record<string, unknown>): Prom
 }
 
 export async function customers(params: URLSearchParams): Promise<{ customers: unknown[] }> {
+  const c = await loadCtx();
   const { bookings } = await listBookings(new URLSearchParams({ limit: '500' }));
-  const by = new Map<string, { phone: string; name: string; email: string | null; bookings: number; completed: number; noShows: number; depositsMinor: number; lastVisit: string }>();
+  // Enquiries and shop orders are customers too. Only staff who can read them see them; anyone else just gets bookings.
+  const readAll = async (col: string): Promise<{ name: string; phone: string; email: string | null; at: string; open: boolean }[]> => {
+    try {
+      const s = await getDocs(query(wsCol(c, col), orderBy('createdAt', 'desc'), qLimit(500)));
+      return s.docs.map((d) => { const x = d.data(); return { name: String(x.customerName ?? ''), phone: String(x.customerPhone ?? ''), email: x.customerEmail ? String(x.customerEmail) : null, at: iso(x.createdAt) ?? '', open: x.status !== 'cancelled' && x.status !== 'declined' }; });
+    } catch { return []; }
+  };
+  const [enquiries, orders] = await Promise.all([readAll('enquiries'), readAll('orders')]);
+  interface Row { phone: string; name: string; email: string | null; bookings: number; enquiries: number; orders: number; completed: number; noShows: number; depositsMinor: number; lastVisit: string; seen: string }
+  const by = new Map<string, Row>();
+  const key = (phone: string): string => normalizePhone(phone) ?? phone.replace(/\D/g, '');
+  const row = (phone: string, name: string, email: string | null, at: string): Row => {
+    const k = key(phone);
+    const x = by.get(k) ?? { phone: normalizePhone(phone) ?? phone, name, email, bookings: 0, enquiries: 0, orders: 0, completed: 0, noShows: 0, depositsMinor: 0, lastVisit: at, seen: at };
+    if (at > x.seen) { x.seen = at; x.name = name || x.name; }
+    if (at > x.lastVisit) x.lastVisit = at;
+    x.email ??= email;
+    by.set(k, x); return x;
+  };
   for (const b of bookings) {
     if (b.status === 'cancelled') continue;
-    const x = by.get(b.customerPhone) ?? { phone: b.customerPhone, name: b.customerName, email: b.customerEmail, bookings: 0, completed: 0, noShows: 0, depositsMinor: 0, lastVisit: b.startsAt };
+    const x = row(b.customerPhone, b.customerName, b.customerEmail, b.startsAt);
     x.bookings += 1; if (b.status === 'completed') x.completed += 1; if (b.status === 'no_show') x.noShows += 1;
-    if (b.startsAt > x.lastVisit) { x.lastVisit = b.startsAt; x.name = b.customerName; }
-    x.email ??= b.customerEmail;
-    by.set(b.customerPhone, x);
   }
+  for (const e of enquiries) if (e.open && e.phone) row(e.phone, e.name, e.email, e.at).enquiries += 1;
+  for (const o of orders) if (o.open && o.phone) row(o.phone, o.name, o.email, o.at).orders += 1;
   const term = (params.get('q') ?? '').trim().toLowerCase();
   let rows = [...by.values()];
   if (term) rows = rows.filter((r) => r.name.toLowerCase().includes(term) || r.phone.includes(term));
-  return { customers: rows.sort((a, b) => b.lastVisit.localeCompare(a.lastVisit)) };
+  return { customers: rows.map(({ seen: _seen, ...r }) => r).sort((a, b) => b.lastVisit.localeCompare(a.lastVisit)) };
 }
 
 export async function summary(): Promise<unknown> {
