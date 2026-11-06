@@ -31,6 +31,7 @@ export function renderMore(view: HTMLElement): void {
     { href: '/app/security', icon: 'shield-check', t: 'Security', s: 'Password and signed-in devices' },
     { href: '/app/backups', icon: 'database', t: 'Backups', s: 'Encrypted daily copies and certificates' },
     { href: '/app/insights', icon: 'activity', t: 'Business insights', s: 'Bookings, revenue and busy times' },
+    { href: '/app/shop', icon: 'shopping-bag', t: 'Shop', s: 'Products you sell and customer orders' },
     { href: '/app/waitlist', icon: 'clock', t: 'Revenue protection', s: 'Waitlist and cancelled times won back' },
     { href: '/app/api-keys', icon: 'key-round', t: 'API keys', s: 'Read-only access for other systems' },
     { href: '/app/export', icon: 'download', t: 'Export data', s: 'CSV and JSON downloads of your records' },

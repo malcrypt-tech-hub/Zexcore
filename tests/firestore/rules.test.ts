@@ -237,6 +237,27 @@ describe('team roles', () => {
       await setDoc(doc(db, 'workspaces', W, 'payout', 'main'), { accountNumber: '0123456789' });
     });
   });
+  it('the shop: anyone can see products, editors manage them within the plan cap, orders are Worker-created and status-only for staff', async () => {
+    const ed = asRole('editor1'), v = asRole('viewer1');
+    const prod = (extra = {}) => ({ name: 'Ankara bag', description: null, priceMinor: 2500, active: true, inStock: true, imageUrl: null, seq: 0, createdAt: serverTimestamp(), ...extra });
+    await assertSucceeds(setDoc(doc(ed, 'workspaces', W, 'products', 'g_0'), prod()));
+    await assertSucceeds(getDoc(doc(anon(), 'workspaces', W, 'products', 'g_0')));
+    await assertFails(setDoc(doc(v, 'workspaces', W, 'products', 'g_1'), prod({ seq: 1 })));                         // viewers cannot
+    await assertFails(setDoc(doc(ed, 'workspaces', W, 'products', 'g_5'), prod({ seq: 5 })));                       // free plan: 5 products (g_0..g_4)
+    await assertFails(setDoc(doc(ed, 'workspaces', W, 'products', 'g_2'), prod({ seq: 2, imageUrl: 'https://evil.example/x.png' })));
+    await assertFails(setDoc(doc(ed, 'workspaces', W, 'products', 'g_3'), prod({ seq: 3, priceMinor: -1 })));
+    await assertFails(setDoc(doc(ed, 'workspaces', W, 'products', 'g_4'), prod({ seq: 4, extra: 'nope' })));
+    await assertSucceeds(setDoc(doc(ed, 'workspaces', W, 'products', 'g_2'), prod({ seq: 2, imageUrl: 'https://res.cloudinary.com/demo/image/upload/v1/zexcore/a.jpg' })));
+    await seed(async (db) => { await setDoc(doc(db, 'workspaces', W, 'orders', 'o1'), { ref: 'ZO-ABC123', customerName: 'Ada', customerPhone: '+2348031112222', items: [], totalMinor: 0, status: 'new', createdAt: Timestamp.now() }); });
+    await assertFails(setDoc(doc(ed, 'workspaces', W, 'orders', 'o2'), { ref: 'ZO-X', status: 'new' }));              // customers go through the Worker
+    await assertFails(setDoc(doc(anon(), 'workspaces', W, 'orders', 'o3'), { ref: 'ZO-Y', status: 'new' }));
+    await assertFails(getDoc(doc(anon(), 'workspaces', W, 'orders', 'o1')));
+    await assertFails(getDoc(doc(v, 'workspaces', W, 'orders', 'o1')));
+    await assertSucceeds(getDoc(doc(ed, 'workspaces', W, 'orders', 'o1')));
+    await assertSucceeds(updateDoc(doc(ed, 'workspaces', W, 'orders', 'o1'), { status: 'confirmed', updatedAt: serverTimestamp() }));
+    await assertFails(updateDoc(doc(ed, 'workspaces', W, 'orders', 'o1'), { status: 'paid' }));
+    await assertFails(updateDoc(doc(ed, 'workspaces', W, 'orders', 'o1'), { totalMinor: 1 }));
+  });
   it('an editor looks after services, staff and pages, but not settings, team or automations approval', async () => {
     const ed = asRole('editor1');
     await assertSucceeds(setDoc(doc(ed, 'workspaces', W, 'services', 's_0'), svc()));

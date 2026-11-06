@@ -5,13 +5,13 @@ export type Tier = 'free' | 'starter' | 'growth' | 'agency' | 'enterprise' | 'de
 const UNLIMITED = null;
 
 // Everything the database rules enforce per plan. Must match firestore.rules.
-export const LIMITS: Record<Tier, Record<'bookingsPerMonth' | 'staff' | 'services' | 'cmsPages' | 'crmContacts' | 'devices' | 'rules', number | null>> = {
-  free:       { bookingsPerMonth: 50,   staff: 1,   services: 3,   cmsPages: 3,   crmContacts: 50, devices: 0, rules: 0 },
-  starter:    { bookingsPerMonth: 200,  staff: 3,   services: 10,  cmsPages: 10,  crmContacts: 500, devices: 0, rules: 0 },
-  growth:     { bookingsPerMonth: 1000, staff: 10,  services: 30,  cmsPages: 50,  crmContacts: 5000, devices: 25, rules: 25 },
-  agency:     { bookingsPerMonth: 5000, staff: 50,  services: 100, cmsPages: 200, crmContacts: 50000, devices: 100, rules: 100 },
-  enterprise: { bookingsPerMonth: UNLIMITED, staff: UNLIMITED, services: UNLIMITED, cmsPages: 1000, crmContacts: UNLIMITED, devices: 250, rules: 250 },
-  dedicated:  { bookingsPerMonth: UNLIMITED, staff: UNLIMITED, services: UNLIMITED, cmsPages: UNLIMITED, crmContacts: UNLIMITED, devices: UNLIMITED, rules: UNLIMITED },
+export const LIMITS: Record<Tier, Record<'bookingsPerMonth' | 'staff' | 'services' | 'cmsPages' | 'crmContacts' | 'devices' | 'rules' | 'products', number | null>> = {
+  free:       { bookingsPerMonth: 50,   staff: 1,   services: 3,   cmsPages: 3,   crmContacts: 50, devices: 0, rules: 0, products: 5 },
+  starter:    { bookingsPerMonth: 200,  staff: 3,   services: 10,  cmsPages: 10,  crmContacts: 500, devices: 0, rules: 0, products: 30 },
+  growth:     { bookingsPerMonth: 1000, staff: 10,  services: 30,  cmsPages: 50,  crmContacts: 5000, devices: 25, rules: 25, products: 200 },
+  agency:     { bookingsPerMonth: 5000, staff: 50,  services: 100, cmsPages: 200, crmContacts: 50000, devices: 100, rules: 100, products: 1000 },
+  enterprise: { bookingsPerMonth: UNLIMITED, staff: UNLIMITED, services: UNLIMITED, cmsPages: 1000, crmContacts: UNLIMITED, devices: 250, rules: 250, products: 5000 },
+  dedicated:  { bookingsPerMonth: UNLIMITED, staff: UNLIMITED, services: UNLIMITED, cmsPages: UNLIMITED, crmContacts: UNLIMITED, devices: UNLIMITED, rules: UNLIMITED, products: UNLIMITED },
 };
 /** The rules treat "unlimited" as this many slots. */
 export const UNLIMITED_SLOTS = 999_999;
@@ -36,6 +36,7 @@ export const LABELS: Labels = {
   crmContacts: { one: 'CRM contact', many: 'CRM contacts' },
   devices: { one: 'device', many: 'devices' },
   rules: { one: 'automation', many: 'automations' },
+  products: { one: 'shop product', many: 'shop products' },
 };
 
 const GRACE_MS = 3 * 86_400_000;

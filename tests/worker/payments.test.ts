@@ -1177,3 +1177,71 @@ describe('reschedule email', () => {
     expect(emails).toHaveLength(0);
   });
 });
+
+describe('shop orders', () => {
+  const X = 'wsshop00000000000001';
+  beforeEach(() => {
+    env = { ...env, RESEND_API_KEY: 're_test', CLOUDINARY_CLOUD_NAME: 'democloud', CLOUDINARY_API_KEY: '123456', CLOUDINARY_API_SECRET: 'shh-secret' };
+    seedDoc('slugs/shop-biz', { wid: X });
+    seedDoc(`workspaces/${X}`, { name: 'Shop Biz', plan: 'free', ownerUid: 'owner1', slug: 'shop-biz', settings: { publicName: 'Shop Biz' } });
+    seedDoc(`workspaces/${X}/members/owner1`, { role: 'owner', email: 'sade@example.com', name: 'Sade' });
+    seedDoc(`workspaces/${X}/products/g_0`, { name: 'Ankara bag', priceMinor: 2500, active: true, inStock: true });
+    seedDoc(`workspaces/${X}/products/g_1`, { name: 'Sold out hat', priceMinor: 900, active: true, inStock: false });
+    seedDoc(`workspaces/${X}/products/g_2`, { name: 'Hidden', priceMinor: 100, active: false, inStock: true });
+  });
+  const order = (over: Record<string, unknown> = {}) => call('/api/public/order', { headers: { 'content-type': 'application/json', origin: 'https://zexcore.com.ng' }, body: JSON.stringify({ slug: 'shop-biz', name: 'Ada Obi', phone: '0803 111 2222', email: 'ada@example.com', address: '12 Allen Avenue, Ikeja', items: [{ id: 'g_0', qty: 2 }], ...over }) });
+  const orders = () => [...store.keys()].filter((k) => k.startsWith(`workspaces/${X}/orders/`));
+
+  it('creates an order priced by the server, and emails the customer and the owner', async () => {
+    const r = await order({ items: [{ id: 'g_0', qty: 2, priceMinor: 1 }] });   // a price sent by the browser is ignored
+    expect(r.status).toBe(201);
+    const j = (await r.json()) as { ref: string; totalMinor: number };
+    expect(j.totalMinor).toBe(5000); expect(j.ref).toMatch(/^ZO-[0-9A-F]{6}$/);
+    const doc = store.get(orders()[0]!)!.fields;
+    expect(fromFs(doc.status)).toBe('new'); expect(fromFs(doc.totalMinor)).toBe(5000);
+    expect(emails.map((m) => m.to[0] ?? m.to).sort()).toEqual(['ada@example.com', 'sade@example.com']);
+  });
+
+  it('rejects hidden, out-of-stock and unknown goods, bad quantities, missing address and duplicates', async () => {
+    for (const items of [[{ id: 'g_1', qty: 1 }], [{ id: 'g_2', qty: 1 }], [{ id: 'g_9', qty: 1 }]]) expect((await order({ items })).status).toBe(409);
+    for (const items of [[{ id: 'g_0', qty: 0 }], [{ id: 'g_0', qty: 100 }], [{ id: 'g_0', qty: 1.5 }], [{ id: 'g_0', qty: 1 }, { id: 'g_0', qty: 1 }], []]) expect((await order({ items })).status).toBe(400);
+    expect((await order({ address: 'short' })).status).toBe(400);
+    expect((await order({ phone: 'abc' })).status).toBe(400);
+    expect((await order({ email: 'nope' })).status).toBe(400);
+    expect((await order({ slug: 'no-such-shop' })).status).toBe(404);
+    expect(orders()).toHaveLength(0); expect(emails).toHaveLength(0);
+  });
+
+  it('works without an email address, and tells the customer once per status change', async () => {
+    const r = await order({ email: '' }); expect(r.status).toBe(201);
+    expect(emails.map((m) => m.to[0] ?? m.to)).toEqual(['sade@example.com']);
+    const path = orders()[0]!; const id = path.split('/').pop()!;
+    const ev = async () => (await (await call('/api/events', { headers: await authed(), body: JSON.stringify({ workspaceId: X, event: 'orders.order.status', id }) })).json()) as any;
+    store.set(path, { ...store.get(path)!, fields: { ...store.get(path)!.fields, status: toFs('confirmed') } });
+    expect(await ev()).toMatchObject({ emailed: false, reason: 'no_email' });
+    // with an address on the order the customer is emailed once
+    const r2 = await order(); expect(r2.status).toBe(201);
+    const p2 = orders().find((k) => k !== path)!; const id2 = p2.split('/').pop()!;
+    store.set(p2, { ...store.get(p2)!, fields: { ...store.get(p2)!.fields, status: toFs('shipped') } });
+    emails = [];
+    const ev2 = async () => (await (await call('/api/events', { headers: await authed(), body: JSON.stringify({ workspaceId: X, event: 'orders.order.status', id: id2 }) })).json()) as any;
+    expect(await ev2()).toMatchObject({ emailed: true });
+    expect(emails[0].subject).toMatch(/on its way/);
+    expect(await ev2()).toMatchObject({ emailed: false, reason: 'duplicate' });
+    expect(emails).toHaveLength(1);
+  });
+
+  it('signs a Cloudinary upload for members only, limited to the workspace folder and image types', async () => {
+    const r = await call('/api/uploads/sign', { headers: await authed(), body: JSON.stringify({ workspaceId: X }) });
+    expect(r.status).toBe(200);
+    const j = (await r.json()) as Record<string, string>;
+    expect(j).toMatchObject({ cloudName: 'democloud', apiKey: '123456', folder: `zexcore/${X}/products`, allowed_formats: 'jpg,jpeg,png,webp' });
+    const toSign = `allowed_formats=jpg,jpeg,png,webp&folder=zexcore/${X}/products&timestamp=${j.timestamp}shh-secret`;
+    const sha1 = [...new Uint8Array(await crypto.subtle.digest('SHA-1', new TextEncoder().encode(toSign)))].map((b) => b.toString(16).padStart(2, '0')).join('');
+    expect(j.signature).toBe(sha1);
+    expect(JSON.stringify(j)).not.toContain('shh-secret');
+    expect((await call('/api/uploads/sign', { headers: { 'content-type': 'application/json', origin: 'https://zexcore.com.ng' }, body: JSON.stringify({ workspaceId: X }) })).status).toBe(401);
+    env = { ...env, CLOUDINARY_API_SECRET: undefined };
+    expect((await call('/api/uploads/sign', { headers: await authed(), body: JSON.stringify({ workspaceId: X }) })).status).toBe(503);
+  });
+});

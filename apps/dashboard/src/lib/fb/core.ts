@@ -114,7 +114,7 @@ export const canEditContent = (c: Ctx): boolean => c.role === 'owner' || c.role 
 export function requireEditor(c: Ctx): void { if (!canEditContent(c)) throw new ApiError(403, 'Your role cannot change this.', 'forbidden'); }
 export function requireAdmin(c: Ctx): void { if (!canWrite(c)) throw new ApiError(403, 'Only a workspace owner or admin can do that.', 'forbidden'); }
 
-const NOUN: Record<EnforcedKey, string> = { bookingsPerMonth: 'bookings a month', staff: 'team members', services: 'services', cmsPages: 'website pages', crmContacts: 'contacts', devices: 'devices', rules: 'automations' };
+const NOUN: Record<EnforcedKey, string> = { bookingsPerMonth: 'bookings a month', staff: 'team members', services: 'services', cmsPages: 'website pages', crmContacts: 'contacts', devices: 'devices', rules: 'automations', products: 'shop products' };
 const FEATURE_NAME: Record<FeatureKey, string> = { branding: 'Custom branding', compliance: 'Data protection', automations: 'Automations', devices: 'Device monitoring', export: 'Data export', backups: 'Daily backups', risk: 'No-show protection', api: 'API keys', waitlist: 'Waitlist', insights: 'Business insights' };
 /** Stops a paid feature up front with a clear upgrade message, instead of the database refusing it with a bare "no permission". */
 export function requireFeature(c: Ctx, f: FeatureKey): void {

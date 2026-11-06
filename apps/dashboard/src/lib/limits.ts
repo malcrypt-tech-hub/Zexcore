@@ -1,4 +1,4 @@
-export type LimitKey = 'bookingsPerMonth' | 'staff' | 'services' | 'devices' | 'rules' | 'cmsPages' | 'crmContacts';
+export type LimitKey = 'bookingsPerMonth' | 'staff' | 'services' | 'devices' | 'rules' | 'cmsPages' | 'crmContacts' | 'products';
 export type Limits = Record<LimitKey, number | null>;
 export type Labels = Record<LimitKey, { one: string; many: string }>;
 
