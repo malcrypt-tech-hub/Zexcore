@@ -37,12 +37,39 @@ export async function memberEvent(c: Ctx): Promise<Response> {
   if (event === 'bookings.booking.cancelled') {
     return json({ ok: true, told: await backfillSlot(c, wid, id) }, 200, c.headers);
   }
+  if (event === 'bookings.booking.rescheduled') return json(await rescheduledEmail(c, wid, id, String(b.previousStartsAt ?? '')), 200, c.headers);
   if (event === 'crm.lead.created') {
     const l = await fsGet(c.env, c.d, `workspaces/${wid}/leads/${id}`);
     if (!l) throw new HttpError(404, 'Lead not found');
     return json({ ok: true, ran: await fireEvent(c, wid, event, { lead: { id, title: l.data.title, value: l.data.value ?? 0, stageId: l.data.stageId } }) }, 200, c.headers);
   }
   throw new HttpError(400, 'Unknown event');
+}
+
+/** Tells the customer their appointment moved, so nobody depends on the owner remembering to message them. Once per move. */
+async function rescheduledEmail(c: Ctx, wid: string, id: string, previous: string): Promise<{ ok: true; emailed: boolean; reason?: string }> {
+  const bk = await fsGet(c.env, c.d, `workspaces/${wid}/bookings/${id}`);
+  if (!bk) throw new HttpError(404, 'Booking not found');
+  const email = String(bk.data.customerEmail ?? '').trim();
+  if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email)) return { ok: true, emailed: false, reason: 'no_email' };
+  if (bk.data.status === 'cancelled' || !(bk.data.startsAt instanceof Date)) return { ok: true, emailed: false, reason: 'not_active' };
+  if (c.d.now().getTime() - (bk.data.createdAt instanceof Date ? bk.data.createdAt.getTime() : 0) > 15 * 60_000) return { ok: true, emailed: false, reason: 'stale' };
+  try { await fsCommit(c.env, c.d, [{ path: `workspaces/${wid}/automationMarkers/resched_${id}`, fields: { at: c.d.now() }, precondition: { exists: false } }]); }
+  catch (e) { if (e instanceof FsConflict) return { ok: true, emailed: false, reason: 'duplicate' }; throw e; }
+  const ws = await fsGet(c.env, c.d, `workspaces/${wid}`);
+  const st = ws?.data.settings as Record<string, unknown> | undefined;
+  const off = Number(st?.utcOffsetMinutes ?? 60);
+  const biz = String(st?.publicName ?? ws?.data.name ?? 'the business');
+  const svc = await fsGet(c.env, c.d, `workspaces/${wid}/services/${String(bk.data.serviceId)}`);
+  const prev = new Date(previous);
+  const slug = String(ws?.data.slug ?? '');
+  const sent = await sendFormal(c.env, c.d, email, `Your appointment with ${biz} has been moved`, {
+    heading: 'Your appointment has been moved', greeting: `Hello ${firstName(String(bk.data.customerName ?? ''), email)},`,
+    paragraphs: [`${biz} has moved your appointment to a new time. Please make a note of it.`, 'If the new time does not work for you, please contact the business as soon as you can.'],
+    details: [['Business', biz], ['Service', String(svc?.data.name ?? 'Service')], ...(Number.isNaN(prev.getTime()) ? [] : [['Previous time', localWhen(prev.toISOString(), off)] as [string, string]]), ['New time', localWhen(bk.data.startsAt.toISOString(), off)], ['Reference', `ZX-${id.replace('_', '-')}`]],
+    ...(slug ? { button: { text: 'View booking page', url: `${c.env.APP_URL.replace(/\/$/, '')}/${slug}` } } : {}),
+  });
+  return { ok: true, emailed: sent, ...(sent ? {} : { reason: 'send_failed' }) };
 }
 
 /** POST /api/public/booked { slug, bookingId } — the booking page tells us a visitor just booked. Once per booking, ever. */

@@ -1,8 +1,8 @@
 /**
  * Delete account.  POST /api/account/delete  { confirm: "<your sign-in email>" }
  *
- * Needs a sign-in from the last five minutes (the app asks for the password or Google again), and the caller must type
- * their own email. Then, for every workspace the account belongs to:
+ * The caller must type their own email (password accounts also re-enter their password in the app). No fresh Google
+ * sign-in is demanded on top of that; a confirmation email is sent to the address when it is done. Then, for every workspace the account belongs to:
  *   - a team member just leaves: their access is removed and a `account.delete` entry is written to that workspace's log;
  *   - an owner closes the workspace: the entry is written FIRST, then bookings, customers, payments, messages and every
  *     other record are erased, every teammate loses access, and the booking page address is released.
@@ -14,10 +14,10 @@ import type { Ctx } from '../env';
 import { verifyFirebaseIdToken } from '../auth';
 import { fsCommit, fsGet, fsQuery } from '../fs';
 import { accessToken } from '../google';
+import { sendFormal } from '../mail';
 import { HttpError, json, readJson } from '../util';
 import { appendAudit } from './audit';
 
-const RECENT_SIGN_IN_S = 300;
 const WID_RE = /^[A-Za-z0-9_-]{20}$/;
 /** Everything in a workspace that is business or customer data. auditChain and auditMeta are deliberately not listed. */
 const WIPE = ['services', 'staff', 'contacts', 'stages', 'leads', 'customers', 'pages', 'bookings', 'locks', 'payments', 'devices', 'alertRules', 'alerts', 'rules',
@@ -71,8 +71,6 @@ export async function deleteAccount(c: Ctx): Promise<Response> {
   const bearer = /^Bearer (.+)$/.exec(c.req.headers.get('authorization') ?? '')?.[1];
   const caller = bearer ? await verifyFirebaseIdToken(c.env, c.d, bearer) : null;
   if (!caller) throw new HttpError(401, 'Sign in again to continue.', 'unauthenticated');
-  const nowS = Math.floor(c.d.now().getTime() / 1000);
-  if (!caller.authTime || nowS - caller.authTime > RECENT_SIGN_IN_S) throw new HttpError(401, 'For your security, confirm it is you: sign in again, then delete the account.', 'reauth');
   const email = (caller.email ?? '').toLowerCase();
   if (!email || String(b.confirm ?? '').trim().toLowerCase() !== email) throw new HttpError(400, 'Type your sign-in email exactly to confirm.', 'confirm');
 
@@ -92,5 +90,9 @@ export async function deleteAccount(c: Ctx): Promise<Response> {
   await wipeCollection(c, `users/${caller.uid}`, 'signins', budget);   // Security Watch record goes with the account
   if (u) await fsCommit(c.env, c.d, [{ path: u.path, delete: true }]);
   await deleteLogin(c, caller.uid);
+  await sendFormal(c.env, c.d, email, 'Your ZexCore account was deleted', {
+    heading: 'Your account was deleted', greeting: 'Hello,',
+    paragraphs: ['Your ZexCore account and the workspaces you owned have been deleted, as you requested.', 'If you did not ask for this, write to hello@zexcore.com.ng straight away.'],
+  }).catch((e) => console.error('deletion email failed', e instanceof Error ? e.message : e));
   return json({ ok: true, workspacesClosed: closed, workspacesLeft: left }, 200, c.headers);
 }

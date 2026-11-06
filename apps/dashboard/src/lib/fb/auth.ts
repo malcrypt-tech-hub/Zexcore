@@ -1,6 +1,6 @@
 import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updateProfile, sendEmailVerification, sendPasswordResetEmail,
-  confirmPasswordReset, applyActionCode, GoogleAuthProvider, signInWithPopup, type User, EmailAuthProvider, reauthenticateWithCredential, updatePassword, deleteUser, reauthenticateWithPopup,
+  confirmPasswordReset, applyActionCode, GoogleAuthProvider, signInWithPopup, type User, EmailAuthProvider, reauthenticateWithCredential, updatePassword, deleteUser,
 } from 'firebase/auth';
 import { collection, doc, getDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { fb } from './firebase';
@@ -158,7 +158,7 @@ export function signInMethod(): 'password' | 'google' {
   return u?.providerData.some((p) => p.providerId === 'password') ? 'password' : 'google';
 }
 
-/** Permanently deletes the signed-in account (and every workspace it owns). Re-confirms the sign-in first; the Worker re-checks it. */
+/** Permanently deletes the signed-in account (and every workspace it owns). Password accounts re-enter their password; Google accounts only type their email. */
 export async function deleteAccount(password: string | undefined, confirmEmail: string): Promise<void> {
   const { auth } = fb();
   const user = auth.currentUser;
@@ -168,10 +168,9 @@ export async function deleteAccount(password: string | undefined, confirmEmail: 
     if (signInMethod() === 'password') {
       if (!password) throw new ApiError(400, 'Enter your password to confirm.');
       await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
-    } else {
-      await reauthenticateWithPopup(user, new GoogleAuthProvider());
     }
-    await user.getIdToken(true);   // fresh token carrying the new sign-in time
+    // Google accounts: typing the email above is the confirmation. No second Google pop-up.
+    await user.getIdToken(true);
   } catch (e) {
     if (e instanceof ApiError) throw e;
     const code = (e as { code?: string }).code ?? '';

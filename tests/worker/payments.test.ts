@@ -722,16 +722,21 @@ describe('team changes and account deletion are audited', () => {
     expect(deletedLogins).toEqual(['owner1']);
   });
 
-  it('needs a recent sign-in and the exact email', async () => {
-    const stale = await call('/api/account/delete', { body: JSON.stringify({ confirm: 'sade@example.com' }), headers: await as('owner1', 'sade@example.com', nowS() - 3600) });
-    expect(stale.status).toBe(401);
-    expect(((await stale.json()) as { code: string }).code).toBe('reauth');
+  it('needs the exact email and a valid sign-in, but not a fresh one', async () => {
     const wrong = await call('/api/account/delete', { body: JSON.stringify({ confirm: 'someone@else.com' }), headers: await as('owner1', 'sade@example.com') });
     expect(wrong.status).toBe(400);
     expect((await call('/api/account/delete', { body: JSON.stringify({ confirm: 'sade@example.com' }), headers: { 'content-type': 'application/json' } })).status).toBe(401);
     expect(store.has(`workspaces/${W}/bookings/b1`)).toBe(true);
     expect(auditOf()).toEqual([]);
     expect(deletedLogins).toEqual([]);
+  });
+
+  it('does not ask for a fresh sign-in, and sends a confirmation email', async () => {
+    env = { ...env, RESEND_API_KEY: 're_test' };
+    const r = await call('/api/account/delete', { body: JSON.stringify({ confirm: 'sade@example.com' }), headers: await as('owner1', 'sade@example.com', nowS() - 7 * 86_400) });
+    expect(r.status).toBe(200);
+    expect(deletedLogins).toEqual(['owner1']);
+    expect(emails.some((m) => m.subject === 'Your ZexCore account was deleted' && (m.to[0] ?? m.to) === 'sade@example.com')).toBe(true);
   });
 });
 
@@ -1137,5 +1142,38 @@ describe('Security Watch', () => {
     const ok = await call('/api/security/revoke-all', { headers: await authed({ auth_time: Math.floor(NOW.getTime() / 1000) - 30 }), body: '{}' });
     expect(ok.status).toBe(200);
     expect(revokedLogins[0]).toMatchObject({ localId: 'owner1', validSince: String(Math.floor(NOW.getTime() / 1000)) });
+  });
+});
+
+describe('reschedule email', () => {
+  const X = 'wsresched0000000001a';
+  const NEW = new Date(NOW.getTime() + 3 * 86_400_000), OLD = new Date(NOW.getTime() + 86_400_000);
+  const seedBk = (id: string, over: Record<string, unknown> = {}) => seedDoc(`workspaces/${X}/bookings/${id}`, { status: 'confirmed', serviceId: 's_0', customerName: 'Ada Obi', customerEmail: 'ada@example.com', customerPhone: '+2348031112222', startsAt: NEW, createdAt: new Date(NOW.getTime() - 60_000), ...over });
+  const fire = async (id: string, previousStartsAt = OLD.toISOString()) => (await (await call('/api/events', { headers: await authed(), body: JSON.stringify({ workspaceId: X, event: 'bookings.booking.rescheduled', id, previousStartsAt }) })).json()) as any;
+  beforeEach(() => {
+    env = { ...env, RESEND_API_KEY: 're_test' };
+    seedDoc(`workspaces/${X}`, { name: 'Moves Salon', plan: 'free', ownerUid: 'owner1', slug: 'moves-salon', settings: { publicName: 'Moves Salon' } });
+    seedDoc(`workspaces/${X}/members/owner1`, { role: 'owner' });
+    seedDoc(`workspaces/${X}/services/s_0`, { name: 'Braids' });
+  });
+
+  it('emails the customer the old and new time, once per move', async () => {
+    seedBk('202611_9');
+    expect(await fire('202611_9')).toMatchObject({ ok: true, emailed: true });
+    expect(emails).toHaveLength(1);
+    expect(emails[0].subject).toMatch(/has been moved/);
+    expect(emails[0].text).toMatch(/Previous time/); expect(emails[0].text).toMatch(/New time/);
+    expect(await fire('202611_9')).toMatchObject({ emailed: false, reason: 'duplicate' });
+    expect(emails).toHaveLength(1);
+  });
+
+  it('says so when there is no email address, and ignores cancelled, old or forged moves', async () => {
+    seedBk('202611_10', { customerEmail: null });
+    expect(await fire('202611_10')).toMatchObject({ emailed: false, reason: 'no_email' });
+    seedBk('202611_11', { status: 'cancelled' });
+    expect(await fire('202611_11')).toMatchObject({ emailed: false, reason: 'not_active' });
+    seedBk('202611_12', { createdAt: new Date(NOW.getTime() - 3_600_000) });
+    expect(await fire('202611_12')).toMatchObject({ emailed: false, reason: 'stale' });
+    expect(emails).toHaveLength(0);
   });
 });
