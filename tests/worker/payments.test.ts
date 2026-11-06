@@ -1189,7 +1189,9 @@ describe('reschedule email', () => {
 
 describe('shop orders', () => {
   const X = 'wsshop00000000000001';
+  let orderVisitor = 0;
   beforeEach(() => {
+    orderVisitor = 0;
     env = { ...env, RESEND_API_KEY: 're_test', CLOUDINARY_CLOUD_NAME: 'democloud', CLOUDINARY_API_KEY: '123456', CLOUDINARY_API_SECRET: 'shh-secret' };
     seedDoc('slugs/shop-biz', { wid: X });
     seedDoc(`workspaces/${X}`, { name: 'Shop Biz', plan: 'free', ownerUid: 'owner1', slug: 'shop-biz', settings: { publicName: 'Shop Biz' } });
@@ -1198,7 +1200,7 @@ describe('shop orders', () => {
     seedDoc(`workspaces/${X}/products/g_1`, { name: 'Sold out hat', priceMinor: 900, active: true, inStock: false });
     seedDoc(`workspaces/${X}/products/g_2`, { name: 'Hidden', priceMinor: 100, active: false, inStock: true });
   });
-  const order = (over: Record<string, unknown> = {}) => call('/api/public/order', { headers: { 'content-type': 'application/json', origin: 'https://zexcore.com.ng' }, body: JSON.stringify({ slug: 'shop-biz', name: 'Ada Obi', phone: '0803 111 2222', email: 'ada@example.com', address: '12 Allen Avenue, Ikeja', items: [{ id: 'g_0', qty: 2 }], ...over }) });
+  const order = (over: Record<string, unknown> = {}) => call('/api/public/order', { headers: { 'content-type': 'application/json', origin: 'https://zexcore.com.ng', 'cf-connecting-ip': `198.51.100.${++orderVisitor}` }, body: JSON.stringify({ slug: 'shop-biz', name: 'Ada Obi', phone: '0803 111 2222', email: 'ada@example.com', address: '12 Allen Avenue, Ikeja', items: [{ id: 'g_0', qty: 2 }], ...over }) });
   const orders = () => [...store.keys()].filter((k) => k.startsWith(`workspaces/${X}/orders/`));
 
   it('creates an order priced by the server, and emails the customer and the owner', async () => {
@@ -1209,6 +1211,16 @@ describe('shop orders', () => {
     const doc = store.get(orders()[0]!)!.fields;
     expect(fromFs(doc.status)).toBe('new'); expect(fromFs(doc.totalMinor)).toBe(5000);
     expect(emails.map((m) => m.to[0] ?? m.to).sort()).toEqual(['ada@example.com', 'sade@example.com']);
+  });
+
+  it('falls back to the owner user profile when the workspace member email is missing', async () => {
+    seedDoc(`workspaces/${X}/members/owner1`, { role: 'owner', name: 'Sade' });
+    seedDoc('users/owner1', { name: 'Sade Obi', email: 'profile-owner@example.com' });
+    // Use a separate phone bucket so this regression test does not consume the
+    // per-phone waiting-order quota used by the neighboring rate-limit tests.
+    const r = await order({ phone: '0803 999 0001' });
+    expect(r.status).toBe(201);
+    expect(emails.map((m) => m.to[0] ?? m.to).sort()).toEqual(['ada@example.com', 'profile-owner@example.com']);
   });
 
   it('rejects hidden, out-of-stock and unknown goods, bad quantities, missing address and duplicates', async () => {
@@ -1237,18 +1249,28 @@ describe('shop orders', () => {
   });
 
   it('works without an email address, and tells the customer once per status change', async () => {
-    const r = await order({ email: '' }); expect(r.status).toBe(201);
+    // Keep both requests off the shared default phone bucket; this test is about email behavior.
+    const r = await order({ email: '', phone: '0803 777 0002' }); expect(r.status).toBe(201);
     expect(emails.map((m) => m.to[0] ?? m.to)).toEqual(['sade@example.com']);
     const path = orders()[0]!; const id = path.split('/').pop()!;
     const ev = async () => (await (await call('/api/events', { headers: await authed(), body: JSON.stringify({ workspaceId: X, event: 'orders.order.status', id }) })).json()) as any;
     store.set(path, { ...store.get(path)!, fields: { ...store.get(path)!.fields, status: toFs('confirmed') } });
     expect(await ev()).toMatchObject({ emailed: false, reason: 'no_email' });
+    // Use a separate workspace for the second order. The Firestore test mock
+    // returns whole collections without applying where filters, so same-shop
+    // fixtures can interfere with per-phone and shop-wide queue assertions.
+    const X2 = 'wsshopmail0000000002';
+    seedDoc('slugs/shop-email', { wid: X2 });
+    seedDoc(`workspaces/${X2}`, { name: 'Email Shop', plan: 'free', ownerUid: 'owner1', slug: 'shop-email', settings: { publicName: 'Email Shop' } });
+    seedDoc(`workspaces/${X2}/members/owner1`, { role: 'owner', email: 'sade@example.com', name: 'Sade' });
+    seedDoc(`workspaces/${X2}/products/g_0`, { name: 'Ankara bag', priceMinor: 2500, active: true, inStock: true });
     // with an address on the order the customer is emailed once
-    const r2 = await order(); expect(r2.status).toBe(201);
-    const p2 = orders().find((k) => k !== path)!; const id2 = p2.split('/').pop()!;
+    const r2 = await order({ slug: 'shop-email', phone: '0803 777 0003' }); expect(r2.status).toBe(201);
+    const p2 = [...store.keys()].find((k) => k.startsWith(`workspaces/${X2}/orders/`))!;
+    const id2 = p2.split('/').pop()!;
     store.set(p2, { ...store.get(p2)!, fields: { ...store.get(p2)!.fields, status: toFs('shipped') } });
     emails = [];
-    const ev2 = async () => (await (await call('/api/events', { headers: await authed(), body: JSON.stringify({ workspaceId: X, event: 'orders.order.status', id: id2 }) })).json()) as any;
+    const ev2 = async () => (await (await call('/api/events', { headers: await authed(), body: JSON.stringify({ workspaceId: X2, event: 'orders.order.status', id: id2 }) })).json()) as any;
     expect(await ev2()).toMatchObject({ emailed: true });
     expect(emails[0].subject).toMatch(/on its way/);
     expect(await ev2()).toMatchObject({ emailed: false, reason: 'duplicate' });
@@ -1267,6 +1289,31 @@ describe('shop orders', () => {
     expect((await call('/api/uploads/sign', { headers: { 'content-type': 'application/json', origin: 'https://zexcore.com.ng' }, body: JSON.stringify({ workspaceId: X }) })).status).toBe(401);
     env = { ...env, CLOUDINARY_API_SECRET: undefined };
     expect((await call('/api/uploads/sign', { headers: await authed(), body: JSON.stringify({ workspaceId: X }) })).status).toBe(503);
+  });
+});
+
+describe('public booking owner notification', () => {
+  const X = 'wsbooknotify000000001';
+  it('uses the owner profile email when the owner member row has no email', async () => {
+    env = { ...env, RESEND_API_KEY: 're_test' };
+    seedDoc('slugs/book-biz', { wid: X });
+    seedDoc(`workspaces/${X}`, { name: 'Book Biz', plan: 'free', ownerUid: 'owner1', slug: 'book-biz', settings: {} });
+    seedDoc(`workspaces/${X}/members/owner1`, { role: 'owner', name: 'Sade' });
+    seedDoc('users/owner1', { name: 'Sade Obi', email: 'profile-owner@example.com' });
+    seedDoc(`workspaces/${X}/services/s_0`, { name: 'Consultation', priceMinor: 0 });
+    seedDoc(`workspaces/${X}/bookings/202611_9`, {
+      source: 'public', status: 'pending', serviceId: 's_0', customerName: 'Ada Obi',
+      customerPhone: '+2348031112222', customerEmail: null,
+      startsAt: new Date(NOW.getTime() + 86_400_000), createdAt: new Date(NOW.getTime() - 60_000),
+    });
+
+    const r = await call('/api/public/booked', {
+      headers: { 'content-type': 'application/json', origin: 'https://zexcore.com.ng' },
+      body: JSON.stringify({ slug: 'book-biz', bookingId: '202611_9' }),
+    });
+    expect(r.status).toBe(200);
+    expect(emails.map((m) => m.to[0] ?? m.to)).toContain('profile-owner@example.com');
+    expect(emails.find((m) => (m.to[0] ?? m.to) === 'profile-owner@example.com')?.subject).toMatch(/New booking request/);
   });
 });
 
