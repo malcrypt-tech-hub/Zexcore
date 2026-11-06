@@ -87,7 +87,7 @@ export async function placeOrder(c: Ctx): Promise<Response> {
       heading: 'You have a new order request', greeting: `Hello ${owner.name},`,
       paragraphs: [`${name} sent an order request from your booking page. Please confirm it, the final price and payment with them.`],
       details: [['Customer', name], ['Phone', phone], ...(email ? [['Email', email] as [string, string]] : []), ['Items', lineText], ['List total', usd(totalMinor)], ['Delivery address', address], ...(notes ? [['Notes', notes] as [string, string]] : []), ['Reference', ref]],
-      button: { text: 'Open orders', url: `${c.env.APP_URL.replace(/\/$/, '')}/app/orders` },
+      button: { text: 'Open orders', url: `${c.env.APP_URL.replace(/\/$/, '')}/app/shop#orders` },
       note: `Reply on WhatsApp: https://wa.me/${phone.replace(/\D/g, '')}`,
     }).catch((e) => console.error('order owner email failed', e instanceof Error ? e.message : e));
   }
