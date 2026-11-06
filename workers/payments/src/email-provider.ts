@@ -7,6 +7,8 @@ export interface EmailMessage {
   html?: string;
   from?: string;
   replyTo?: string;
+  /** Same key, same email: the provider drops a repeat sent within about a day, so a retry after a crash cannot double-send. */
+  idempotencyKey?: string;
 }
 
 export type EmailSendResult =
@@ -42,7 +44,7 @@ export class ResendEmailProvider implements EmailProvider {
     try {
       const response = await this.fetcher('https://api.resend.com/emails', {
         method: 'POST',
-        headers: { authorization: `Bearer ${this.apiKey}`, 'content-type': 'application/json' },
+        headers: { authorization: `Bearer ${this.apiKey}`, 'content-type': 'application/json', ...(message.idempotencyKey ? { 'idempotency-key': message.idempotencyKey } : {}) },
         body: JSON.stringify({
           from: message.from || this.defaultFrom,
           to: [to],
@@ -54,7 +56,7 @@ export class ResendEmailProvider implements EmailProvider {
       });
       if (!response.ok) {
         // Do not expose provider response bodies: they can contain recipient or account details.
-        return { ok: false, provider: 'resend', reason: 'provider_rejected', retryable: response.status === 429 || response.status >= 500 };
+        return { ok: false, provider: 'resend', reason: 'provider_rejected', retryable: response.status === 429 || response.status === 409 || response.status >= 500 };
       }
       let messageId: string | undefined;
       try {

@@ -15,6 +15,7 @@ import { requireMember, DOERS } from '../auth';
 import { FsConflict, fsCommit, fsGet, fsQuery } from '../fs';
 import { ownerContact } from '../automation';
 import { sendFormal } from '../mail';
+import { queueFormal } from '../outbox';
 import { HttpError, ID_RE, firstName, json, randomHex, readJson, sha256Hex } from '../util';
 import { normalizePhone } from './waitlist';
 
@@ -73,7 +74,7 @@ export async function placeOrder(c: Ctx): Promise<Response> {
   const biz = String(st?.publicName ?? ws.data.name ?? 'the business');
   const lineText = items.map((i) => `${i.qty} × ${i.name} (${usd(i.unitMinor)} each)`).join('; ');
   if (email) {
-    await sendFormal(c.env, c.d, email, `We received your order request (${ref})`, {
+    await queueFormal(c.env, c.d, `orderack:${wid}:${id}`, email, `We received your order request (${ref})`, {
       heading: 'Your order request was received', greeting: `Hello ${firstName(name, email)},`,
       paragraphs: [`Thank you. ${biz} has received your order request. Nothing has been charged. The business will contact you to confirm the order, the final price and how to pay.`],
       details: [['Business', biz], ['Reference', ref], ['Items', lineText], ['List total', usd(totalMinor)], ['Delivery address', address]],
@@ -82,7 +83,7 @@ export async function placeOrder(c: Ctx): Promise<Response> {
   }
   if (st?.notifyOwnerEmail !== false) {
     const owner = await ownerContact(c, wid);
-    if (owner.email) await sendFormal(c.env, c.d, owner.email, `New order request ${ref}: ${name}`, {
+    if (owner.email) await queueFormal(c.env, c.d, `orderowner:${wid}:${id}`, owner.email, `New order request ${ref}: ${name}`, {
       heading: 'You have a new order request', greeting: `Hello ${owner.name},`,
       paragraphs: [`${name} sent an order request from your booking page. Please confirm it, the final price and payment with them.`],
       details: [['Customer', name], ['Phone', phone], ...(email ? [['Email', email] as [string, string]] : []), ['Items', lineText], ['List total', usd(totalMinor)], ['Delivery address', address], ...(notes ? [['Notes', notes] as [string, string]] : []), ['Reference', ref]],
@@ -115,11 +116,11 @@ export async function orderStatusEmail(c: Ctx, wid: string, id: string): Promise
   const st = ws?.data.settings as Record<string, unknown> | undefined;
   const biz = String(st?.publicName ?? ws?.data.name ?? 'the business');
   const items = (Array.isArray(o.data.items) ? o.data.items : []) as { name: string; qty: number }[];
-  const sent = await sendFormal(c.env, c.d, email, `${text[0]} (${String(o.data.ref)})`, {
+  const sent = await queueFormal(c.env, c.d, `orderstatus:${wid}:${id}:${status}`, email, `${text[0]} (${String(o.data.ref)})`, {
     heading: text[0], greeting: `Hello ${firstName(String(o.data.customerName ?? ''), email)},`, paragraphs: [text[1]],
     details: [['Business', biz], ['Reference', String(o.data.ref)], ['Items', items.map((i) => `${i.qty} × ${i.name}`).join('; ')]],
   });
-  return { ok: true, emailed: sent, ...(sent ? {} : { reason: 'send_failed' }) };
+  return { ok: true, emailed: sent !== 'dead', ...(sent !== 'dead' ? {} : { reason: 'send_failed' }) };
 }
 
 /** Cloudinary upload signature for one product photo. Signed on the server so the secret never reaches the browser and each upload is limited. */

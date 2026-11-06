@@ -16,6 +16,7 @@ import type { Ctx, Deps, Env } from '../env';
 import { FsConflict, fsCommit, fsGet, fsQuery } from '../fs';
 import { ownerContact } from '../automation';
 import { sendFormal } from '../mail';
+import { queueFormal } from '../outbox';
 import { HttpError, ID_RE, firstName, json, localWhen, randomRef, readJson } from '../util';
 import { getLiveNgnRate } from '../rates';
 import { assessBooking } from './risk';
@@ -178,7 +179,7 @@ export async function settleDeposit(env: Env, d: Deps, wid: string, reference: s
     const offset = Number(settings.utcOffsetMinutes ?? 60);
     const paidNgn = Number(vj.data.amount ?? pay.data.amountMinor);
     const usdMinor = Number(pay.data.usdMinor ?? 0);
-    await sendFormal(env, d, customerEmail, 'Your booking deposit payment receipt', {
+    await queueFormal(env, d, `receipt:${wid}:${reference}`, customerEmail, 'Your booking deposit payment receipt', {
       heading: 'Your deposit payment was received',
       preheader: `Payment received for booking ${bookingId.replace('_', '-')}`,
       greeting: `Hello ${firstName(String(booking?.data.customerName ?? ''), customerEmail)},`,

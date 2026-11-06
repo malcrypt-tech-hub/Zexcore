@@ -6,6 +6,7 @@ import { fireEvent, ownerContact } from '../automation';
 import type { Ctx } from '../env';
 import { FsConflict, fsCommit, fsGet } from '../fs';
 import { sendFormal } from '../mail';
+import { queueFormal } from '../outbox';
 import { sendBookingAlert, waNumber, whatsappConfigured } from '../whatsapp';
 import { enqueueWhatsAppEvent } from './whatsappAutomation';
 import { HttpError, ID_RE, firstName, json, localWhen, readJson } from '../util';
@@ -65,13 +66,13 @@ async function rescheduledEmail(c: Ctx, wid: string, id: string, previous: strin
   const svc = await fsGet(c.env, c.d, `workspaces/${wid}/services/${String(bk.data.serviceId)}`);
   const prev = new Date(previous);
   const slug = String(ws?.data.slug ?? '');
-  const sent = await sendFormal(c.env, c.d, email, `Your appointment with ${biz} has been moved`, {
+  const sent = await queueFormal(c.env, c.d, `resched:${wid}:${id}`, email, `Your appointment with ${biz} has been moved`, {
     heading: 'Your appointment has been moved', greeting: `Hello ${firstName(String(bk.data.customerName ?? ''), email)},`,
     paragraphs: [`${biz} has moved your appointment to a new time. Please make a note of it.`, 'If the new time does not work for you, please contact the business as soon as you can.'],
     details: [['Business', biz], ['Service', String(svc?.data.name ?? 'Service')], ...(Number.isNaN(prev.getTime()) ? [] : [['Previous time', localWhen(prev.toISOString(), off)] as [string, string]]), ['New time', localWhen(bk.data.startsAt.toISOString(), off)], ['Reference', `ZX-${id.replace('_', '-')}`]],
     ...(slug ? { button: { text: 'View booking page', url: `${c.env.APP_URL.replace(/\/$/, '')}/${slug}` } } : {}),
   });
-  return { ok: true, emailed: sent, ...(sent ? {} : { reason: 'send_failed' }) };
+  return { ok: true, emailed: sent !== 'dead', ...(sent !== 'dead' ? {} : { reason: 'send_failed' }) };
 }
 
 /** POST /api/public/booked { slug, bookingId } — the booking page tells us a visitor just booked. Once per booking, ever. */
@@ -108,7 +109,7 @@ export async function publicBooked(c: Ctx): Promise<Response> {
   const bookingDoc = await fsGet(c.env, c.d, `workspaces/${wid}/bookings/${bookingId}`);
   const customerEmail = String(bookingDoc?.data.customerEmail ?? '').trim();
   if (/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(customerEmail)) {
-    await sendFormal(c.env, c.d, customerEmail, 'We received your booking request', {
+    await queueFormal(c.env, c.d, `ack:${wid}:${bookingId}`, customerEmail, 'We received your booking request', {
       heading: 'Your booking request was received',
       preheader: `Your request to book ${String(bk.service || 'a service')} has been sent.`,
       greeting: `Hello ${firstName(String(bk.customerName ?? ''), customerEmail)},`,
@@ -119,7 +120,7 @@ export async function publicBooked(c: Ctx): Promise<Response> {
     });
   }
   if (emailEnabled) {
-    await sendFormal(c.env, c.d, owner.email, `New booking request: ${String(bk.customerName)}`, {
+    await queueFormal(c.env, c.d, `owner:${wid}:${bookingId}`, owner.email, `New booking request: ${String(bk.customerName)}`, {
       heading: 'You have a new booking request', preheader: `${String(bk.customerName)} wants to book ${String(bk.service)}`, greeting: `Hello ${owner.name},`,
       paragraphs: [`${String(bk.customerName)} has asked to book through your ZexCore booking page. Please review it and confirm or decline from your dashboard.`],
       details: [['Customer', String(bk.customerName)], ['Phone', String(bk.customerPhone)], ['Service', String(bk.service || 'Service')], ['When', localWhen(String(bk.startsAt), off)], ['Reference', String(bk.ref)], ...(price > 0 ? [['Price', `$${(price / 100).toFixed(2)}`] as [string, string]] : []), ...(risk ? [['No-show risk', `${risk.level[0]!.toUpperCase()}${risk.level.slice(1)} (${risk.score}/100)`] as [string, string]] : [])],

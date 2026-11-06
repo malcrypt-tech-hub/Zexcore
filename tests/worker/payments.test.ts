@@ -5,6 +5,7 @@ import { getLiveRates, FALLBACK_RATES } from '../../workers/payments/src/rates.j
 import { SEATS } from '../../workers/payments/src/routes/team.js';
 import { KEEP, backupId, gunzip, open as openBackup, scheduledBackups } from '../../workers/payments/src/routes/backups.js';
 import { LIMITS } from '../../apps/dashboard/src/lib/fb/plan';
+import { queueEmail, drainOutbox, outboxId, MAX_ATTEMPTS } from '../../workers/payments/src/outbox.js';
 import { scheduledDepositExpiry } from '../../workers/payments/src/index.js';
 import { handle, summarize, sendDigest, weekKey, digestDue, paystackSignature, amountMinor, planAfterPayment, throttled, toFs, fromFs, resetTokenCache, resetJwksCache, type Env } from '../../workers/payments/src/index.js';
 
@@ -33,6 +34,8 @@ async function idToken(over: Record<string, unknown> = {}, key = idKey.privateKe
 // ── in-memory Firestore + Google + Paystack ──
 type Doc = { fields: Record<string, any>; v: number };
 let emails: any[] = [];
+let resendMode: 'ok' | 'down' | 'reject' | 'throw' = 'ok';
+let resendKeys: (string | undefined)[] = [];
 let revokedLogins: any[] = [];
 let waSent: any[] = [];
 let deletedLogins: string[] = [];
@@ -63,7 +66,12 @@ function mockFetch(): typeof fetch {
     if (url.includes('identitytoolkit.googleapis.com') && url.endsWith('/accounts:update')) { revokedLogins.push(JSON.parse(init.body)); return Response.json({}); }
     if (url.includes('identitytoolkit.googleapis.com') && url.endsWith('/accounts:delete')) { deletedLogins.push(JSON.parse(init.body).localId); return Response.json({}); }
     if (url.startsWith('https://graph.facebook.com/')) { waSent.push({ url, auth: init.headers.authorization, body: JSON.parse(init.body) }); return Response.json({ messages: [{ id: 'wamid.1' }] }); }
-    if (url === 'https://api.resend.com/emails') { emails.push(JSON.parse(init.body)); return Response.json({ id: 'e1' }); }
+    if (url === 'https://api.resend.com/emails') {
+      if (resendMode === 'throw') throw new TypeError('network down');
+      if (resendMode === 'down') return new Response('{}', { status: 503 });
+      if (resendMode === 'reject') return new Response('{}', { status: 422 });
+      resendKeys.push(init.headers['idempotency-key']); emails.push(JSON.parse(init.body)); return Response.json({ id: 'e1' });
+    }
     if (url.endsWith(':runQuery')) {   // lists a collection under a parent; filters are not evaluated (tests seed only what they need)
       const parent = decodeURIComponent(url.split('/documents')[1]!.replace(/:runQuery$/, '')).replace(/^\//, '');
       const col = JSON.parse(init.body).structuredQuery.from[0].collectionId;
@@ -96,7 +104,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   resetTokenCache(); resetJwksCache();
-  emails = []; revokedLogins = []; waSent = []; store = new Map(); commits = []; paystackInit = []; paystackVerify = {}; paystackSub = [];
+  emails = []; resendMode = 'ok'; resendKeys = []; revokedLogins = []; waSent = []; store = new Map(); commits = []; paystackInit = []; paystackVerify = {}; paystackSub = [];
   env = { PAYSTACK_SECRET_KEY: SECRET, ALLOW_TEST_PAYMENTS: 'true', FIREBASE_PROJECT_ID: PROJECT, APP_URL: 'https://zexcore.com.ng', ALLOWED_ORIGINS: 'https://zexcore.com.ng,https://zexcore-5d6c0.web.app', NGN_PER_USD: '1500',
     FIREBASE_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'w@x.iam.gserviceaccount.com', private_key: saPem }) };
   seedDoc(`workspaces/${WID}`, { name: 'Sade Salon', plan: 'free', ownerUid: 'owner1', slug: 'sade-salon' });
@@ -1258,5 +1266,88 @@ describe('shop orders', () => {
     expect((await call('/api/uploads/sign', { headers: { 'content-type': 'application/json', origin: 'https://zexcore.com.ng' }, body: JSON.stringify({ workspaceId: X }) })).status).toBe(401);
     env = { ...env, CLOUDINARY_API_SECRET: undefined };
     expect((await call('/api/uploads/sign', { headers: await authed(), body: JSON.stringify({ workspaceId: X }) })).status).toBe(503);
+  });
+});
+
+describe('email outbox', () => {
+  const MIN = 60_000;
+  const at = (ms: number) => ({ fetch: mockFetch(), now: () => new Date(NOW.getTime() + ms) });
+  const mail = { key: 'ack:ws1:b1', to: 'ada@example.com', subject: 'Hello', text: 'Dear Ada, your booking was received.', html: '<p>Dear Ada</p>' };
+  const row = async (key = mail.key) => store.get(`emailOutbox/${await outboxId(key)}`)!.fields;
+  const f = async (k: string, key?: string) => fromFs((await row(key))[k]);
+  beforeEach(() => { env = { ...env, RESEND_API_KEY: 're_test' }; });
+
+  it('sends right away, once, with an idempotency key, and erases the body afterwards', async () => {
+    expect(await queueEmail(env, at(0), mail)).toBe('sent');
+    expect(emails).toHaveLength(1); expect(resendKeys[0]).toBe(await outboxId(mail.key));
+    expect(await f('status')).toBe('sent'); expect(await f('text')).toBeNull(); expect(await f('subject')).toBeNull();
+  });
+
+  it('queues the same key once, even when asked twice', async () => {
+    await queueEmail(env, at(0), mail);
+    expect(await queueEmail(env, at(1), mail)).toBe('duplicate');
+    expect(emails).toHaveLength(1);
+  });
+
+  it('keeps the message when the provider is down and delivers it on a later run, once', async () => {
+    resendMode = 'down';
+    expect(await queueEmail(env, at(0), mail)).toBe('queued');
+    expect(await f('status')).toBe('pending'); expect(await f('attempts')).toBe(1); expect(await f('lastError')).toBe('provider_rejected');
+    resendMode = 'ok';
+    expect(await drainOutbox(env, at(30_000))).toMatchObject({ sent: 0 });            // not due yet (wait is 1 minute)
+    expect(emails).toHaveLength(0);
+    expect(await drainOutbox(env, at(2 * MIN))).toMatchObject({ sent: 1 });
+    expect(emails).toHaveLength(1); expect(await f('status')).toBe('sent');
+    expect(await drainOutbox(env, at(10 * MIN))).toMatchObject({ sent: 0 });          // nothing left to send
+    expect(emails).toHaveLength(1);
+  });
+
+  it('treats a network failure as a retry, and a permanent rejection as final', async () => {
+    resendMode = 'throw';
+    expect(await queueEmail(env, at(0), mail)).toBe('queued');
+    expect(await f('status')).toBe('pending');
+    resendMode = 'reject';
+    expect(await queueEmail(env, at(0), { ...mail, key: 'bad:1' })).toBe('dead');
+    expect(await f('status', 'bad:1')).toBe('dead'); expect(await f('text', 'bad:1')).toBeNull();
+    expect(emails).toHaveLength(0);
+  });
+
+  it('backs off and gives up after the maximum number of tries', async () => {
+    resendMode = 'down';
+    await queueEmail(env, at(0), mail);
+    let t = 0;
+    for (let i = 1; i < MAX_ATTEMPTS; i++) { t += 13 * 60 * MIN; await drainOutbox(env, at(t)); }
+    expect(await f('attempts')).toBe(MAX_ATTEMPTS); expect(await f('status')).toBe('dead');
+    const before = await f('attempts'); await drainOutbox(env, at(t + 100 * 60 * MIN));
+    expect(await f('attempts')).toBe(before);
+    expect(emails).toHaveLength(0);
+  });
+
+  it('recovers a message whose worker died: a live lease is left alone, an expired one is taken over', async () => {
+    resendMode = 'down';
+    await queueEmail(env, at(0), mail);                                              // creates the row
+    const id = await outboxId(mail.key);
+    resendMode = 'ok';
+    const lock = (ms: number) => seedDoc(`emailOutbox/${id}`, { key: mail.key, to: mail.to, subject: mail.subject, text: mail.text, html: mail.html, status: 'sending', attempts: 1, nextAttemptAt: NOW, lockedUntil: new Date(NOW.getTime() + ms), createdAt: NOW, sentAt: null });
+    lock(4 * MIN);
+    expect(await drainOutbox(env, at(MIN))).toMatchObject({ sent: 0 }); expect(emails).toHaveLength(0);   // another worker still holds it
+    expect(await drainOutbox(env, at(6 * MIN))).toMatchObject({ sent: 1 });                              // lease ran out
+    expect(emails).toHaveLength(1); expect(await f('status')).toBe('sent');
+  });
+
+  it('waits without using up tries when no email provider is set up', async () => {
+    env = { ...env, RESEND_API_KEY: undefined };
+    expect(await queueEmail(env, at(0), mail)).toBe('queued');
+    expect(await f('attempts')).toBe(0); expect(await f('lastError')).toBe('not_configured');
+    env = { ...env, RESEND_API_KEY: 're_test' };
+    await drainOutbox(env, at(2 * 60 * MIN));
+    expect(emails).toHaveLength(1);
+  });
+
+  it('clears out old records', async () => {
+    await queueEmail(env, at(0), mail);
+    const r = await drainOutbox(env, at(8 * 86_400_000));
+    expect(r.purged).toBe(1);
+    expect(store.has(`emailOutbox/${await outboxId(mail.key)}`)).toBe(false);
   });
 });
