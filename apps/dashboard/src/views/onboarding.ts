@@ -95,7 +95,10 @@ export async function renderOnboarding(): Promise<void> {
         try {
           await api('/api/bookings/settings', { method: 'PUT', body: { businessType: type, businessSubtype: subtype, publicName: ($('#pn') as HTMLInputElement).value.trim(), phone: ($('#ph') as HTMLInputElement).value.trim(), openMinutes: open, closeMinutes: close, daysOpen: days, depositEnabled: depOn && depMinor > 0, depositMinor: depOn ? depMinor : 0, onboarded: true } });
           const existing = await api<{ services: unknown[] }>('/api/bookings/services');
-          if (!existing.services.length) for (const r of svcs) await api('/api/bookings/services', { method: 'POST', body: { name: r.name.trim(), durationMin: Math.min(480, Math.max(5, r.min)), priceMinor: Math.round(r.ngn * 100) } });
+          if (!existing.services.length) for (const r of svcs) {
+            const preset = industryOf(type).services.find((p) => p.name === r.name.trim());   // the kind of business decides what the booking page asks
+            await api('/api/bookings/services', { method: 'POST', body: { name: r.name.trim(), durationMin: Math.min(480, Math.max(5, r.min)), priceMinor: Math.round(r.ngn * 100), ...(preset?.mode ? { bookingMode: preset.mode } : {}), ...(preset?.fields?.length ? { intakeFields: preset.fields } : {}) } });
+          }
           for (const n of team) await api('/api/bookings/staff', { method: 'POST', body: { name: n } });
           await loadSettings(true);
           toast('Workspace ready. Your booking page is live.', 'success');
