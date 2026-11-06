@@ -1254,6 +1254,9 @@ describe('shop orders', () => {
     const ev = async () => (await (await call('/api/events', { headers: await authed(), body: JSON.stringify({ workspaceId: X, event: 'orders.order.status', id }) })).json()) as any;
     store.set(path, { ...store.get(path)!, fields: { ...store.get(path)!.fields, status: toFs('confirmed') } });
     expect(await ev()).toMatchObject({ emailed: false, reason: 'no_email' });
+    // The Firestore test mock returns the whole collection without applying where filters.
+    // Remove this fixture so the next request tests customer-email behavior, not the phone quota.
+    store.delete(path);
     // with an address on the order the customer is emailed once
     const r2 = await order({ phone: '0803 777 0003' }); expect(r2.status).toBe(201);
     const p2 = orders().find((k) => k !== path)!; const id2 = p2.split('/').pop()!;
