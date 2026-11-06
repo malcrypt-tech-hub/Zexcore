@@ -1,4 +1,5 @@
 import { assessBooking } from './risk';
+import { orderStatusEmail } from './shop';
 import { backfillSlot, markWaitlistBooked } from './waitlist';
 import { DOERS, requireMember } from '../auth';
 import { fireEvent, ownerContact } from '../automation';
@@ -37,6 +38,7 @@ export async function memberEvent(c: Ctx): Promise<Response> {
   if (event === 'bookings.booking.cancelled') {
     return json({ ok: true, told: await backfillSlot(c, wid, id) }, 200, c.headers);
   }
+  if (event === 'orders.order.status') return json(await orderStatusEmail(c, wid, id), 200, c.headers);
   if (event === 'bookings.booking.rescheduled') return json(await rescheduledEmail(c, wid, id, String(b.previousStartsAt ?? '')), 200, c.headers);
   if (event === 'crm.lead.created') {
     const l = await fsGet(c.env, c.d, `workspaces/${wid}/leads/${id}`);

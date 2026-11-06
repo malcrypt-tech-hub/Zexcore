@@ -14,6 +14,7 @@ export interface Env {
   /** Largest single card charge for a plan, in naira. Above it the buyer is asked to contact us. Default 1,000,000. */
   MAX_CHECKOUT_NGN?: string;
   /** WhatsApp Business Cloud API (owner alerts). Off unless both token and phone id are set. */
+  CLOUDINARY_CLOUD_NAME?: string; CLOUDINARY_API_KEY?: string; CLOUDINARY_API_SECRET?: string;
   WHATSAPP_TOKEN?: string; WHATSAPP_PHONE_ID?: string; WHATSAPP_TEMPLATE_BOOKING?: string; WHATSAPP_TEMPLATE_LANG?: string;
   /** Meta webhook app secret and dedicated verification token. */
   WHATSAPP_APP_SECRET?: string; WHATSAPP_WEBHOOK_VERIFY_TOKEN?: string;

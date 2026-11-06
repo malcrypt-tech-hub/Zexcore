@@ -1,5 +1,5 @@
 import { paymentsUrl } from './firebase';
-import { doc, getDoc, getDocs, query, orderBy, collection, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, getDocs, query, orderBy, collection, setDoc, serverTimestamp, type QueryDocumentSnapshot } from 'firebase/firestore';
 import { fb } from './firebase';
 import { ApiError, DEFAULT_SETTINGS, toApiError } from './core';
 import { availability, createBooking, refOf } from './bookings';
@@ -45,6 +45,7 @@ async function catalog(wid: string) {
   ]);
   return {
     services: s.docs.filter((d) => d.data().active !== false).map((d) => ({ id: d.id, name: d.data().name as string, description: (d.data().description ?? null) as string | null, durationMin: d.data().durationMin as number, priceMinor: (d.data().priceMinor ?? 0) as number, bookingMode: d.data().bookingMode === 'enquiry' ? 'enquiry' : 'appointment', intakeFields: Array.isArray(d.data().intakeFields) ? d.data().intakeFields : [], consultationEnabled: d.data().consultationEnabled === true })),
+    products: (await getDocs(query(collection(db, 'workspaces', wid, 'products'), orderBy('seq'))).catch(() => ({ docs: [] as QueryDocumentSnapshot[] }))).docs.filter((d) => d.data().active !== false).map((d) => ({ id: d.id, name: d.data().name as string, description: (d.data().description ?? null) as string | null, priceMinor: Number(d.data().priceMinor) || 0, inStock: d.data().inStock !== false, imageUrl: (typeof d.data().imageUrl === 'string' && d.data().imageUrl.startsWith('https://res.cloudinary.com/') ? d.data().imageUrl : null) as string | null })),
     staff: t.docs.filter((d) => d.data().active !== false).map((d) => ({ id: d.id, name: d.data().name as string, title: (d.data().title ?? null) as string | null })),
   };
 }
@@ -56,7 +57,7 @@ export async function profile(slug: string): Promise<unknown> {
   return {
     business: { slug, name: p.name, type: 'business', phone: p.phone, address: p.address, currency: p.currency || 'USD' }, currency: p.currency || 'USD', rateAuto: p.rateAuto, exchangeRate: p.exchangeRate, deposit: { enabled: p.depositEnabled, amountMinor: p.depositMinor }, waitlist: p.waitlist,
     hours: { openMinutes: p.openMinutes, closeMinutes: p.closeMinutes, daysOpen: p.daysOpen, utcOffsetMinutes: 60, maxDaysAhead: p.maxDaysAhead },
-    paystackPublicKey: null, services: cat.services, staff: cat.staff,
+    paystackPublicKey: null, services: cat.services, staff: cat.staff, products: cat.products,
   };
 }
 
@@ -142,6 +143,18 @@ export async function joinWaitlist(slug: string, b: Record<string, unknown>): Pr
   catch { throw new ApiError(0, 'Cannot reach the server. Check your connection.', 'network'); }
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown> & { error?: string };
   if (!r.ok) throw new ApiError(r.status, j.error ?? 'Could not join the waitlist.');
+  return j;
+}
+
+export async function placeOrder(slug: string, b: Record<string, unknown>): Promise<unknown> {
+  await page(slug);
+  const base = paymentsUrl();
+  if (!base) throw new ApiError(503, 'Ordering is not available right now.', 'unavailable');
+  let r: Response;
+  try { r = await fetch(`${base}/api/public/order`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...b, slug }) }); }
+  catch { throw new ApiError(0, 'Cannot reach the server. Check your connection.', 'network'); }
+  const j = (await r.json().catch(() => ({}))) as Record<string, unknown> & { error?: string };
+  if (!r.ok) throw new ApiError(r.status, j.error ?? 'Could not send your order.');
   return j;
 }
 

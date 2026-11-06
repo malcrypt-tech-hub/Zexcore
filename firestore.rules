@@ -50,13 +50,22 @@ service cloud.firestore {
     }
     function limitOf(wid, key) {
       return {
-        'free':       {'bookingsPerMonth': 50,   'staff': 1,   'services': 3,   'cmsPages': 3,   'crmContacts': 50, 'devices': 0, 'rules': 0},
-        'starter':    {'bookingsPerMonth': 200,  'staff': 3,   'services': 10,  'cmsPages': 10,  'crmContacts': 500, 'devices': 0, 'rules': 0},
-        'growth':     {'bookingsPerMonth': 1000, 'staff': 10,  'services': 30,  'cmsPages': 50,  'crmContacts': 5000, 'devices': 25, 'rules': 25},
-        'agency':     {'bookingsPerMonth': 5000, 'staff': 50,  'services': 100, 'cmsPages': 200, 'crmContacts': 50000, 'devices': 100, 'rules': 100},
-        'enterprise': {'bookingsPerMonth': 999999, 'staff': 999999, 'services': 999999, 'cmsPages': 1000, 'crmContacts': 999999, 'devices': 250, 'rules': 250},
-        'dedicated':  {'bookingsPerMonth': 999999, 'staff': 999999, 'services': 999999, 'cmsPages': 999999, 'crmContacts': 999999, 'devices': 999999, 'rules': 999999}
-      }.get(planOf(wid), {'bookingsPerMonth': 50, 'staff': 1, 'services': 3, 'cmsPages': 3, 'crmContacts': 50, 'devices': 0, 'rules': 0})[key];
+        'free':       {'bookingsPerMonth': 50,   'staff': 1,   'services': 3,   'cmsPages': 3,   'crmContacts': 50, 'devices': 0, 'rules': 0, 'products': 5},
+        'starter':    {'bookingsPerMonth': 200,  'staff': 3,   'services': 10,  'cmsPages': 10,  'crmContacts': 500, 'devices': 0, 'rules': 0, 'products': 30},
+        'growth':     {'bookingsPerMonth': 1000, 'staff': 10,  'services': 30,  'cmsPages': 50,  'crmContacts': 5000, 'devices': 25, 'rules': 25, 'products': 200},
+        'agency':     {'bookingsPerMonth': 5000, 'staff': 50,  'services': 100, 'cmsPages': 200, 'crmContacts': 50000, 'devices': 100, 'rules': 100, 'products': 1000},
+        'enterprise': {'bookingsPerMonth': 999999, 'staff': 999999, 'services': 999999, 'cmsPages': 1000, 'crmContacts': 999999, 'devices': 250, 'rules': 250, 'products': 5000},
+        'dedicated':  {'bookingsPerMonth': 999999, 'staff': 999999, 'services': 999999, 'cmsPages': 999999, 'crmContacts': 999999, 'devices': 999999, 'rules': 999999, 'products': 999999}
+      }.get(planOf(wid), {'bookingsPerMonth': 50, 'staff': 1, 'services': 3, 'cmsPages': 3, 'crmContacts': 50, 'devices': 0, 'rules': 0, 'products': 5})[key];
+    }
+    function productOk() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['name', 'description', 'priceMinor', 'active', 'inStock', 'imageUrl', 'seq', 'createdAt'])
+        && d.name is string && d.name.size() >= 1 && d.name.size() <= 120
+        && (d.description == null || (d.description is string && d.description.size() <= 500))
+        && d.priceMinor is int && d.priceMinor >= 0 && d.priceMinor <= 10000000000
+        && d.active is bool && d.inStock is bool
+        && (d.imageUrl == null || (d.imageUrl is string && d.imageUrl.size() <= 400 && d.imageUrl.matches('^https://res\\.cloudinary\\.com/.*')));
     }
     // "<prefix>_<n>" with n below the plan limit for this resource
     function slotId(wid, prefix, key, id) {
@@ -146,6 +155,20 @@ service cloud.firestore {
         allow get, list: if true;
         allow create: if isEditor(wid) && slotId(wid, 's', 'services', id);
         allow update, delete: if isEditor(wid);
+      }
+      // The shop. Anyone can see products (the booking page lists them); only editors change them. Orders are created by the Worker only.
+      match /products/{id} {
+        allow get, list: if true;
+        allow create: if isEditor(wid) && slotId(wid, 'g', 'products', id) && productOk();
+        allow update: if isEditor(wid) && productOk();
+        allow delete: if isEditor(wid);
+      }
+      match /orders/{id} {
+        allow read: if isWorker(wid);
+        allow update: if isWorker(wid) && onlyChanges(['status', 'updatedAt'])
+          && request.resource.data.status in ['new', 'confirmed', 'shipped', 'delivered', 'cancelled'];
+        allow create: if false;
+        allow delete: if isWorker(wid);
       }
       match /staff/{id} {
         allow get, list: if true;

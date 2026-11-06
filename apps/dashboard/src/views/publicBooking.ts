@@ -4,6 +4,7 @@ import { api, ApiError } from '../lib/api';
 import { money, timeOf, DAY, MON, initials, ymd, whenLabel } from '../lib/format';
 import { busy, toast } from '../lib/ui';
 import { brand } from '../layouts';
+import { createShop, type ShopProduct } from './publicShop';
 import { formatInCurrency, fetchLiveRates, getCachedRates, type SupportedCurrency } from '../lib/fx';
 
 interface Profile {
@@ -12,7 +13,7 @@ interface Profile {
   hours: { openMinutes: number; closeMinutes: number; daysOpen: number[]; utcOffsetMinutes: number; maxDaysAhead: number };
   paystackPublicKey: string | null;
   services: { id: string; name: string; description: string | null; durationMin: number; priceMinor: number; bookingMode?: 'appointment'|'enquiry'; intakeFields?: {key:string;label:string;type:'text'|'textarea'|'select'|'number'|'url';required:boolean;options?:string[];placeholder?:string}[]; consultationEnabled?:boolean }[];
-  staff: { id: string; name: string; title: string | null }[];
+  staff: { id: string; name: string; title: string | null }[]; products?: ShopProduct[];
 }
 interface PayInfo { ref: string; status: string; depositStatus: string; amountMinor: number; currency: string; startsAt: string; serviceName: string }
 
@@ -107,10 +108,14 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
     return Math.round(dep() * rate);
   };
 
-  if (!p.services.length) { mount(root, html`<div class="public-wrap">${head(p.business.name, sub)}<div class="card"><div class="empty"><h3>Bookings aren't open yet</h3><p>${p.business.name} hasn't added any services. Please check back soon.</p></div></div></div>`); return; }
+  const hasShop = (p.products?.length ?? 0) > 0;
+  if (!p.services.length && !hasShop) { mount(root, html`<div class="public-wrap">${head(p.business.name, sub)}<div class="card"><div class="empty"><h3>Bookings aren't open yet</h3><p>${p.business.name} hasn't added any services. Please check back soon.</p></div></div></div>`); return; }
 
-  const draw = () => {
-    mount(root, html`<div class="public-wrap">${head(p.business.name, sub)}
+  let mode: 'book' | 'shop' = p.services.length ? 'book' : 'shop';
+  const tabs = (): Raw => (hasShop && p.services.length ? html`<div class="row" role="tablist" style="gap:8px;margin:0 0 14px"><button type="button" class="btn btn-sm ${mode === 'book' ? 'btn-primary' : 'btn-secondary'}" role="tab" data-mode="book">Book</button><button type="button" class="btn btn-sm ${mode === 'shop' ? 'btn-primary' : 'btn-secondary'}" role="tab" data-mode="shop">Shop</button></div>` : html``);
+  const onTabs = (): void => { $$('[data-mode]').forEach((b) => b.addEventListener('click', () => { mode = b.dataset.mode as 'book' | 'shop'; draw(); })); };
+  const drawBook = () => {
+    mount(root, html`<div class="public-wrap">${head(p.business.name, sub)}${tabs()}
       <div class="row between wrap" style="align-items:center;margin:-10px 0 16px;gap:8px">
         <span class="muted small">Display prices in:</span>
         <div class="row" style="gap:4px">
@@ -141,6 +146,7 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
       <div class="pay-bar"><div><button class="btn btn-primary btn-lg btn-block" id="go">${needDeposit() ? html`${ic('lock', 'ico-sm')} Pay ${money(depositNgn(), 'NGN')} deposit` : (svc()?.bookingMode === 'enquiry' ? 'Send enquiry' : 'Request booking')}</button>
         ${needDeposit() ? html`<p class="muted small" style="text-align:center;margin-top:6px">Secured by Paystack (${priceText(dep())})</p>` : ''}</div></div></div>`);
 
+    onTabs();
     $$('[data-cur]').forEach((b) => b.addEventListener('click', () => {
       displayCurrency = b.dataset.cur as SupportedCurrency;
       try { localStorage.setItem('zx.display_currency', displayCurrency); } catch { /* ignore */ }
@@ -202,5 +208,7 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
       } catch (e) { fail(e instanceof ApiError ? e.message : 'Could not complete your booking'); if (e instanceof ApiError && e.status === 409) void loadSlots(); }
     });
   }
+  const shopView = createShop(root, { slug, businessName: p.business.name, phone: p.business.phone, products: p.products ?? [], priceText, header: () => head(p.business.name, sub), tabs, onTabs });
+  const draw = (): void => (mode === 'shop' ? shopView() : drawBook());
   draw();
 }

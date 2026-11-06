@@ -42,6 +42,7 @@ export function renderPricingPage(): string {
         ['Services', ...tiers.map((t) => lim(LIMITS[t].services, t))],
         ['Booking pages', ...tiers.map((t) => lim(LIMITS[t].cmsPages, t))],
         ['Contacts', ...tiers.map((t) => lim(LIMITS[t].crmContacts, t))],
+        ['Shop products', ...tiers.map((t) => lim(LIMITS[t].products, t))],
         ['Your own logo', ...tiers.map((t) => (hasFeatureAccess(t, 'branding') ? 'Included' : '—'))],
         ['Data protection tools', ...tiers.map((t) => (hasFeatureAccess(t, 'compliance') ? 'Included' : '—'))],
         ['Devices', ...tiers.map((t) => (hasFeatureAccess(t, 'devices') ? lim(LIMITS[t].devices, t) : '—'))],

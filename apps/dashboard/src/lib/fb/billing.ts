@@ -19,11 +19,11 @@ export async function usage(): Promise<unknown> {
   const c = await loadCtx(true);
   const count = async (name: string): Promise<number> => (await getDocs(wsCol(c, name))).size;
   const ym = monthPrefix();
-  const [services, staff, contacts, pages, devices, rules, bookings] = await Promise.all([
-    count('services'), count('staff'), count('contacts'), count('pages'), count('devices'), count('rules'),
+  const [services, staff, contacts, pages, devices, rules, products, bookings] = await Promise.all([
+    count('services'), count('staff'), count('contacts'), count('pages'), count('devices'), count('rules'), count('products'),
     getDocs(query(wsCol(c, 'bookings'), where(documentId(), '>=', `${ym}_`), where(documentId(), '<', `${ym}\``))).then((s) => s.size),
   ]);
-  const used: Record<EnforcedKey, number> = { bookingsPerMonth: bookings, staff, services, cmsPages: pages, crmContacts: contacts, devices, rules };
+  const used: Record<EnforcedKey, number> = { bookingsPerMonth: bookings, staff, services, cmsPages: pages, crmContacts: contacts, devices, rules, products };
   const lim = LIMITS[c.tier];
   const out = Object.fromEntries((Object.keys(used) as EnforcedKey[]).map((k) => [k, { used: used[k], limit: lim[k] }]));
   return { tier: c.plan, effectiveTier: c.tier, usage: out, labels: LABELS };

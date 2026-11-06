@@ -8,6 +8,7 @@
 import { deleteAccount } from './routes/account';
 import { assess } from './routes/risk';
 import { joinWaitlist } from './routes/waitlist';
+import { placeOrder, signUpload } from './routes/shop';
 import { whatsappConfigured } from './whatsapp';
 import { createKey, revokeKey, v1Bookings, v1Customers } from './routes/apikeys';
 import { realDeps, type Ctx, type Deps, type Env } from './env';
@@ -83,6 +84,8 @@ const ROUTES: Record<string, Handler> = {
   'POST /api/security/revoke-all': revokeAll,
   'POST /api/risk/assess': assess,
   'POST /api/public/waitlist': joinWaitlist,
+  'POST /api/public/order': placeOrder,
+  'POST /api/uploads/sign': signUpload,
   'POST /api/insights': insights,
   'POST /api/keys/create': createKey,
   'POST /api/keys/revoke': revokeKey,
@@ -91,7 +94,7 @@ const ROUTES: Record<string, Handler> = {
 };
 
 /** Routes that take or confirm money. They stay off unless a live Paystack key is set (or the Worker is explicitly marked staging). */
-const PUBLIC_ROUTES = new Set(['POST /api/public/waitlist', 'POST /api/public/deposit', 'GET /api/public/deposit-status', 'POST /api/public/booked', 'GET /api/banks', 'GET /api/team/invite-info']);
+const PUBLIC_ROUTES = new Set(['POST /api/public/waitlist', 'POST /api/public/order', 'POST /api/public/deposit', 'GET /api/public/deposit-status', 'POST /api/public/booked', 'GET /api/banks', 'GET /api/team/invite-info']);
 const MONEY_ROUTES = new Set(['POST /api/checkout', 'POST /api/paystack-webhook', 'GET /api/banks', 'POST /api/payout/setup', 'POST /api/public/deposit', 'POST /api/deposit/link', 'POST /api/deposit/refund', 'GET /api/public/deposit-status']);
 export function paymentsEnabled(env: Env): boolean {
   const k = (env.PAYSTACK_SECRET_KEY ?? '').trim();
@@ -104,7 +107,7 @@ export function paymentsEnabled(env: Env): boolean {
  * Best-effort throttle for the public (signed-out) routes: 20 calls a minute per visitor per route, per Worker instance.
  * It stops casual abuse; for a hard limit add a Cloudflare rate-limiting rule on /api/public/* (see docs/launch-runbook.md).
  */
-const PUBLIC_LIMITED = new Set(['POST /api/public/waitlist', 'POST /api/public/deposit', 'GET /api/public/deposit-status', 'POST /api/public/booked']);
+const PUBLIC_LIMITED = new Set(['POST /api/public/waitlist', 'POST /api/public/order', 'POST /api/public/deposit', 'GET /api/public/deposit-status', 'POST /api/public/booked']);
 const hits = new Map<string, number[]>();
 export function throttled(key: string, now: number, max = 20, windowMs = 60_000): boolean {
   const recent = (hits.get(key) ?? []).filter((t) => now - t < windowMs);

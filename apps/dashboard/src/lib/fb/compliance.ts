@@ -92,6 +92,7 @@ export async function executeErasure(id: string): Promise<{ ok: true; summary: R
   const phone = s.kind === 'phone' ? s.value : bookings[0]?.data().customerPhone as string | undefined;
   const messages = phone ? await find(c, 'messages', 'phone', phone) : [];
   const enquiries = await find(c, 'enquiries', bookingField(s), s.value);
+  const orders = await find(c, 'orders', bookingField(s), s.value);
   const consents = await find(c, 'consents', 'subjectId', s.value);
 
   // Bookings keep their time and money (the business may need them for its books) but lose every personal detail.
@@ -100,10 +101,10 @@ export async function executeErasure(id: string): Promise<{ ok: true; summary: R
     bookings.slice(i, i + 400).forEach((d) => batch.update(d.ref, { customerName: 'Erased customer', customerPhone: '+000000000000', customerEmail: null, notes: null }));
     await batch.commit();
   }
-  await deleteAll(contacts); await deleteAll(messages); await deleteAll(consents); await deleteAll(enquiries);
+  await deleteAll(contacts); await deleteAll(messages); await deleteAll(consents); await deleteAll(enquiries); await deleteAll(orders);
   if (phone) await deleteAll([{ ref: wsDoc(c, 'convState', phone) }]);
 
-  const summary = { bookings: bookings.length, contacts: contacts.length, messages: messages.length, consents: consents.length, enquiries: enquiries.length };
+  const summary = { bookings: bookings.length, contacts: contacts.length, messages: messages.length, consents: consents.length, enquiries: enquiries.length, orders: orders.length };
   await updateDoc(req.ref, { status: 'completed', completedAt: serverTimestamp(), summary });
   void audit(c, 'compliance.erasure_done', 'erasure', id);
   return { ok: true, summary };
@@ -162,10 +163,11 @@ export async function accessRequest(b: Record<string, unknown>): Promise<{ subje
   const phone = s.kind === 'phone' ? s.value : bookings[0]?.data().customerPhone as string | undefined;
   const messages = phone ? await find(c, 'messages', 'phone', phone) : [];
   const enquiries = await find(c, 'enquiries', bookingField(s), s.value);
+  const orders = await find(c, 'orders', s.kind === 'phone' ? 'customerPhone' : 'customerEmail', s.value);
   const consents = await find(c, 'consents', 'subjectId', s.value);
   const rows = (docs: QueryDocumentSnapshot[]) => docs.map((d) => ({ id: d.id, ...plain(d.data()) }));
   void audit(c, 'compliance.access_request', 'subject', s.value);
-  return { subject: s.value, generatedAt: new Date().toISOString(), data: { bookings: rows(bookings), contacts: rows(contacts), messages: rows(messages), enquiries: rows(enquiries), consents: rows(consents) } };
+  return { subject: s.value, generatedAt: new Date().toISOString(), data: { bookings: rows(bookings), contacts: rows(contacts), messages: rows(messages), enquiries: rows(enquiries), orders: rows(orders), consents: rows(consents) } };
 }
 
 // ───────────── breach register (the Commission must be told within 72 hours of becoming aware) ─────────────
