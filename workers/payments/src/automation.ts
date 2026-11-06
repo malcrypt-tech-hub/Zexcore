@@ -8,19 +8,22 @@ import { firstName, randomHex } from './util';
 const DAY = 86_400_000;
 
 export async function ownerEmail(c: Ctx, wid: string): Promise<string> {
-  const ws = await fsGet(c.env, c.d, `workspaces/${wid}`);
-  const uid = ws?.data.ownerUid as string | undefined;
-  const m = uid ? await fsGet(c.env, c.d, `workspaces/${wid}/members/${uid}`) : null;
-  return String(m?.data.email ?? '');
+  return (await ownerContact(c, wid)).email;
 }
 
 export async function ownerContact(c: Ctx, wid: string): Promise<{ email: string; name: string }> {
   const ws = await fsGet(c.env, c.d, `workspaces/${wid}`);
   const uid = ws?.data.ownerUid as string | undefined;
-  const m = uid ? await fsGet(c.env, c.d, `workspaces/${wid}/members/${uid}`) : null;
-  const u = uid ? await fsGet(c.env, c.d, `users/${uid}`) : null;
-  const email = String(m?.data.email ?? '');
-  return { email, name: firstName(u?.data.name ?? m?.data.name, email) };
+  const [m, u] = await Promise.all([
+    uid ? fsGet(c.env, c.d, `workspaces/${wid}/members/${uid}`) : Promise.resolve(null),
+    uid ? fsGet(c.env, c.d, `users/${uid}`) : Promise.resolve(null),
+  ]);
+  // Older or migrated workspaces may have an incomplete member row. The user profile is
+  // the authoritative fallback so public booking/order notifications still reach the owner.
+  const memberEmail = String(m?.data.email ?? '').trim();
+  const profileEmail = String(u?.data.email ?? '').trim();
+  const email = memberEmail || profileEmail;
+  return { email, name: firstName(u?.data.name || m?.data.name, email) };
 }
 
 export async function fireEvent(c: Ctx, wid: string, event: string, payload: Record<string, unknown>): Promise<number> {
