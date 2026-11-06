@@ -1211,6 +1211,14 @@ describe('shop orders', () => {
     expect(emails.map((m) => m.to[0] ?? m.to).sort()).toEqual(['ada@example.com', 'sade@example.com']);
   });
 
+  it('falls back to the owner user profile when the workspace member email is missing', async () => {
+    seedDoc(`workspaces/${X}/members/owner1`, { role: 'owner', name: 'Sade' });
+    seedDoc('users/owner1', { name: 'Sade Obi', email: 'profile-owner@example.com' });
+    const r = await order();
+    expect(r.status).toBe(201);
+    expect(emails.map((m) => m.to[0] ?? m.to).sort()).toEqual(['ada@example.com', 'profile-owner@example.com']);
+  });
+
   it('rejects hidden, out-of-stock and unknown goods, bad quantities, missing address and duplicates', async () => {
     for (const items of [[{ id: 'g_1', qty: 1 }], [{ id: 'g_2', qty: 1 }], [{ id: 'g_9', qty: 1 }]]) expect((await order({ items })).status).toBe(409);
     for (const items of [[{ id: 'g_0', qty: 0 }], [{ id: 'g_0', qty: 100 }], [{ id: 'g_0', qty: 1.5 }], [{ id: 'g_0', qty: 1 }, { id: 'g_0', qty: 1 }], []]) expect((await order({ items })).status).toBe(400);
@@ -1267,6 +1275,31 @@ describe('shop orders', () => {
     expect((await call('/api/uploads/sign', { headers: { 'content-type': 'application/json', origin: 'https://zexcore.com.ng' }, body: JSON.stringify({ workspaceId: X }) })).status).toBe(401);
     env = { ...env, CLOUDINARY_API_SECRET: undefined };
     expect((await call('/api/uploads/sign', { headers: await authed(), body: JSON.stringify({ workspaceId: X }) })).status).toBe(503);
+  });
+});
+
+describe('public booking owner notification', () => {
+  const X = 'wsbooknotify000000001';
+  it('uses the owner profile email when the owner member row has no email', async () => {
+    env = { ...env, RESEND_API_KEY: 're_test' };
+    seedDoc('slugs/book-biz', { wid: X });
+    seedDoc(`workspaces/${X}`, { name: 'Book Biz', plan: 'free', ownerUid: 'owner1', slug: 'book-biz', settings: {} });
+    seedDoc(`workspaces/${X}/members/owner1`, { role: 'owner', name: 'Sade' });
+    seedDoc('users/owner1', { name: 'Sade Obi', email: 'profile-owner@example.com' });
+    seedDoc(`workspaces/${X}/services/s_0`, { name: 'Consultation', priceMinor: 0 });
+    seedDoc(`workspaces/${X}/bookings/202611_9`, {
+      source: 'public', status: 'pending', serviceId: 's_0', customerName: 'Ada Obi',
+      customerPhone: '+2348031112222', customerEmail: null,
+      startsAt: new Date(NOW.getTime() + 86_400_000), createdAt: new Date(NOW.getTime() - 60_000),
+    });
+
+    const r = await call('/api/public/booked', {
+      headers: { 'content-type': 'application/json', origin: 'https://zexcore.com.ng' },
+      body: JSON.stringify({ slug: 'book-biz', bookingId: '202611_9' }),
+    });
+    expect(r.status).toBe(200);
+    expect(emails.map((m) => m.to[0] ?? m.to)).toContain('profile-owner@example.com');
+    expect(emails.find((m) => (m.to[0] ?? m.to) === 'profile-owner@example.com')?.subject).toMatch(/New booking request/);
   });
 });
 
