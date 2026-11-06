@@ -1254,15 +1254,21 @@ describe('shop orders', () => {
     const ev = async () => (await (await call('/api/events', { headers: await authed(), body: JSON.stringify({ workspaceId: X, event: 'orders.order.status', id }) })).json()) as any;
     store.set(path, { ...store.get(path)!, fields: { ...store.get(path)!.fields, status: toFs('confirmed') } });
     expect(await ev()).toMatchObject({ emailed: false, reason: 'no_email' });
-    // The Firestore test mock returns the whole collection without applying where filters.
-    // Remove this fixture so the next request tests customer-email behavior, not the phone quota.
-    store.delete(path);
+    // Use a separate workspace for the second order. The Firestore test mock
+    // returns whole collections without applying where filters, so same-shop
+    // fixtures can interfere with per-phone and shop-wide queue assertions.
+    const X2 = 'wsshopemail00000000002';
+    seedDoc('slugs/shop-email', { wid: X2 });
+    seedDoc(`workspaces/${X2}`, { name: 'Email Shop', plan: 'free', ownerUid: 'owner1', slug: 'shop-email', settings: { publicName: 'Email Shop' } });
+    seedDoc(`workspaces/${X2}/members/owner1`, { role: 'owner', email: 'sade@example.com', name: 'Sade' });
+    seedDoc(`workspaces/${X2}/products/g_0`, { name: 'Ankara bag', priceMinor: 2500, active: true, inStock: true });
     // with an address on the order the customer is emailed once
-    const r2 = await order({ phone: '0803 777 0003' }); expect(r2.status).toBe(201);
-    const p2 = orders().find((k) => k !== path)!; const id2 = p2.split('/').pop()!;
+    const r2 = await order({ slug: 'shop-email', phone: '0803 777 0003' }); expect(r2.status).toBe(201);
+    const p2 = [...store.keys()].find((k) => k.startsWith(`workspaces/${X2}/orders/`))!;
+    const id2 = p2.split('/').pop()!;
     store.set(p2, { ...store.get(p2)!, fields: { ...store.get(p2)!.fields, status: toFs('shipped') } });
     emails = [];
-    const ev2 = async () => (await (await call('/api/events', { headers: await authed(), body: JSON.stringify({ workspaceId: X, event: 'orders.order.status', id: id2 }) })).json()) as any;
+    const ev2 = async () => (await (await call('/api/events', { headers: await authed(), body: JSON.stringify({ workspaceId: X2, event: 'orders.order.status', id: id2 }) })).json()) as any;
     expect(await ev2()).toMatchObject({ emailed: true });
     expect(emails[0].subject).toMatch(/on its way/);
     expect(await ev2()).toMatchObject({ emailed: false, reason: 'duplicate' });
