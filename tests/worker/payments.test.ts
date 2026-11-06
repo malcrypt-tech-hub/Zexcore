@@ -1259,7 +1259,7 @@ describe('shop orders', () => {
     // Use a separate workspace for the second order. The Firestore test mock
     // returns whole collections without applying where filters, so same-shop
     // fixtures can interfere with per-phone and shop-wide queue assertions.
-    const X2 = 'wsshopemail00000000002';
+    const X2 = 'wsshopmail0000000002';
     seedDoc('slugs/shop-email', { wid: X2 });
     seedDoc(`workspaces/${X2}`, { name: 'Email Shop', plan: 'free', ownerUid: 'owner1', slug: 'shop-email', settings: { publicName: 'Email Shop' } });
     seedDoc(`workspaces/${X2}/members/owner1`, { role: 'owner', email: 'sade@example.com', name: 'Sade' });
