@@ -27,6 +27,7 @@ import { manageWhatsAppSequences, setWhatsAppConsent, scheduledWhatsApp } from '
 import { whatsappWebhook, whatsappWebhookVerify } from './routes/whatsappWebhook';
 import { scheduledDepositExpiry } from './routes/expiry';
 import { drainOutbox } from './outbox';
+import { scheduledCustomerEmails } from './routes/reminders';
 import { listDevices, recordSignIn, revokeAll } from './routes/security';
 
 export type { Env, Deps } from './env';
@@ -153,7 +154,7 @@ export default {
     ctx.waitUntil(scheduledBackups(env, realDeps()).catch((e) => console.error('scheduled backups', e instanceof Error ? e.message : e)));
     ctx.waitUntil(scheduledDigests(env, realDeps()).catch((e) => console.error('scheduled digests', e instanceof Error ? e.message : e)));
     ctx.waitUntil(scheduledDepositExpiry(env, realDeps()).catch((e) => console.error('scheduled deposit expiry', e instanceof Error ? e.message : e)));
-    ctx.waitUntil(drainOutbox(env, realDeps()).then((r) => { if (r.sent || r.dead) console.log('email outbox', JSON.stringify(r)); }).catch((e) => console.error('email outbox', e instanceof Error ? e.message : e)));
+    ctx.waitUntil(scheduledCustomerEmails(env, realDeps()).then(() => drainOutbox(env, realDeps())).then((r) => { if (r.sent || r.dead) console.log('email outbox', JSON.stringify(r)); }).catch((e) => console.error('customer emails', e instanceof Error ? e.message : e)));
     ctx.waitUntil(scheduledWhatsApp(env, realDeps()).catch((e) => console.error('scheduled WhatsApp', e instanceof Error ? e.message : e)));
   },
 };

@@ -12,3 +12,12 @@ Moved onto the outbox: booking acknowledgement and owner alert, reschedule notic
 Not on it (sent directly, result shown at once): welcome, team invitations, weekly digest, deposit-link emails, IoT alerts, account deletion notice.
 
 To see what is stuck: Firestore console, `emailOutbox`, filter `status` = `dead` or `pending` (`lastError` says why).
+
+## Customer emails around an appointment
+
+Sent by the hourly job through the outbox, only for workspaces whose owner switched them on under Settings, "Emails to your customers":
+
+* **Reminder** (`settings.reminderEmails`): about a day before a *confirmed* appointment, only when the booking was made more than 26 hours ahead. New workspaces get it switched on at the end of setup; existing ones start off.
+* **Thank-you** (`settings.followUpEmails`, off by default): a day after a booking is marked completed, with a link to book again.
+
+Both need the customer's email address (optional on the booking page). Keys are `remind:<ws>:<booking>` and `followup:<ws>:<booking>`, so no one is emailed twice.

@@ -21,7 +21,7 @@ export interface WorkspaceSettings {
   /** 'auto' uses the live market naira rate; otherwise the owner's fixed exchangeRate. Missing means fixed (older workspaces). */
   exchangeRateMode?: 'auto' | 'manual';
   /** Owner notification preferences */
-  notifyOwnerEmail?: boolean; notifyOwnerWhatsApp?: boolean; notifyWhatsAppPhone?: string | null;
+  notifyOwnerEmail?: boolean; reminderEmails?: boolean; followUpEmails?: boolean; notifyOwnerWhatsApp?: boolean; notifyWhatsAppPhone?: string | null;
 }
 import { getCachedNgnRate } from '../fx';
 

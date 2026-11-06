@@ -93,7 +93,7 @@ export async function renderOnboarding(): Promise<void> {
         const depOn = ($('#dep') as HTMLInputElement).checked;
         const depMinor = Math.round((Number(($('#depn') as HTMLInputElement).value) || 0) * 100);
         try {
-          await api('/api/bookings/settings', { method: 'PUT', body: { businessType: type, businessSubtype: subtype, publicName: ($('#pn') as HTMLInputElement).value.trim(), phone: ($('#ph') as HTMLInputElement).value.trim(), openMinutes: open, closeMinutes: close, daysOpen: days, depositEnabled: depOn && depMinor > 0, depositMinor: depOn ? depMinor : 0, onboarded: true } });
+          await api('/api/bookings/settings', { method: 'PUT', body: { businessType: type, businessSubtype: subtype, publicName: ($('#pn') as HTMLInputElement).value.trim(), phone: ($('#ph') as HTMLInputElement).value.trim(), openMinutes: open, closeMinutes: close, daysOpen: days, depositEnabled: depOn && depMinor > 0, depositMinor: depOn ? depMinor : 0, onboarded: true, reminderEmails: true } });
           const existing = await api<{ services: unknown[] }>('/api/bookings/services');
           if (!existing.services.length) for (const r of svcs) {
             const preset = industryOf(type).services.find((p) => p.name === r.name.trim());   // the kind of business decides what the booking page asks

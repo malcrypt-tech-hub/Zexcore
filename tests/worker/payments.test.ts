@@ -6,6 +6,7 @@ import { SEATS } from '../../workers/payments/src/routes/team.js';
 import { KEEP, backupId, gunzip, open as openBackup, scheduledBackups } from '../../workers/payments/src/routes/backups.js';
 import { LIMITS } from '../../apps/dashboard/src/lib/fb/plan';
 import { queueEmail, drainOutbox, outboxId, MAX_ATTEMPTS } from '../../workers/payments/src/outbox.js';
+import { sendCustomerEmails, scheduledCustomerEmails } from '../../workers/payments/src/routes/reminders.js';
 import { scheduledDepositExpiry } from '../../workers/payments/src/index.js';
 import { handle, summarize, sendDigest, weekKey, digestDue, paystackSignature, amountMinor, planAfterPayment, throttled, toFs, fromFs, resetTokenCache, resetJwksCache, type Env } from '../../workers/payments/src/index.js';
 
@@ -1349,5 +1350,58 @@ describe('email outbox', () => {
     const r = await drainOutbox(env, at(8 * 86_400_000));
     expect(r.purged).toBe(1);
     expect(store.has(`emailOutbox/${await outboxId(mail.key)}`)).toBe(false);
+  });
+});
+
+describe('appointment reminder and thank-you emails', () => {
+  const X = 'wsremind000000000001';
+  const H = 3_600_000;
+  const run = (kind: 'reminder' | 'followup', ms = 0) => sendCustomerEmails({ ...env, RESEND_API_KEY: 're_test' }, { fetch: mockFetch(), now: () => new Date(NOW.getTime() + ms) }, X, kind);
+  const bk = (id: string, over: Record<string, unknown> = {}) => seedDoc(`workspaces/${X}/bookings/${id}`, { status: 'confirmed', serviceId: 's_0', customerName: 'Ada Obi', customerEmail: 'ada@example.com', customerPhone: '+2348031112222',
+    startsAt: new Date(NOW.getTime() + 20 * H), createdAt: new Date(NOW.getTime() - 3 * 86_400_000), ...over });
+  beforeEach(() => {
+    env = { ...env, RESEND_API_KEY: 're_test' };
+    seedDoc(`workspaces/${X}`, { name: 'Remind Salon', plan: 'free', ownerUid: 'owner1', slug: 'remind-salon', settings: { publicName: 'Remind Salon', phone: '0803 000 0000', reminderEmails: true, followUpEmails: true, utcOffsetMinutes: 60 } });
+    seedDoc(`workspaces/${X}/services/s_0`, { name: 'Braids' });
+  });
+
+  it('reminds a confirmed customer about tomorrow once, even if the hourly job runs again', async () => {
+    bk('202611_1');
+    expect(await run('reminder')).toBe(1);
+    expect(emails).toHaveLength(1);
+    expect(emails[0].subject).toBe('Reminder: your appointment with Remind Salon'); expect(emails[0].text).toMatch(/Braids/); expect(emails[0].text).toMatch(/0803 000 0000/);
+    expect(await run('reminder', 30 * 60_000)).toBe(0);
+    expect(emails).toHaveLength(1);
+  });
+
+  it('skips unconfirmed, cancelled, no-email, too-far, too-soon and short-notice bookings', async () => {
+    bk('202611_2', { status: 'pending' }); bk('202611_3', { status: 'cancelled' }); bk('202611_4', { customerEmail: null });
+    bk('202611_5', { startsAt: new Date(NOW.getTime() + 40 * H) }); bk('202611_6', { startsAt: new Date(NOW.getTime() + 30 * 60_000) });
+    bk('202611_7', { createdAt: new Date(NOW.getTime() - 2 * H) });                       // booked yesterday evening for tomorrow: just told
+    expect(await run('reminder')).toBe(0); expect(emails).toHaveLength(0);
+  });
+
+  it('does nothing when the owner has not switched it on', async () => {
+    seedDoc(`workspaces/${X}`, { name: 'Remind Salon', plan: 'free', ownerUid: 'owner1', slug: 'remind-salon', settings: { reminderEmails: false } });
+    bk('202611_8');
+    expect(await run('reminder')).toBe(0); expect(emails).toHaveLength(0);
+  });
+
+  it('thanks a customer a day after a completed visit, and only completed ones', async () => {
+    bk('202611_9', { status: 'completed', startsAt: new Date(NOW.getTime() - 26 * H) });
+    bk('202611_10', { status: 'no_show', startsAt: new Date(NOW.getTime() - 26 * H) });
+    bk('202611_11', { status: 'completed', startsAt: new Date(NOW.getTime() - 2 * H) });   // too soon
+    expect(await run('followup')).toBe(1);
+    expect(emails[0].subject).toBe('Thank you for visiting Remind Salon'); expect(emails[0].text).toMatch(/Book again/);
+  });
+
+  it('the hourly job runs both kinds and survives a provider outage by keeping the email queued', async () => {
+    bk('202611_12');
+    resendMode = 'down';
+    expect(await scheduledCustomerEmails(env, { fetch: mockFetch(), now: () => NOW })).toMatchObject({ reminders: 1 });
+    expect(emails).toHaveLength(0);
+    resendMode = 'ok';
+    await drainOutbox(env, { fetch: mockFetch(), now: () => new Date(NOW.getTime() + 2 * 60_000) });
+    expect(emails).toHaveLength(1);
   });
 });
