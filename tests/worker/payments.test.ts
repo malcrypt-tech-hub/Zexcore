@@ -1621,3 +1621,50 @@ describe('licences and dedicated cluster requests', () => {
     expect((await call('/api/cluster/request', { headers: await H({ sub: 'staff1', user_id: 'staff1' }), body: JSON.stringify(body) })).status).toBe(403);
   });
 });
+
+describe('platform admins', () => {
+  const T = 'wsadmin0000000000001';
+  beforeEach(() => {
+    env = { ...env, PLATFORM_ADMIN_EMAILS: ' Founder@Zexlabs.example , other@x.example' };
+    seedDoc(`workspaces/${T}`, { name: 'Test Biz', plan: 'starter', planExpiresAt: new Date('2026-12-01T00:00:00Z'), ownerUid: 'owner1', slug: 'test-biz' });
+  });
+  const as = async (email: string, verified = true) => ({ ...(await authed({ sub: 'founder1', user_id: 'founder1', email, email_verified: verified })) });
+  const grant = async (body: object, email = 'founder@zexlabs.example', verified = true) => call('/api/admin/grant-plan', { headers: await as(email, verified), body: JSON.stringify({ workspaceId: T, ...body }) });
+  const me = async (email: string, verified = true) => (await (await call('/api/admin/me', { method: 'GET', headers: await as(email, verified) })).json()) as { admin: boolean };
+
+  it('knows who is a platform admin: listed and verified only', async () => {
+    expect(await me('FOUNDER@zexlabs.example')).toEqual({ admin: true });
+    expect(await me('stranger@example.com')).toEqual({ admin: false });
+    expect(await me('founder@zexlabs.example', false)).toEqual({ admin: false });   // an unverified e-mail proves nothing
+  });
+
+  it('grants a plan with no expiry, clears the old expiry, stamps who did it and audits it', async () => {
+    const r = await grant({ plan: 'dedicated' });
+    expect(r.status).toBe(200); expect(await r.json()).toMatchObject({ ok: true, plan: 'dedicated', expiresAt: null });
+    const f = store.get(`workspaces/${T}`)!.fields;
+    expect(fromFs(f.plan)).toBe('dedicated'); expect(f.planExpiresAt === undefined || fromFs(f.planExpiresAt) == null).toBe(true);
+    expect(fromFs(f.planGrantedBy)).toBe('founder@zexlabs.example');
+    const audits = [...store.keys()].filter((k) => k.startsWith(`workspaces/${T}/auditChain/`));
+    expect(audits.length).toBe(1);
+    expect(JSON.stringify(store.get(audits[0]!)!.fields)).toMatch(/plan\.grant/);
+  });
+
+  it('can grant for a number of days', async () => {
+    const r = await grant({ plan: 'enterprise', days: 30 });
+    expect(await r.json()).toMatchObject({ plan: 'enterprise', expiresAt: new Date(NOW.getTime() + 30 * 86_400_000).toISOString() });
+  });
+
+  it('refuses everyone else, bad plans and bad days; the free plan cannot be granted', async () => {
+    expect((await grant({ plan: 'dedicated' }, 'stranger@example.com')).status).toBe(403);
+    expect((await grant({ plan: 'dedicated' }, 'founder@zexlabs.example', false)).status).toBe(403);
+    expect((await grant({ plan: 'free' })).status).toBe(400);
+    expect((await grant({ plan: 'gold' })).status).toBe(400);
+    expect((await grant({ plan: 'growth', days: 0 })).status).toBe(400);
+    expect((await grant({ plan: 'growth', days: 99999 })).status).toBe(400);
+    expect(fromFs(store.get(`workspaces/${T}`)!.fields.plan)).toBe('starter');
+    // the workspace owner is not a platform admin just by owning it
+    expect((await call('/api/admin/grant-plan', { headers: await authed(), body: JSON.stringify({ workspaceId: T, plan: 'dedicated' }) })).status).toBe(403);
+    env = { ...env, PLATFORM_ADMIN_EMAILS: '' };
+    expect((await grant({ plan: 'dedicated' })).status).toBe(403);   // an empty list means nobody
+  });
+});
