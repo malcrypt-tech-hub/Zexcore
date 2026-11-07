@@ -39,7 +39,7 @@ const NAV: { label?: string; items: { href?: string; icon: IconName; text: strin
   ] },
   { label: 'Account', items: [
     { href: '/app/billing', icon: 'credit-card', text: 'Plan & billing' },
-    { icon: 'server', text: 'Cluster & license', comingSoon: true },
+    { href: '/app/license', icon: 'server', text: 'Cluster & license' },
     { href: '/app/security', icon: 'shield-check', text: 'Security' },
     { href: '/app/backups', icon: 'database', text: 'Backups' },
     { href: '/app/api-keys', icon: 'key-round', text: 'API keys' },

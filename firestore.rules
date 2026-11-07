@@ -276,6 +276,8 @@ service cloud.firestore {
       match /automationMarkers/{id} { allow read, write: if false; }
 
       // Where deposits are paid out, and the deposit payments themselves: written only by the Worker (service account).
+      // Dedicated-cluster requests: written and read only by the Worker.
+      match /clusterRequests/{id} { allow read, write: if false; }
       match /payout/{id} { allow read: if isAdmin(wid); allow write: if false; }
       match /depositPayments/{ref} { allow read: if isAdmin(wid); allow write: if false; }
 

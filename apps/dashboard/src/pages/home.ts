@@ -8,7 +8,7 @@ const STARTER = PRICES.starter.monthlyUsd;
 export function renderHomePage(): string {
   const hero = `<section class="rp-hero" id="home-flagship-hero"><div class="site-container"><div class="rp-hero-copy">
    <h1 class="rp-hero-title">Take Bookings. Collect Deposits.<br /><span class="rp-hero-red">Get Paid Before They Arrive.</span></h1>
-    <p class="rp-hero-desc" style="font-weight:600">A booking page, customer records and a WhatsApp inbox in one place, for salons, clinics, studios and workshops. Customers can pay a deposit by card through Paystack, straight to your bank account.</p>
+    <p class="rp-hero-desc" style="font-weight:600">A booking page, customer records and a WhatsApp inbox in one place, for salons, clinics, studios and workshops. Customers can pay a deposit, or buy from your online shop, by card through Paystack, straight to your bank account.</p>
     <div class="rp-hero-actions">
       <a href="/signup" data-link class="btn btn-primary btn-lg" id="btn-hero-primary">Start free</a>
       <a href="/demo" data-link class="btn btn-secondary btn-lg" id="btn-hero-secondary">Try a demo booking page</a>
@@ -26,6 +26,8 @@ export function renderHomePage(): string {
       { title: 'Online booking', text: 'A public page where customers choose a service and a time. The same time can never be booked twice.' },
       { title: 'Customers & leads', text: 'Every booking becomes a customer record with a history you can search.' },
       { title: 'Deposits', text: 'Ask for a deposit when someone books. They pay by card through Paystack and the money goes to your bank account.' },
+      { title: 'Online shop', text: 'List what you sell with photos. Customers pay by card or send an order request, and you see every order in one place.' },
+      { title: 'Customer emails', text: 'Reminders before an appointment and a thank-you after, sent for you.' },
       { title: 'Inbox', text: 'Reply to customers on WhatsApp with the booking details already filled in.' },
       { title: 'Device monitoring', text: 'Track equipment readings, such as a cold room, and get an email when something is off. Growth plan and above.' },
       { title: 'Automations', text: 'Turn repeat tasks into rules that email you or call your other tools. Growth plan and above.' },

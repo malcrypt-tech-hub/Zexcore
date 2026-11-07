@@ -17,8 +17,8 @@ const EXTRA_FEATURES: Record<string, string[]> = {
   starter: ['Custom logo branding', 'Data protection & compliance'],
   growth: ['Automations & AI rule drafting', 'IoT device monitoring', 'Custom logo branding', 'Data protection'],
   agency: ['All Growth features', 'Higher limits on every resource'],
-  enterprise: ['All features unlocked', 'Increased priority on support issues'],
-  dedicated: ['Everything in Enterprise', 'Highest priority on support issues'],
+  enterprise: ['All features unlocked', 'Signed licence file', 'Dedicated cluster requests', 'Increased priority on support issues'],
+  dedicated: ['Everything in Enterprise', 'A dedicated cluster built with our team', 'Highest priority on support issues'],
 };
 
 export async function renderBilling(view: HTMLElement): Promise<void> {

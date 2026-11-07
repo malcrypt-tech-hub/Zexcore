@@ -34,6 +34,10 @@ export interface Env {
   BACKUP_KEY?: string;
   /** Set only by the test harness: talk to the Firestore emulator instead of production. Never set in wrangler.toml. */
   FIRESTORE_EMULATOR_HOST?: string;
+  /** Secret: Ed25519 private key as a JWK ({kty,crv,d,x}). Signs licence files. Generate with scripts/gen-license-key.mjs. */
+  LICENSE_PRIVATE_JWK?: string;
+  /** Where dedicated-cluster requests are emailed (our sales inbox). Without it requests are still stored. */
+  SALES_EMAIL?: string;
   /** Flat platform fee, in kobo, kept by ZexCore on each booking deposit. Defaults to 0. */
   DEPOSIT_FEE_MINOR?: string;
 }
