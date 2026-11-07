@@ -263,6 +263,8 @@ describe('team roles', () => {
     await assertSucceeds(updateDoc(doc(ed, 'workspaces', W, 'orders', 'o1'), { status: 'confirmed', updatedAt: serverTimestamp() }));
     await assertFails(updateDoc(doc(ed, 'workspaces', W, 'orders', 'o1'), { status: 'paid' }));
     await assertFails(updateDoc(doc(ed, 'workspaces', W, 'orders', 'o1'), { totalMinor: 1 }));
+    await assertFails(deleteDoc(doc(ed, 'workspaces', W, 'orders', 'o1')));       // only owners and admins delete orders
+    await assertSucceeds(deleteDoc(doc(owner(), 'workspaces', W, 'orders', 'o1')));
   });
   it('an editor looks after services, staff and pages, but not settings, team or automations approval', async () => {
     const ed = asRole('editor1');

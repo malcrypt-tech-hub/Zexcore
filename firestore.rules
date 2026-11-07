@@ -169,7 +169,8 @@ service cloud.firestore {
         allow update: if isWorker(wid) && onlyChanges(['status', 'updatedAt'])
           && request.resource.data.status in ['new', 'confirmed', 'shipped', 'delivered', 'cancelled'];
         allow create: if false;
-        allow delete: if isWorker(wid);
+        // Deleting an order is for owners and admins; the audit log keeps who did it and what the order was.
+        allow delete: if isAdmin(wid);
       }
       match /staff/{id} {
         allow get, list: if true;

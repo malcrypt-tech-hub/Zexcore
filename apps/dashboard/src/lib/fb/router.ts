@@ -86,6 +86,7 @@ on('GET', '/api/public/:slug/order-payments/:ref', ({ params }) => pub.orderPaym
 on('POST', '/api/license', () => lic.getLicense());
 on('GET', '/api/cluster/request', () => lic.getClusterRequest());
 on('POST', '/api/cluster/request', ({ body }) => lic.requestCluster(body as never));
+on('DELETE', '/api/shop/orders/:id', ({ params }) => shop.removeOrder(params[0]!));
 on('POST', '/api/shop/orders/:id/refund', ({ params }) => shop.refundOrder(params[0]!));
 on('GET', '/api/public/:slug/payments/:ref', ({ params }) => pub.payment(params[0]!, params[1]!));
 

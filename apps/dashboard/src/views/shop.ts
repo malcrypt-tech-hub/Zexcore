@@ -3,7 +3,7 @@ import { html, mount, $, type Raw } from '../lib/html';
 import { ic } from '../lib/icons';
 import { money, ago } from '../lib/format';
 import { emptyState, skeletonRows, confirmDialog } from '../lib/ui';
-import { canEdit } from '../lib/session';
+import { canEdit, canAdmin } from '../lib/session';
 import { api, toast, badge, pageHead, formModal, inp, fail, errMsg } from './shared';
 import { uploadPhoto, thumb, ORDER_STATUSES, type ProductDto, type OrderDto } from '../lib/fb/shop';
 
@@ -75,9 +75,14 @@ export function renderShop(view: HTMLElement): void {
         <div class="muted small">List total ${money(o.totalMinor)}${o.paymentStatus === 'paid' ? html` · <b style="color:var(--success)">Paid online</b>` : o.paymentStatus === 'refunded' ? ' · Refunded' : ''}</div>
         <div class="small"><span class="muted">Deliver to:</span> ${o.address}${o.notes ? html`<br><span class="muted">Notes:</span> ${o.notes}` : ''}</div>
         <div class="small"><a href="tel:${o.customerPhone}">${o.customerPhone}</a> · <a href="https://wa.me/${o.customerPhone.replace(/\D/g, '')}" target="_blank" rel="noopener">WhatsApp</a>${o.customerEmail ? html` · ${o.customerEmail}` : ' · no email given'}</div>
-        <div class="row wrap" style="gap:6px">${o.paymentStatus === 'paid' ? html`<button class="btn btn-soft-danger btn-sm" data-refund="${o.id}">Refund and cancel</button>` : ''}${(o.paymentStatus === 'refunded' ? [] : ORDER_STATUSES).filter((s) => s !== o.status && !(o.paymentStatus === 'paid' && s === 'cancelled')).map((s) => html`<button class="btn btn-secondary btn-sm" data-st="${o.id}" data-to="${s}" data-mail="${o.customerEmail ? '1' : ''}">${s === 'cancelled' ? 'Cancel order' : `Mark ${STATUS_LABEL[s]!.toLowerCase()}`}</button>`)}</div></div>`;
+        <div class="row wrap" style="gap:6px">${canAdmin() ? html`<button class="btn btn-soft-danger btn-sm" data-delorder="${o.id}" data-paid="${o.paymentStatus === 'paid' ? '1' : ''}" data-ref="${o.ref}">Delete</button>` : ''}${o.paymentStatus === 'paid' ? html`<button class="btn btn-soft-danger btn-sm" data-refund="${o.id}">Refund and cancel</button>` : ''}${(o.paymentStatus === 'refunded' ? [] : ORDER_STATUSES).filter((s) => s !== o.status && !(o.paymentStatus === 'paid' && s === 'cancelled')).map((s) => html`<button class="btn btn-secondary btn-sm" data-st="${o.id}" data-to="${s}" data-mail="${o.customerEmail ? '1' : ''}">${s === 'cancelled' ? 'Cancel order' : `Mark ${STATUS_LABEL[s]!.toLowerCase()}`}</button>`)}</div></div>`;
       mount(host, rows.length ? html`<p class="muted small" style="margin-bottom:12px">Orders marked Paid online were paid by card through Paystack; the money goes to your payout account. Other orders are requests you settle with the customer. When you change the status the customer is emailed if they gave an address.</p>${rows.map(card)}`
         : html`<div class="card">${emptyState({ icon: 'shopping-bag', title: 'No orders yet', text: 'Order requests from your booking page appear here, and we email you when one arrives.' })}</div>`);
+      host.querySelectorAll<HTMLButtonElement>('[data-delorder]').forEach((b) => b.addEventListener('click', async () => {
+        const paid = b.dataset.paid === '1';
+        if (!await confirmDialog({ title: `Delete order ${b.dataset.ref}?`, message: paid ? 'This order was paid online and has not been refunded. Deleting it does not refund the customer; the payment record stays with your payments. A line is kept in the audit log.' : 'It disappears from your orders. A line is kept in the audit log.', confirmLabel: 'Delete order', danger: true })) return;
+        try { await api(`/api/shop/orders/${b.dataset.delorder}`, { method: 'DELETE' }); toast('Order deleted', 'success'); void orders(); } catch (e) { toast(errMsg(e, 'Could not delete the order'), 'error'); }
+      }));
       host.querySelectorAll<HTMLButtonElement>('[data-refund]').forEach((b) => b.addEventListener('click', async () => {
         if (!await confirmDialog({ title: 'Refund this order?', message: 'The customer is refunded in full through Paystack, the order is cancelled and they are emailed. This cannot be undone.', confirmLabel: 'Refund and cancel', danger: true })) return;
         try { await api(`/api/shop/orders/${b.dataset.refund}/refund`, { method: 'POST' }); toast('Refunded. The customer has been emailed.', 'success'); void orders(); } catch (e) { toast(errMsg(e, 'Could not refund the order'), 'error'); }
