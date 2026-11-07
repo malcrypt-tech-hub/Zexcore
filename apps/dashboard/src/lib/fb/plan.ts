@@ -50,7 +50,7 @@ export function effectiveTier(plan: string | undefined, expiresAtMs: number | nu
 export type EnforcedKey = keyof (typeof LIMITS)['free'];
 export const slotLimit = (tier: Tier, key: EnforcedKey): number => LIMITS[tier][key] ?? UNLIMITED_SLOTS;
 
-export type FeatureKey = 'branding' | 'compliance' | 'automations' | 'devices' | 'export' | 'backups' | 'risk' | 'api' | 'waitlist' | 'insights';
+export type FeatureKey = 'branding' | 'compliance' | 'automations' | 'devices' | 'export' | 'backups' | 'risk' | 'api' | 'waitlist' | 'insights' | 'shopPay';
 
 export const FEATURE_TIERS: Record<FeatureKey, Tier> = {
   branding: 'starter',
@@ -63,6 +63,8 @@ export const FEATURE_TIERS: Record<FeatureKey, Tier> = {
   api: 'enterprise',
   waitlist: 'enterprise',
   insights: 'enterprise',
+  /** Customers paying for shop orders online. Keep in step with SHOP_PAY_MIN in workers/payments/src/plan.ts. */
+  shopPay: 'starter',
 };
 
 const TIER_ORDER: Record<Tier, number> = {

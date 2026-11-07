@@ -5,6 +5,7 @@ import { api, ApiError } from '../lib/api';
 import { money, ago } from '../lib/format';
 import { toast, emptyState, errorState, skeletonRows, busy } from '../lib/ui';
 import { current, loadMe, canAdmin } from '../lib/session';
+import { LIMITS, hasFeatureAccess, type Tier } from '../lib/fb/plan';
 
 interface PlanList { currencyRates: { NGN_PER_USD: number }; paystackPublicKey: string | null; plans: { tier: string; monthlyUsd: number | null; annualUsd: number | null; limits: Limits | null }[]; freeLimits: Limits; limitLabels: Labels }
 interface Usage { tier: string; effectiveTier: string; usage: Record<LimitKey, { used: number; limit: number | null }>; labels: Labels }
@@ -13,13 +14,23 @@ interface Payment { reference: string; tier: string; cycle: string; currency: st
 const CHECKOUT_CEILING_NGN = 1_000_000;
 const BLURB: Record<string, string> = { starter: 'For a single location getting started.', growth: 'For growing businesses with a busy calendar.', agency: 'For operators running several locations.', enterprise: 'For large organisations with advanced needs.', dedicated: 'A dedicated setup, built with our team.' };
 
-const EXTRA_FEATURES: Record<string, string[]> = {
-  starter: ['Custom logo branding', 'Data protection & compliance'],
-  growth: ['Automations & AI rule drafting', 'IoT device monitoring', 'Custom logo branding', 'Data protection'],
-  agency: ['All Growth features', 'Higher limits on every resource'],
-  enterprise: ['All features unlocked', 'Signed licence file', 'Dedicated cluster requests', 'Increased priority on support issues'],
-  dedicated: ['Everything in Enterprise', 'A dedicated cluster built with our team', 'Highest priority on support issues'],
-};
+/** What each plan adds, with quantities, generated from the same constants the database rules and Worker enforce. */
+const cap = (t: Tier, k: 'devices' | 'rules'): string => (LIMITS[t][k] === null ? 'unlimited' : `up to ${LIMITS[t][k]!.toLocaleString('en-NG')}`);
+function extrasFor(t: string): string[] {
+  const tier = t as Tier;
+  const out: string[] = [];
+  if (hasFeatureAccess(tier, 'shopPay')) out.push('Customers pay online for shop orders');
+  if (hasFeatureAccess(tier, 'branding')) out.push('Your own logo');
+  if (hasFeatureAccess(tier, 'compliance')) out.push('Data protection tools');
+  if (hasFeatureAccess(tier, 'automations')) out.push(`Automations (${cap(tier, 'rules')})`);
+  if (hasFeatureAccess(tier, 'devices')) out.push(`Device monitoring (${cap(tier, 'devices')} devices)`);
+  if (hasFeatureAccess(tier, 'backups')) out.push('Daily encrypted backups and data export');
+  if (hasFeatureAccess(tier, 'api')) out.push('API keys');
+  if (hasFeatureAccess(tier, 'insights')) out.push('Business insights, waitlist and no-show protection');
+  if (tier === 'enterprise' || tier === 'dedicated') out.push('Signed licence file and dedicated cluster requests');
+  if (tier === 'dedicated') out.push('A dedicated cluster built with our team');
+  return out;
+}
 
 export async function renderBilling(view: HTMLElement): Promise<void> {
   const me = current()!;
@@ -28,7 +39,7 @@ export async function renderBilling(view: HTMLElement): Promise<void> {
     <div class="chips"><button class="chip-btn" data-c="monthly" aria-pressed="true">Monthly</button><button class="chip-btn" data-c="annual" aria-pressed="false">Annual · 2 months free</button></div></div>
     <div id="usage"></div>
     <div id="plans" class="stack" style="grid-template-columns:repeat(auto-fill,minmax(min(100%,230px),1fr))"></div>
-    <p class="muted small" style="margin-top:12px">Prices are in US dollars; card payments are charged in naira at the day's rate. Payments are processed securely via Paystack. Enterprise and Dedicated are set up with our team: press Contact us and we will arrange it with you.</p>
+    <p class="muted small" style="margin-top:12px">Every plan includes online booking, booking deposits, reminder and thank-you emails, and Security Watch. Prices are in US dollars; card payments are charged in naira at the day's rate. Payments are processed securely via Paystack. Enterprise and Dedicated are set up with our team: press Contact us and we will arrange it with you.</p>
     <h3 style="margin:28px 0 12px">Payment history</h3><div class="card" id="pay"></div>`);
   let plans: PlanList;
   try { plans = await api<PlanList>('/api/billing/plans', { auth: false }); }
@@ -41,7 +52,7 @@ export async function renderBilling(view: HTMLElement): Promise<void> {
       const contact = p.tier === 'enterprise' || p.tier === 'dedicated';
       const tooBig = usd !== null && usd * plans.currencyRates.NGN_PER_USD > CHECKOUT_CEILING_NGN;   // Worker enforces the real limit
       const cur = me.tenant.tier === p.tier;
-      const extras = EXTRA_FEATURES[p.tier] || [];
+      const extras = extrasFor(p.tier);
       return html`<section class="card card-pad stack-sm" style="${cur ? 'border:2px solid var(--primary);padding:19px' : ''}">
         <div class="row between"><h3 style="text-transform:capitalize">${p.tier}</h3>${cur ? html`<span class="badge badge-primary">Current</span>` : ''}</div>
         <div>${contact || usd === null ? html`<span style="font-size:1.5rem;font-weight:700;letter-spacing:-.02em">Contact us</span>` : html`<span style="font-size:1.75rem;font-weight:700;letter-spacing:-.02em" class="num">${money(usd * 100, 'USD')}</span><span class="muted small"> / ${cycle === 'annual' ? 'year' : 'month'}</span>${cycle === 'annual' ? html`<div class="muted small">2 months free</div>` : ''}`}</div>

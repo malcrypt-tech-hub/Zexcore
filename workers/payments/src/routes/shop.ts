@@ -27,6 +27,7 @@ import { HttpError, ID_RE, firstName, json, randomHex, randomRef, readJson, sha2
 import { normalizePhone } from './waitlist';
 import { ngnRateFor, ps } from './deposits';
 import { maxCheckoutNgn } from './billing';
+import { SHOP_PAY_MIN, atLeast, effectivePlan } from '../plan';
 
 const SLUG_RE = /^[a-z0-9-]{3,40}$/;
 const EMAIL_RE = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
@@ -79,6 +80,7 @@ export async function placeOrder(c: Ctx): Promise<Response> {
   let pay: { subaccount: string; rate: number; amountMinor: number } | null = null;
   if (payOnline) {
     if (!paymentsEnabled(c.env)) throw new HttpError(503, 'Online payment is not available right now. Send the order as a request instead.', 'unavailable');
+    if (!atLeast(effectivePlan(ws.data, c.d.now()).plan, SHOP_PAY_MIN)) throw new HttpError(402, 'This business does not take online payment for shop orders. Send the order as a request instead.', 'plan_required');
     const payout = await fsGet(c.env, c.d, `workspaces/${wid}/payout/main`);
     if (!payout?.data.subaccountCode) throw new HttpError(409, 'This business has not finished setting up online payments. Send the order as a request instead.', 'payout_missing');
     if (totalMinor <= 0) throw new HttpError(400, 'This order has no price to pay online. Send it as a request instead.');
@@ -182,7 +184,9 @@ export async function shopPay(c: Ctx): Promise<Response> {
   const slug = c.url.searchParams.get('slug') ?? '';
   if (!SLUG_RE.test(slug)) throw new HttpError(400, 'Invalid request');
   const wid = String((await fsGet(c.env, c.d, `slugs/${slug}`))?.data.wid ?? '');
-  const payout = wid && paymentsEnabled(c.env) ? await fsGet(c.env, c.d, `workspaces/${wid}/payout/main`) : null;
+  const ws = wid && paymentsEnabled(c.env) ? await fsGet(c.env, c.d, `workspaces/${wid}`) : null;
+  const allowed = ws ? atLeast(effectivePlan(ws.data, c.d.now()).plan, SHOP_PAY_MIN) : false;
+  const payout = allowed ? await fsGet(c.env, c.d, `workspaces/${wid}/payout/main`) : null;
   return json({ online: Boolean(payout?.data.subaccountCode) }, 200, { ...c.headers, 'cache-control': 'public, max-age=60' });
 }
 

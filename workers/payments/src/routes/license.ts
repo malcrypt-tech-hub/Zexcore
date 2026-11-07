@@ -18,6 +18,7 @@ import { requireMember } from '../auth';
 import { fsCommit, fsGet } from '../fs';
 import { queueFormal } from '../outbox';
 import { ownerContact } from '../automation';
+import { effectivePlan } from '../plan';
 import { HttpError, WID_RE, b64url, enc, fromB64url, json, randomHex, readJson } from '../util';
 
 export const LICENSE_PREFIX = 'ZXL1';
@@ -73,11 +74,9 @@ export async function checkLicense(env: Env, licence: string, now: Date): Promis
 async function currentPlan(c: Ctx, wid: string): Promise<{ plan: string; expires: Date | null; name: string }> {
   const ws = await fsGet(c.env, c.d, `workspaces/${wid}`);
   if (!ws) throw new HttpError(404, 'Workspace not found');
-  const plan = String(ws.data.plan ?? 'free');
-  const expires = ws.data.planExpiresAt instanceof Date ? ws.data.planExpiresAt : null;
-  const live = plan !== 'free' && (!expires || c.d.now().getTime() < expires.getTime() + GRACE_DAYS * 86_400_000);
+  const { plan, expires } = effectivePlan(ws.data, c.d.now());
   const settings = (ws.data.settings ?? {}) as Record<string, unknown>;
-  return { plan: live ? plan : 'free', expires, name: String(settings.publicName ?? ws.data.name ?? 'Workspace') };
+  return { plan, expires, name: String(settings.publicName ?? ws.data.name ?? 'Workspace') };
 }
 
 export async function issueLicense(c: Ctx): Promise<Response> {

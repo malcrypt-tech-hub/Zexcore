@@ -2,7 +2,7 @@ export type LimitKey = 'bookingsPerMonth' | 'staff' | 'services' | 'devices' | '
 export type Limits = Record<LimitKey, number | null>;
 export type Labels = Record<LimitKey, { one: string; many: string }>;
 
-export const LIMIT_ORDER: LimitKey[] = ['bookingsPerMonth', 'services', 'staff', 'crmContacts', 'cmsPages'];
+export const LIMIT_ORDER: LimitKey[] = ['bookingsPerMonth', 'services', 'staff', 'crmContacts', 'cmsPages', 'products'];
 
 /** "200 bookings a month", "Unlimited services" … for a plan card. */
 export function limitLines(limits: Limits | null, labels: Labels, tier?: string): string[] {
