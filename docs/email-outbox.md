@@ -21,3 +21,7 @@ Sent by the hourly job through the outbox, only for workspaces whose owner switc
 * **Thank-you** (`settings.followUpEmails`, off by default): a day after a booking is marked completed, with a link to book again.
 
 Both need the customer's email address (optional on the booking page). Keys are `remind:<ws>:<booking>` and `followup:<ws>:<booking>`, so no one is emailed twice.
+
+## Shop orders paid online
+
+Customers can pay for shop goods through Paystack when the business has a payout account and payments are enabled. The order is stored as `awaiting_payment` (hidden from the owner) until the payment is verified server-side (`/transaction/verify`, amount and currency compared) either on return or via the webhook; then it becomes `new`, the customer gets a receipt and the owner an alert (both through the outbox, one each per order). Owners can refund a paid order in full from the Orders tab. Orders above the checkout ceiling can only be sent as requests.

@@ -1,6 +1,6 @@
 /** The online shop: products the business sells, photos on Cloudinary, and the order requests customers send. */
 import { deleteDoc, getDocs, limit as qLimit, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
-import { ApiError, audit, claimSlot, iso, loadCtx, requireEditor, toApiError, wsCol, wsDoc, type Ctx } from './core';
+import { ApiError, audit, claimSlot, iso, loadCtx, requireAdmin, requireEditor, toApiError, wsCol, wsDoc, type Ctx } from './core';
 import { worker } from './worker';
 
 /** Orders can be handled by anyone on the team except read-only viewers. */
@@ -8,7 +8,7 @@ function requireWorker(c: Ctx): void { if (c.role === 'viewer') throw new ApiErr
 
 export interface ProductDto { id: string; name: string; description: string | null; priceMinor: number; active: boolean; inStock: boolean; imageUrl: string | null }
 export interface OrderItem { productId: string; name: string; unitMinor: number; qty: number }
-export interface OrderDto { id: string; ref: string; customerName: string; customerPhone: string; customerEmail: string | null; address: string; notes: string | null; items: OrderItem[]; totalMinor: number; status: string; createdAt: string | null }
+export interface OrderDto { id: string; ref: string; customerName: string; customerPhone: string; customerEmail: string | null; address: string; notes: string | null; items: OrderItem[]; totalMinor: number; status: string; paymentStatus: string; paidMinor: number; createdAt: string | null }
 export const ORDER_STATUSES = ['new', 'confirmed', 'shipped', 'delivered', 'cancelled'] as const;
 const IMG_RE = /^https:\/\/res\.cloudinary\.com\//;
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
@@ -76,7 +76,7 @@ export async function uploadPhoto(file: File): Promise<string> {
 export async function listOrders(): Promise<{ orders: OrderDto[] }> {
   const c = await loadCtx(); requireWorker(c);
   const s = await getDocs(query(wsCol(c, 'orders'), orderBy('createdAt', 'desc'), qLimit(200)));
-  return { orders: s.docs.map((d) => { const x = d.data(); return { id: d.id, ref: String(x.ref ?? ''), customerName: String(x.customerName ?? ''), customerPhone: String(x.customerPhone ?? ''), customerEmail: x.customerEmail ?? null, address: String(x.address ?? ''), notes: x.notes ?? null, items: (Array.isArray(x.items) ? x.items : []) as OrderItem[], totalMinor: Number(x.totalMinor) || 0, status: String(x.status ?? 'new'), createdAt: iso(x.createdAt) }; }) };
+  return { orders: s.docs.map((d) => { const x = d.data(); return { id: d.id, ref: String(x.ref ?? ''), customerName: String(x.customerName ?? ''), customerPhone: String(x.customerPhone ?? ''), customerEmail: x.customerEmail ?? null, address: String(x.address ?? ''), notes: x.notes ?? null, items: (Array.isArray(x.items) ? x.items : []) as OrderItem[], totalMinor: Number(x.totalMinor) || 0, status: String(x.status ?? 'new'), paymentStatus: String(x.paymentStatus ?? 'none'), paidMinor: Number(x.paidMinor) || 0, createdAt: iso(x.createdAt) }; }).filter((o) => o.status !== 'awaiting_payment') };   // unpaid online orders are not the owner's yet
 }
 /** Moves an order along and asks the Worker to email the customer. Reports whether that email went out (null: no address on the order). */
 export async function setOrderStatus(id: string, status: string, hasEmail: boolean): Promise<{ ok: true; customerEmailed: boolean | null }> {
@@ -87,4 +87,12 @@ export async function setOrderStatus(id: string, status: string, hasEmail: boole
   if (!hasEmail) return { ok: true, customerEmailed: null };
   try { return { ok: true, customerEmailed: (await worker<{ emailed?: boolean }>('/api/events', { body: { workspaceId: c.wid, event: 'orders.order.status', id } })).emailed === true }; }
   catch { return { ok: true, customerEmailed: false }; }
+}
+
+/** Refunds a paid online order through Paystack and cancels it (owners and admins). */
+export async function refundOrder(id: string): Promise<{ ok: true }> {
+  const c = await loadCtx(); requireAdmin(c);
+  await worker('/api/order/refund', { body: { workspaceId: c.wid, orderId: id } });
+  void audit(c, 'order.refund', 'order', id);
+  return { ok: true };
 }

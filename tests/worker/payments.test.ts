@@ -35,6 +35,7 @@ async function idToken(over: Record<string, unknown> = {}, key = idKey.privateKe
 // ── in-memory Firestore + Google + Paystack ──
 type Doc = { fields: Record<string, any>; v: number };
 let emails: any[] = [];
+let paystackRefunds: any[] = [];
 let resendMode: 'ok' | 'down' | 'reject' | 'throw' = 'ok';
 let resendKeys: (string | undefined)[] = [];
 let revokedLogins: any[] = [];
@@ -84,6 +85,7 @@ function mockFetch(): typeof fetch {
       const d = store.get(fsPath(url));
       return d ? Response.json({ name: `projects/${PROJECT}/databases/(default)/documents/${fsPath(url)}`, fields: d.fields, updateTime: String(d.v) }) : new Response('{}', { status: 404 });
     }
+    if (url.endsWith('/refund')) { paystackRefunds.push(JSON.parse(init.body)); return Response.json({ status: true }); }
     if (url.endsWith('/transaction/initialize')) { paystackInit.push(JSON.parse(init.body)); return Response.json({ status: true, data: { authorization_url: 'https://checkout.paystack.com/abc' } }); }
     if (url.includes('/transaction/verify/')) { const ref = decodeURIComponent(url.split('/verify/')[1]!); return Response.json(paystackVerify[ref] ?? { status: false }); }
     if (url.includes('/bank/resolve')) return url.includes('account_number=0000000000') ? Response.json({ status: false }, { status: 422 }) : Response.json({ status: true, data: { account_name: 'SADE SALON LTD' } });
@@ -105,7 +107,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   resetTokenCache(); resetJwksCache();
-  emails = []; resendMode = 'ok'; resendKeys = []; revokedLogins = []; waSent = []; store = new Map(); commits = []; paystackInit = []; paystackVerify = {}; paystackSub = [];
+  emails = []; paystackRefunds = []; resendMode = 'ok'; resendKeys = []; revokedLogins = []; waSent = []; store = new Map(); commits = []; paystackInit = []; paystackVerify = {}; paystackSub = [];
   env = { PAYSTACK_SECRET_KEY: SECRET, ALLOW_TEST_PAYMENTS: 'true', FIREBASE_PROJECT_ID: PROJECT, APP_URL: 'https://zexcore.com.ng', ALLOWED_ORIGINS: 'https://zexcore.com.ng,https://zexcore-5d6c0.web.app', NGN_PER_USD: '1500',
     FIREBASE_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'w@x.iam.gserviceaccount.com', private_key: saPem }) };
   seedDoc(`workspaces/${WID}`, { name: 'Sade Salon', plan: 'free', ownerUid: 'owner1', slug: 'sade-salon' });
@@ -1246,6 +1248,87 @@ describe('shop orders', () => {
     expect((await order({ requestId: 'req-33333333', items: [{ id: 'g_0', qty: 1 }] })).status).toBe(201);
     expect((await order({ requestId: 'req-44444444', items: [{ id: 'g_0', qty: 1 }] })).status).toBe(429);   // three waiting orders for one phone
     expect(orders()).toHaveLength(3);
+  });
+
+  describe('paying online', () => {
+    const SECRET_KEY = 'sk_test_x';
+    beforeEach(() => {
+      env = { ...env, PAYSTACK_SECRET_KEY: SECRET_KEY, ALLOW_TEST_PAYMENTS: 'true', NGN_PER_USD: '1500' };
+      seedDoc(`workspaces/${X}`, { name: 'Shop Biz', plan: 'free', ownerUid: 'owner1', slug: 'shop-biz', settings: { publicName: 'Shop Biz', exchangeRate: 1500, exchangeRateMode: 'manual' } });
+      seedDoc(`workspaces/${X}/payout/main`, { subaccountCode: 'ACCT_shop1', accountName: 'SHOP BIZ', last4: '1234' });
+    });
+    const pay = (over: Record<string, unknown> = {}) => order({ payOnline: true, ...over });
+    const row = (id: string) => store.get(id)!.fields;
+
+    it('is offered only when the business has a payout account', async () => {
+      const ask = () => call('/api/public/shop-pay?slug=shop-biz', { method: 'GET' });
+      expect(await (await ask()).json()).toEqual({ online: true });
+      store.delete(`workspaces/${X}/payout/main`);
+      expect(await (await ask()).json()).toEqual({ online: false });
+    });
+
+    it('holds the order until Paystack confirms, charging naira at the business rate and splitting to the business', async () => {
+      const r = await pay();
+      expect(r.status).toBe(201);
+      const j = (await r.json()) as any;
+      expect(j).toMatchObject({ ok: true, authorizationUrl: 'https://checkout.paystack.com/abc', totalMinor: 5000, amountMinor: 7_500_000 });
+      expect(paystackInit.at(-1)).toMatchObject({ amount: 7_500_000, currency: 'NGN', subaccount: 'ACCT_shop1', bearer: 'subaccount', email: 'ada@example.com', metadata: { kind: 'order', workspaceId: X } });
+      const [path] = orders();
+      expect(fromFs(row(path!).status)).toBe('awaiting_payment');
+      expect(emails).toHaveLength(0);                                                   // nobody is told about an unpaid order
+    });
+
+    it('turns the order into a paid new order only when the full amount is verified, then emails both sides once', async () => {
+      const { reference } = (await (await pay()).json()) as { reference: string };
+      const status = () => call(`/api/public/order-status?slug=shop-biz&reference=${reference}`, { method: 'GET' });
+      expect(((await (await status()).json()) as any).paymentStatus).toBe('unpaid');
+      paystackVerify[reference] = { status: true, data: { status: 'success', amount: 100, currency: 'NGN', reference } };
+      expect(((await (await status()).json()) as any).paymentStatus).toBe('mismatch');
+      expect(fromFs(row(orders()[0]!).status)).toBe('awaiting_payment');
+      seedDoc(`workspaces/${X}/orderPayments/${reference}`, { reference, orderId: orders()[0]!.split('/').pop(), amountMinor: 7_500_000, usdMinor: 5000, rate: 1500, currency: 'NGN', status: 'pending' });
+      paystackVerify[reference] = { status: true, data: { status: 'success', amount: 7_500_000, currency: 'NGN', reference } };
+      expect(await (await status()).json()).toMatchObject({ paymentStatus: 'paid', totalMinor: 5000 });
+      const o = row(orders()[0]!);
+      expect(fromFs(o.status)).toBe('new'); expect(fromFs(o.paymentStatus)).toBe('paid'); expect(fromFs(o.paymentReference)).toBe(reference);
+      expect(emails.map((m) => m.to[0] ?? m.to).sort()).toEqual(['ada@example.com', 'sade@example.com']);
+      await status(); expect(emails).toHaveLength(2);                                   // asking again changes nothing
+    });
+
+    it('settles from the webhook too, so closing the tab never loses a payment', async () => {
+      const { reference } = (await (await pay()).json()) as { reference: string };
+      paystackVerify[reference] = { status: true, data: { status: 'success', amount: 7_500_000, currency: 'NGN', reference } };
+      const body = JSON.stringify({ event: 'charge.success', data: { reference, metadata: { kind: 'order', workspaceId: X } } });
+      expect((await call('/api/paystack-webhook', { body, headers: { 'x-paystack-signature': await paystackSignature(body, SECRET_KEY) } })).status).toBe(200);
+      expect(fromFs(row(orders()[0]!).paymentStatus)).toBe('paid');
+    });
+
+    it('refuses when payout is missing, no email is given, the order is too large, or payments are off, and a request order still works', async () => {
+      expect((await pay({ email: '' })).status).toBe(400);
+      expect((await pay({ items: [{ id: 'g_0', qty: 99 }] })).status).toBe(409);       // 99 × $25 × 1500 is over the ceiling
+      store.delete(`workspaces/${X}/payout/main`);
+      expect((await pay()).status).toBe(409);
+      expect(orders()).toHaveLength(0);                                                  // nothing was created by the refused attempts
+      expect((await order()).status).toBe(201);                                          // sending it as a request still works
+      seedDoc(`workspaces/${X}/payout/main`, { subaccountCode: 'ACCT_shop1' });
+      env = { ...env, PAYSTACK_SECRET_KEY: undefined };
+      expect((await pay()).status).toBe(503);
+    });
+
+    it('refunds a paid order once, cancels it and tells the customer; only owners and admins can', async () => {
+      const { reference } = (await (await pay()).json()) as { reference: string };
+      paystackVerify[reference] = { status: true, data: { status: 'success', amount: 7_500_000, currency: 'NGN', reference } };
+      await call(`/api/public/order-status?slug=shop-biz&reference=${reference}`, { method: 'GET' });
+      emails.length = 0;
+      const id = orders()[0]!.split('/').pop();
+      const refund = async (headers?: Record<string, string>) => call('/api/order/refund', { headers: headers ?? (await authed()), body: JSON.stringify({ workspaceId: X, orderId: id }) });
+      expect((await refund({ 'content-type': 'application/json' })).status).toBe(401);
+      expect((await refund()).status).toBe(200);
+      expect(paystackRefunds).toHaveLength(1);
+      expect(fromFs(row(orders()[0]!).paymentStatus)).toBe('refunded'); expect(fromFs(row(orders()[0]!).status)).toBe('cancelled');
+      expect(emails[0].subject).toMatch(/refunded/);
+      expect((await refund()).status).toBe(409);                                         // not twice
+      expect(paystackRefunds).toHaveLength(1);
+    });
   });
 
   it('works without an email address, and tells the customer once per status change', async () => {

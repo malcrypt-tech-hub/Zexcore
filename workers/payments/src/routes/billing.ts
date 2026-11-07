@@ -4,6 +4,7 @@ import { fsCommit, fsGet } from '../fs';
 import { getLiveNgnRate, DEFAULT_FALLBACK_RATE } from '../rates';
 import { ID_RE, json, paystackSignature, randomRef, timingSafeEqual } from '../util';
 import { settleDeposit } from './deposits';
+import { settleOrder } from './shop';
 
 
 // ───────────── pricing (mirrors apps/api/src/billing/plans.ts) ─────────────
@@ -119,6 +120,7 @@ export async function webhook(req: Request, env: Env, d: Deps): Promise<Response
   const reference = event.data?.reference;
   const metaWid = event.data?.metadata?.workspaceId;
   if (event.data?.metadata?.kind === 'deposit' && typeof reference === 'string' && typeof metaWid === 'string' && ID_RE.test(metaWid)) return json({ ok: true, deposit: await settleDeposit(env, d, metaWid, reference) });
+  if (event.data?.metadata?.kind === 'order' && typeof reference === 'string' && typeof metaWid === 'string' && ID_RE.test(metaWid)) return json({ ok: true, order: await settleOrder(env, d, metaWid, reference) });
   if (typeof reference !== 'string' || typeof metaWid !== 'string' || !ID_RE.test(metaWid)) return json({ ok: true, ignored: true });
 
   // Our own record of what was asked for is the only source of tier, cycle, currency and price.

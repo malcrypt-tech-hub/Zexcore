@@ -41,3 +41,11 @@ export interface Deps { fetch: typeof fetch; now: () => Date }
 export const realDeps = (): Deps => ({ fetch: (...a) => fetch(...a), now: () => new Date() });
 
 export interface Ctx { req: Request; env: Env; d: Deps; url: URL; headers: Record<string, string> }
+
+/** Money routes stay off unless a live Paystack key is set (or the Worker is explicitly marked staging). */
+export function paymentsEnabled(env: Env): boolean {
+  const k = (env.PAYSTACK_SECRET_KEY ?? '').trim();
+  if (!k) return false;
+  if (k.startsWith('sk_live_')) return true;
+  return k.startsWith('sk_test_') && env.ALLOW_TEST_PAYMENTS === 'true';
+}

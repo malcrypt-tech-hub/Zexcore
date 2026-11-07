@@ -171,7 +171,7 @@ setNotFound(async (ctx) => {
   const m = /^\/([a-z0-9][a-z0-9-]{1,62})$/.exec(ctx.path);
   if (m) {
     const { renderPublicBooking } = await import('./views/publicBooking');
-    return renderPublicBooking(m[1]!, ctx.query.get('pay'));
+    return renderPublicBooking(m[1]!, ctx.query.get('pay'), ctx.query.get('order'));
   }
   const { renderNotFound } = await import('./views/site');
   renderNotFound();

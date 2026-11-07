@@ -24,7 +24,7 @@ import { assessBooking } from './risk';
 const PAYSTACK = 'https://api.paystack.co';
 const BOOKING_RE = /^\d{6}_\d{1,6}$/;
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
-const ps = (env: Env, d: Deps, path: string, init: RequestInit = {}) =>
+export const ps = (env: Env, d: Deps, path: string, init: RequestInit = {}) =>
   d.fetch(`${PAYSTACK}${path}`, { ...init, headers: { authorization: `Bearer ${env.PAYSTACK_SECRET_KEY}`, 'content-type': 'application/json', ...(init.headers ?? {}) } });
 
 export async function banks(c: Ctx): Promise<Response> {
@@ -73,6 +73,12 @@ export async function payoutSetup(c: Ctx): Promise<Response> {
   return json({ ok: true, accountName, last4: accountNumber.slice(-4) }, 200, c.headers);
 }
 
+/** Naira per US dollar for this business: its own fixed rate, or the live one when it uses automatic rates. */
+export async function ngnRateFor(c: Ctx, st: Record<string, any>): Promise<number> {
+  const rate = Number(st.exchangeRate);
+  return !Number.isFinite(rate) || rate < 100 || st.exchangeRateMode === 'auto' ? getLiveNgnRate(c.env, c.d) : rate;
+}
+
 interface Plan { wid: string; slug: string; bookingId: string; amountMinor: number; usdMinor: number; rate: number; subaccount: string; email: string; risk: boolean }
 
 async function planDeposit(c: Ctx, wid: string, slug: string, bookingId: string, emailIn: unknown, opts: { requireFresh: boolean }): Promise<Plan> {
@@ -100,10 +106,7 @@ async function planDeposit(c: Ctx, wid: string, slug: string, bookingId: string,
   const price = Number(svc?.data.priceMinor ?? 0);
   // Prices and deposits are US-dollar cents; the business sets its own exchange rate and Paystack charges naira (kobo).
   const usdMinor = price > 0 ? Math.min(baseUsd, price) : baseUsd;
-  let rate = Number(st.exchangeRate);
-  if (!Number.isFinite(rate) || rate < 100 || st.exchangeRateMode === 'auto') {
-    rate = await getLiveNgnRate(c.env, c.d);
-  }
+  const rate = await ngnRateFor(c, st);
   const amountMinor = Math.round(usdMinor * rate);
   const email = String(emailIn || booking.data.customerEmail || `pay+${bookingId.replace('_', '')}@zexcore.com.ng`).trim();
   if (!EMAIL_RE.test(email)) throw new HttpError(400, 'Enter a valid email address for your receipt.');

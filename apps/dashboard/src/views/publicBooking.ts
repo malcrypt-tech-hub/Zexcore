@@ -22,7 +22,7 @@ function head(name: string, sub: string): Raw {
   return html`<header class="public-head"><div class="row between"><div class="row"><span class="avatar red" style="border-radius:12px">${initials(name)}</span><div><b style="font-size:1.0625rem">${name}</b><div class="muted small">${sub}</div></div></div><span class="badge" title="Powered by ZexCore">${brand()}</span></div></header>`;
 }
 
-export async function renderPublicBooking(slug: string, payRef: string | null): Promise<void> {
+export async function renderPublicBooking(slug: string, payRef: string | null, orderRef: string | null = null): Promise<void> {
   const root = document.getElementById('app')!;
   mount(root, html`<div class="public-wrap"><div class="skel" style="height:64px;margin:12px 0"></div><div class="skel" style="height:300px"></div></div>`);
   let p: Profile;
@@ -67,6 +67,28 @@ export async function renderPublicBooking(slug: string, payRef: string | null): 
       await new Promise((r) => setTimeout(r, 2000));
     }
     mount(root, html`<div class="public-wrap">${head(p.business.name, sub)}<div class="card"><div class="empty"><h3>We have not received your payment yet</h3><p>If you were charged, your booking will be confirmed automatically within a few minutes. Otherwise ${p.business.phone ? html`call ${p.business.phone}` : 'contact the business'} to complete it.</p></div></div></div>`);
+    return;
+  }
+
+  // ── Returning from Paystack after paying for shop goods ──
+  if (orderRef) {
+    waiting();
+    for (let i = 0; i < 10; i++) {
+      try {
+        const s = await api<{ ref: string; paymentStatus: string }>(`/api/public/${slug}/order-payments/${encodeURIComponent(orderRef)}`, { auth: false });
+        if (s.paymentStatus === 'paid') {
+          mount(root, html`<div class="public-wrap">${head(p.business.name, sub)}
+            <div class="receipt"><span class="icon-tile" style="margin:0 auto 12px;background:var(--success);color:#fff;border-radius:50%">${ic('check')}</span>
+              <h2>Payment received</h2><p class="muted" style="margin:6px 0 18px">Thank you. ${p.business.name} has your order and will be in touch about delivery. A receipt is on its way if you gave an email address.</p>
+              <div class="booking-meta" style="text-align:left"><div class="l"><span class="muted">Order reference</span><span class="ref">${s.ref}</span></div></div>
+              <p class="muted small" style="margin-top:16px">Save your reference. ${p.business.phone ? html`Questions? Call <a href="tel:${p.business.phone}" style="text-decoration:underline">${p.business.phone}</a>.` : ''}</p></div></div>`);
+          return;
+        }
+        if (s.paymentStatus === 'mismatch') break;
+      } catch (e) { if (e instanceof ApiError && e.status === 404) break; }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    mount(root, html`<div class="public-wrap">${head(p.business.name, sub)}<div class="card"><div class="empty"><h3>We have not received your payment yet</h3><p>If you were charged, your order will be confirmed automatically within a few minutes and you will get an email. If not, you can go back and try again.</p><a class="btn btn-primary" href="/${slug}">Back to ${p.business.name}</a></div></div></div>`);
     return;
   }
 
