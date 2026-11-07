@@ -1,5 +1,5 @@
 /** The online shop: products the business sells, photos on Cloudinary, and the order requests customers send. */
-import { deleteDoc, getDocs, limit as qLimit, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { deleteDoc, getDoc, getDocs, limit as qLimit, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { ApiError, audit, claimSlot, iso, loadCtx, requireAdmin, requireEditor, toApiError, wsCol, wsDoc, type Ctx } from './core';
 import { worker } from './worker';
 
@@ -87,6 +87,18 @@ export async function setOrderStatus(id: string, status: string, hasEmail: boole
   if (!hasEmail) return { ok: true, customerEmailed: null };
   try { return { ok: true, customerEmailed: (await worker<{ emailed?: boolean }>('/api/events', { body: { workspaceId: c.wid, event: 'orders.order.status', id } })).emailed === true }; }
   catch { return { ok: true, customerEmailed: false }; }
+}
+
+/** Deletes an order (owners and admins). The audit log keeps its reference, customer, total and payment state; payment records stay with the payments. */
+export async function removeOrder(id: string): Promise<{ ok: true }> {
+  const c = await loadCtx(); requireAdmin(c);
+  const ref = wsDoc(c, 'orders', id);
+  const snap = await getDoc(ref).catch((e) => { throw toApiError(e); });
+  if (!snap.exists()) return { ok: true };
+  const x = snap.data();
+  await deleteDoc(ref).catch((e) => { throw toApiError(e); });
+  void audit(c, 'order.delete', 'order', id, `${String(x.ref ?? '')} · ${String(x.customerName ?? '')} · ${Number(x.totalMinor ?? 0)} minor USD · status ${String(x.status ?? '')} · payment ${String(x.paymentStatus ?? 'none')}`);
+  return { ok: true };
 }
 
 /** Refunds a paid online order through Paystack and cancels it (owners and admins). */
