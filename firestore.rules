@@ -336,9 +336,15 @@ service cloud.firestore {
       match /backups/{id} { allow read: if isAdmin(wid); allow write: if false; }
 
       // What each person has already seen (for the new-booking badge): one tiny document per member, theirs alone.
+      function seenKeyOk(k) {
+        return !(k in request.resource.data) || request.resource.data[k] == request.time
+          || (resource != null && k in resource.data && request.resource.data[k] == resource.data[k]);
+      }
       match /seen/{uid} {
         allow read: if isMember(wid) && request.auth.uid == uid;
-        allow create, update: if isMember(wid) && request.auth.uid == uid && noExtraKeys(['bookingsAt']) && request.resource.data.bookingsAt == request.time;
+        // Each marker is either set to the current time or left as it was; nobody can back-date or forge one.
+        allow create, update: if isMember(wid) && request.auth.uid == uid && noExtraKeys(['bookingsAt', 'ordersAt', 'enquiriesAt'])
+          && seenKeyOk('bookingsAt') && seenKeyOk('ordersAt') && seenKeyOk('enquiriesAt');
         allow delete: if false;
       }
 
