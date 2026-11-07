@@ -1535,3 +1535,77 @@ describe('appointment reminder and thank-you emails', () => {
     expect(emails).toHaveLength(1);
   });
 });
+
+describe('licences and dedicated cluster requests', () => {
+  const L = 'wslic000000000000001';
+  let priv = '';
+  beforeEach(() => { seedDoc(`workspaces/${L}/members/owner1`, { role: 'owner', email: 'sade@example.com' }); seedDoc(`workspaces/${L}/members/staff1`, { role: 'staff' }); });
+  const H = async (over?: Record<string, unknown>) => await authed(over);
+  const on = async () => {
+    const kp = (await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify'])) as CryptoKeyPair;
+    const j = (await crypto.subtle.exportKey('jwk', kp.privateKey)) as JsonWebKey;
+    priv = JSON.stringify({ kty: j.kty, crv: j.crv, d: j.d, x: j.x });
+    env = { ...env, LICENSE_PRIVATE_JWK: priv, RESEND_API_KEY: 're_test', SALES_EMAIL: 'sales@zexlabs.example' };
+  };
+  const plan = (p: string, exp?: Date) => seedDoc(`workspaces/${L}`, { name: 'Sade Salon', plan: p, ownerUid: 'owner1', slug: 'sade-salon', ...(exp ? { planExpiresAt: exp } : {}) });
+  const issue = async () => call('/api/license', { headers: await H(), body: JSON.stringify({ workspaceId: L }) });
+  const verify = (license: string, t = NOW) => handle(new Request('https://pay.example.workers.dev/api/public/license-verify', { method: 'POST', body: JSON.stringify({ license }), headers: { 'content-type': 'application/json', origin: 'https://zexcore.com.ng' } }), env, { fetch: mockFetch(), now: () => t });
+
+  it('issues a signed licence only to Enterprise or Dedicated owners/admins', async () => {
+    await on();
+    plan('growth', new Date('2027-01-01T00:00:00Z'));
+    expect((await issue()).status).toBe(403);
+    plan('enterprise', new Date('2027-01-01T00:00:00Z'));
+    const r = await issue(); expect(r.status).toBe(200);
+    const j = (await r.json()) as { license: string; payload: { plan: string; workspaceId: string; expiresAt: string }; publicKey: string };
+    expect(j.license).toMatch(/^ZXL1\.[\w-]+\.[\w-]+$/);
+    expect(j.payload).toMatchObject({ plan: 'enterprise', workspaceId: L, expiresAt: '2027-01-01T00:00:00.000Z' });
+    const staff = await call('/api/license', { headers: await H({ sub: 'staff1', user_id: 'staff1' }), body: JSON.stringify({ workspaceId: L }) });
+    expect(staff.status).toBe(403);
+  });
+
+  it('is off, with a clear message, when no signing key is set', async () => {
+    plan('enterprise', new Date('2027-01-01T00:00:00Z'));
+    const r = await issue(); expect(r.status).toBe(503);
+    expect(((await r.json()) as { error: string }).error).toMatch(/not switched on/);
+  });
+
+  it('verifies a licence offline-style, and rejects any tampering or another key', async () => {
+    await on(); plan('dedicated', new Date('2027-01-01T00:00:00Z'));
+    const { license, publicKey } = (await (await issue()).json()) as { license: string; publicKey: string };
+    expect(await (await verify(license)).json()).toMatchObject({ valid: true, state: 'active', plan: 'dedicated', planStillHeld: true });
+    const [p, body, sig] = license.split('.');
+    const forged = JSON.parse(Buffer.from(body!, 'base64url').toString()); forged.plan = 'enterprise'; forged.expiresAt = '2099-01-01T00:00:00.000Z';
+    expect(await (await verify(`${p}.${Buffer.from(JSON.stringify(forged)).toString('base64url')}.${sig}`)).json()).toMatchObject({ valid: false, state: 'invalid' });
+    expect(await (await verify('garbage')).json()).toMatchObject({ valid: false });
+    // the public key published by the Worker verifies the same licence with plain WebCrypto
+    const pub = await crypto.subtle.importKey('jwk', { kty: 'OKP', crv: 'Ed25519', x: publicKey }, { name: 'Ed25519' }, false, ['verify']);
+    expect(await crypto.subtle.verify({ name: 'Ed25519' }, pub, Buffer.from(sig!, 'base64url'), new TextEncoder().encode(body!))).toBe(true);
+    const k = await call('/api/public/license-key', { method: 'GET' }); expect(((await k.json()) as { publicKey: string }).publicKey).toBe(publicKey);
+  });
+
+  it('follows the plan: expired after the grace days, and no longer valid if the plan was dropped', async () => {
+    await on(); plan('enterprise', new Date('2026-11-05T00:00:00Z'));
+    const { license } = (await (await issue()).json()) as { license: string };
+    const day = 86_400_000, end = new Date('2026-11-05T00:00:00Z').getTime();
+    expect(await (await verify(license, new Date(end + day))).json()).toMatchObject({ valid: true, state: 'grace' });
+    expect(await (await verify(license, new Date(end + 4 * day))).json()).toMatchObject({ valid: false, state: 'expired' });
+    plan('free'); expect(await (await verify(license)).json()).toMatchObject({ valid: false, planStillHeld: false });
+  });
+
+  it('stores one open dedicated cluster request per workspace and emails our team and the owner once', async () => {
+    await on(); plan('agency', new Date('2027-01-01T00:00:00Z'));
+    const body = { workspaceId: L, size: 'medium', needs: 'We run three clinics and need our own isolated setup.', region: 'Lagos', phone: '+2348000000000' };
+    const r = await call('/api/cluster/request', { headers: await H(), body: JSON.stringify(body) });
+    expect(r.status).toBe(200); expect(await r.json()).toMatchObject({ ok: true, notified: true });
+    expect(emails.map((m) => m.to[0] ?? m.to).sort()).toEqual(['sade@example.com', 'sales@zexlabs.example']);
+    expect(emails.some((m) => (m.to[0] ?? m.to) === 'sales@zexlabs.example')).toBe(true);
+    const again = await call('/api/cluster/request', { headers: await H(), body: JSON.stringify(body) });
+    expect(again.status).toBe(409);
+    const got = await call(`/api/cluster/request?workspaceId=${L}`, { method: 'GET', headers: await H() });
+    expect(((await got.json()) as { request: { status: string } }).request.status).toBe('new');
+    // validation, and admins cannot file it
+    expect((await call('/api/cluster/request', { headers: await H(), body: JSON.stringify({ ...body, needs: 'short' }) })).status).toBe(400);
+    expect((await call('/api/cluster/request', { headers: await H({ sub: 'staff1', user_id: 'staff1' }), body: JSON.stringify(body) })).status).toBe(403);
+  });
+});

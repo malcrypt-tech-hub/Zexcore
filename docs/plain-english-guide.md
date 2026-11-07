@@ -63,9 +63,9 @@ Whenever a software company, digital agency, or enterprise builds software for m
 - **What it is:** A flight data black-box recorder for all data exports, sensor readings, and system status changes.
 - **How it works:** Every time data is exported or state changes, the platform assigns a permanent serial number (e.g. `EXP-20261021-9B4F1A`), exact millisecond timestamp (UTC), user identity, and cryptographic watermark. Each entry is chained to the previous entry using a mathematical hash seal. These records are permanent and append-only: no user or administrator can alter or delete past records.
 
-### 3.8 Dedicated Enterprise License Vault
-- **What it is:** On-premise enterprise license keys and cryptographic token verification.
-- **How it works:** For air-gapped or dedicated enterprise deployments, ZexCore generates cryptographically signed offline license tokens verifying node allocations, CPU core entitlements, and expiry dates without requiring connection to external third-party servers.
+### 3.8 Licence file and dedicated cluster
+- **What it is:** A signed licence file for Enterprise and Dedicated workspaces, and a request form for a dedicated cluster.
+- **How it works:** An owner or admin generates a licence that states the workspace, its plan and when it expires. It is signed with an Ed25519 private key held only by ZexCore, so anyone can verify it offline with the public key and nobody can alter it. It records entitlement; plan limits are enforced by the platform itself. A dedicated cluster is set up by our team: the request goes to us by email and nothing is created or charged automatically. See `docs/licences.md`.
 
 ---
 

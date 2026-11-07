@@ -17,6 +17,7 @@ import * as team from './team';
 import * as keys from './apikeys';
 import * as wl from './waitlist';
 import * as shop from './shop';
+import * as lic from './license';
 import * as nt from './notify';
 import * as ins from './insights';
 import { getLiveNgnRate } from '../fx';
@@ -82,6 +83,9 @@ on('POST', '/api/public/:slug/bookings', ({ params, body }) => pub.book(params[0
 on('POST', '/api/public/:slug/waitlist', ({ params, body }) => pub.joinWaitlist(params[0]!, body));
 on('GET', '/api/public/:slug/shop-pay', ({ params }) => pub.shopPay(params[0]!));
 on('GET', '/api/public/:slug/order-payments/:ref', ({ params }) => pub.orderPayment(params[0]!, params[1]!));
+on('POST', '/api/license', () => lic.getLicense());
+on('GET', '/api/cluster/request', () => lic.getClusterRequest());
+on('POST', '/api/cluster/request', ({ body }) => lic.requestCluster(body as never));
 on('POST', '/api/shop/orders/:id/refund', ({ params }) => shop.refundOrder(params[0]!));
 on('GET', '/api/public/:slug/payments/:ref', ({ params }) => pub.payment(params[0]!, params[1]!));
 

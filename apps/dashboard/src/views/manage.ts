@@ -27,7 +27,7 @@ export function renderMore(view: HTMLElement): void {
     { href: '/app/content', icon: 'globe', t: 'Website pages', s: 'Draft and publish page content' },
     { href: '/app/compliance', icon: 'scale', t: 'Data protection', s: 'Consent, erasure and retention' },
     { href: '/app/billing', icon: 'credit-card', t: 'Plan & billing', s: 'Your subscription and payments' },
-    { icon: 'server', t: 'Cluster & license', s: 'Dedicated clusters and on-premise license keys', comingSoon: true },
+    { href: '/app/license', icon: 'server', t: 'Cluster & license', s: 'Signed licence file and dedicated setup' },
     { href: '/app/security', icon: 'shield-check', t: 'Security', s: 'Password and signed-in devices' },
     { href: '/app/backups', icon: 'database', t: 'Backups', s: 'Encrypted daily copies and certificates' },
     { href: '/app/insights', icon: 'activity', t: 'Business insights', s: 'Bookings, revenue and busy times' },
