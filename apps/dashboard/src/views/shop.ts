@@ -14,11 +14,11 @@ const KIND: Record<string, 'success' | 'warning' | 'primary' | 'info' | ''> = { 
 export function renderShop(view: HTMLElement): void {
   let tab: Tab = location.hash === '#orders' ? 'orders' : 'products';
   mount(view, html`${pageHead('Shop', 'Goods you sell on your booking page, and the orders customers send.')}
-    <div class="tabs" role="tablist" id="st">${(['products', 'orders'] as Tab[]).map((t) => html`<button class="tab" role="tab" data-tab="${t}">${t === 'products' ? 'Products' : 'Orders'}</button>`)}</div>
+    <div class="chips" role="tablist" id="st" style="margin-bottom:4px">${(['products', 'orders'] as Tab[]).map((t) => html`<button class="chip-btn" role="tab" data-tab="${t}">${t === 'products' ? 'Products' : 'Orders'}</button>`)}</div>
     <div id="sh" style="margin-top:16px"></div>`);
   const host = $('#sh', view)!;
   const draw = (): void => {
-    view.querySelectorAll<HTMLElement>('[data-tab]').forEach((b) => { const on = b.dataset.tab === tab; b.classList.toggle('active', on); b.setAttribute('aria-selected', String(on)); });
+    view.querySelectorAll<HTMLElement>('[data-tab]').forEach((b) => { const on = b.dataset.tab === tab; b.setAttribute('aria-pressed', String(on)); b.setAttribute('aria-selected', String(on)); });
     void (tab === 'products' ? products() : orders());
   };
   view.querySelectorAll<HTMLElement>('[data-tab]').forEach((b) => b.addEventListener('click', () => { tab = b.dataset.tab as Tab; history.replaceState(null, '', tab === 'orders' ? '#orders' : location.pathname); draw(); }));
