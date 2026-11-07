@@ -1254,11 +1254,23 @@ describe('shop orders', () => {
     const SECRET_KEY = 'sk_test_x';
     beforeEach(() => {
       env = { ...env, PAYSTACK_SECRET_KEY: SECRET_KEY, ALLOW_TEST_PAYMENTS: 'true', NGN_PER_USD: '1500' };
-      seedDoc(`workspaces/${X}`, { name: 'Shop Biz', plan: 'free', ownerUid: 'owner1', slug: 'shop-biz', settings: { publicName: 'Shop Biz', exchangeRate: 1500, exchangeRateMode: 'manual' } });
+      seedDoc(`workspaces/${X}`, { name: 'Shop Biz', plan: 'starter', planExpiresAt: new Date('2027-01-01T00:00:00Z'), ownerUid: 'owner1', slug: 'shop-biz', settings: { publicName: 'Shop Biz', exchangeRate: 1500, exchangeRateMode: 'manual' } });
       seedDoc(`workspaces/${X}/payout/main`, { subaccountCode: 'ACCT_shop1', accountName: 'SHOP BIZ', last4: '1234' });
     });
     const pay = (over: Record<string, unknown> = {}) => order({ payOnline: true, ...over });
     const row = (id: string) => store.get(id)!.fields;
+
+    it('is a Starter-and-above feature: Free workspaces, and expired plans, can only take order requests', async () => {
+      const ask = () => call('/api/public/shop-pay?slug=shop-biz', { method: 'GET' });
+      seedDoc(`workspaces/${X}`, { name: 'Shop Biz', plan: 'free', ownerUid: 'owner1', slug: 'shop-biz', settings: {} });
+      expect(await (await ask()).json()).toEqual({ online: false });
+      const r = await pay({ items: [{ id: 'g_0', qty: 1 }] });
+      expect(r.status).toBe(402); expect(await r.json()).toMatchObject({ code: 'plan_required' });
+      expect(orders()).toHaveLength(0);
+      expect((await order({ items: [{ id: 'g_0', qty: 1 }] })).status).toBe(201);   // the plain request still works
+      seedDoc(`workspaces/${X}`, { name: 'Shop Biz', plan: 'starter', planExpiresAt: new Date('2026-10-01T00:00:00Z'), ownerUid: 'owner1', slug: 'shop-biz', settings: {} });   // expired more than 3 days ago
+      expect(await (await ask()).json()).toEqual({ online: false });
+    });
 
     it('is offered only when the business has a payout account', async () => {
       const ask = () => call('/api/public/shop-pay?slug=shop-biz', { method: 'GET' });

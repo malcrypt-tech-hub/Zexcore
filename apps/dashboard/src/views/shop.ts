@@ -3,7 +3,8 @@ import { html, mount, $, type Raw } from '../lib/html';
 import { ic } from '../lib/icons';
 import { money, ago } from '../lib/format';
 import { emptyState, skeletonRows, confirmDialog } from '../lib/ui';
-import { canEdit, canAdmin } from '../lib/session';
+import { canEdit, canAdmin, current } from '../lib/session';
+import { hasFeatureAccess, featureRequiredTier } from '../lib/fb/plan';
 import { api, toast, badge, pageHead, formModal, inp, fail, errMsg } from './shared';
 import { uploadPhoto, thumb, ORDER_STATUSES, type ProductDto, type OrderDto } from '../lib/fb/shop';
 
@@ -14,6 +15,7 @@ const KIND: Record<string, 'success' | 'warning' | 'primary' | 'info' | ''> = { 
 export function renderShop(view: HTMLElement): void {
   let tab: Tab = location.hash === '#orders' ? 'orders' : 'products';
   mount(view, html`${pageHead('Shop', 'Goods you sell on your booking page, and the orders customers send.')}
+    ${hasFeatureAccess(current()?.tenant.tier, 'shopPay') ? '' : html`<div class="alert alert-info" style="margin-bottom:12px">Customers can send you order requests on your plan. To let them <b>pay online</b>, upgrade to <b style="text-transform:capitalize">${featureRequiredTier('shopPay')}</b> or above. <a href="/app/billing" data-link style="text-decoration:underline">See plans</a></div>`}
     <div class="chips" role="tablist" id="st" style="margin-bottom:4px">${(['products', 'orders'] as Tab[]).map((t) => html`<button class="chip-btn" role="tab" data-tab="${t}">${t === 'products' ? 'Products' : 'Orders'}</button>`)}</div>
     <div id="sh" style="margin-top:16px"></div>`);
   const host = $('#sh', view)!;
@@ -51,7 +53,7 @@ export function renderShop(view: HTMLElement): void {
     try {
       const { products: rows } = await api<{ products: ProductDto[] }>('/api/shop/products');
       mount(host, html`${canEdit() ? html`<div class="row" style="justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary" data-add>${ic('plus', 'ico-sm')} Add a product</button></div>` : ''}
-        <div class="card">${rows.length === 0 ? emptyState({ icon: 'shopping-bag', title: 'No products yet', text: 'Add what you sell. Customers see it on your booking page and can pay online or send you an order request. Online payment needs a payout account in Settings.' })
+        <div class="card">${rows.length === 0 ? emptyState({ icon: 'shopping-bag', title: 'No products yet', text: 'Add what you sell. Customers see it on your booking page and can pay online or send you an order request. Online payment needs a payout account in Settings and the Starter plan or above.' })
           : html`<div class="list">${rows.map((r) => html`<div class="list-item">
             ${thumb(r.imageUrl, 96) ? html`<img src="${thumb(r.imageUrl, 96)!}" alt="" width="48" height="48" style="border-radius:10px;object-fit:cover">` : html`<span class="icon-tile">${ic('shopping-bag')}</span>`}
             <div class="grow"><b>${r.name}</b><div class="muted small">${money(r.priceMinor)} · ${r.active ? (r.inStock ? 'On sale' : 'Out of stock') : 'Hidden'}</div></div>
