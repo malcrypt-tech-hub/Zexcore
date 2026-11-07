@@ -8,10 +8,10 @@
 import { deleteAccount } from './routes/account';
 import { assess } from './routes/risk';
 import { joinWaitlist } from './routes/waitlist';
-import { placeOrder, signUpload } from './routes/shop';
+import { orderStatus, placeOrder, refundOrder, shopPay, signUpload } from './routes/shop';
 import { whatsappConfigured } from './whatsapp';
 import { createKey, revokeKey, v1Bookings, v1Customers } from './routes/apikeys';
-import { realDeps, type Ctx, type Deps, type Env } from './env';
+import { paymentsEnabled, realDeps, type Ctx, type Deps, type Env } from './env';
 import { HttpError, cors, json } from './util';
 import { checkout, webhook } from './routes/billing';
 import { audit, verifyAudit } from './routes/audit';
@@ -62,6 +62,9 @@ const ROUTES: Record<string, Handler> = {
   'POST /api/public/deposit': publicDeposit,
   'POST /api/deposit/link': depositLink,
   'POST /api/deposit/refund': refundDeposit,
+  'GET /api/public/shop-pay': shopPay,
+  'GET /api/public/order-status': orderStatus,
+  'POST /api/order/refund': refundOrder,
   'GET /api/public/deposit-status': depositStatus,
   'POST /api/events': memberEvent,
   'POST /api/public/booked': publicBooked,
@@ -96,20 +99,15 @@ const ROUTES: Record<string, Handler> = {
 };
 
 /** Routes that take or confirm money. They stay off unless a live Paystack key is set (or the Worker is explicitly marked staging). */
-const PUBLIC_ROUTES = new Set(['POST /api/public/waitlist', 'POST /api/public/order', 'POST /api/public/deposit', 'GET /api/public/deposit-status', 'POST /api/public/booked', 'GET /api/banks', 'GET /api/team/invite-info']);
-const MONEY_ROUTES = new Set(['POST /api/checkout', 'POST /api/paystack-webhook', 'GET /api/banks', 'POST /api/payout/setup', 'POST /api/public/deposit', 'POST /api/deposit/link', 'POST /api/deposit/refund', 'GET /api/public/deposit-status']);
-export function paymentsEnabled(env: Env): boolean {
-  const k = (env.PAYSTACK_SECRET_KEY ?? '').trim();
-  if (!k) return false;
-  if (k.startsWith('sk_live_')) return true;
-  return k.startsWith('sk_test_') && env.ALLOW_TEST_PAYMENTS === 'true';
-}
+const PUBLIC_ROUTES = new Set(['GET /api/public/shop-pay', 'GET /api/public/order-status', 'POST /api/public/waitlist', 'POST /api/public/order', 'POST /api/public/deposit', 'GET /api/public/deposit-status', 'POST /api/public/booked', 'GET /api/banks', 'GET /api/team/invite-info']);
+const MONEY_ROUTES = new Set(['GET /api/public/order-status', 'POST /api/order/refund', 'POST /api/checkout', 'POST /api/paystack-webhook', 'GET /api/banks', 'POST /api/payout/setup', 'POST /api/public/deposit', 'POST /api/deposit/link', 'POST /api/deposit/refund', 'GET /api/public/deposit-status']);
+export { paymentsEnabled };
 
 /**
  * Best-effort throttle for the public (signed-out) routes: 20 calls a minute per visitor per route, per Worker instance.
  * It stops casual abuse; for a hard limit add a Cloudflare rate-limiting rule on /api/public/* (see docs/launch-runbook.md).
  */
-const PUBLIC_LIMITED = new Set(['POST /api/public/waitlist', 'POST /api/public/order', 'POST /api/public/deposit', 'GET /api/public/deposit-status', 'POST /api/public/booked']);
+const PUBLIC_LIMITED = new Set(['GET /api/public/shop-pay', 'GET /api/public/order-status', 'POST /api/public/waitlist', 'POST /api/public/order', 'POST /api/public/deposit', 'GET /api/public/deposit-status', 'POST /api/public/booked']);
 const hits = new Map<string, number[]>();
 export function throttled(key: string, now: number, max = 20, windowMs = 60_000): boolean {
   const recent = (hits.get(key) ?? []).filter((t) => now - t < windowMs);

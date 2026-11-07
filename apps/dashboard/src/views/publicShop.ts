@@ -4,6 +4,7 @@ import { ic } from '../lib/icons';
 import { api, ApiError } from '../lib/api';
 import { busy, toast } from '../lib/ui';
 import { thumb } from '../lib/fb/shop';
+import { shopPay } from '../lib/fb/public';
 
 export interface ShopProduct { id: string; name: string; description: string | null; priceMinor: number; inStock: boolean; imageUrl: string | null }
 export interface ShopCtx { slug: string; businessName: string; phone: string | null; products: ShopProduct[]; priceText: (usdMinor: number) => string; header: () => Raw; tabs: () => Raw; onTabs: () => void }
@@ -12,6 +13,8 @@ const MAX_QTY = 99;
 
 export function createShop(root: HTMLElement, x: ShopCtx): () => void {
   const cart = new Map<string, number>();
+  let online = false;   // can pay now? asked once; a failed check means no
+  void shopPay(x.slug).then((r) => { if (r.online) { online = true; draw(); } });
   const f = { name: '', phone: '', email: '', address: '', notes: '' };
   const total = (): number => x.products.reduce((n, p) => n + p.priceMinor * (cart.get(p.id) ?? 0), 0);
   const count = (): number => [...cart.values()].reduce((a, b) => a + b, 0);
@@ -39,14 +42,27 @@ export function createShop(root: HTMLElement, x: ShopCtx): () => void {
         <div class="field"><label for="oa">Delivery address</label><textarea class="input" id="oa" rows="3" maxlength="400" autocomplete="street-address">${f.address}</textarea></div>
         <div class="field"><label for="ox">Notes <span class="faint">(optional)</span></label><input class="input" id="ox" maxlength="500" value="${f.notes}"></div></section>
       <div class="card card-pad" style="position:sticky;bottom:8px"><div class="row between" style="align-items:center;gap:12px"><div><b>${count()} item${count() === 1 ? '' : 's'}</b><div class="muted small">${count() ? x.priceText(total()) : 'Nothing chosen yet'}</div></div>
-        <button type="button" class="btn btn-primary btn-lg" id="osend" ${count() ? '' : 'disabled'}>Send order request</button></div>
-        <p class="muted small" style="margin:8px 0 0">This sends a request. You are not charged online: the business confirms the order and agrees payment with you.</p></div></div>`);
+        <div class="row" style="gap:8px;flex-wrap:wrap">${online ? html`<button type="button" class="btn btn-primary btn-lg" id="opay" ${count() ? '' : 'disabled'}>Pay now</button>` : ''}<button type="button" class="btn ${online ? 'btn-secondary' : 'btn-primary'} btn-lg" id="osend" ${count() ? '' : 'disabled'}>Send order request</button></div></div>
+        <p class="muted small" style="margin:8px 0 0">${online ? 'Pay now takes you to Paystack. Your card is charged in naira at today\'s rate, and the money goes straight to the business. Or send a request and agree payment with the business yourself.' : 'This sends a request. You are not charged online: the business confirms the order and agrees payment with you.'}</p></div>`);
     const keep = (): void => { f.name = ($('#on') as HTMLInputElement).value; f.phone = ($('#op') as HTMLInputElement).value; f.email = ($('#oe') as HTMLInputElement).value; f.address = ($('#oa') as HTMLTextAreaElement).value; f.notes = ($('#ox') as HTMLInputElement).value; };
     ['#on', '#op', '#oe', '#oa', '#ox'].forEach((s) => $(s)!.addEventListener('input', keep));
     const bump = (id: string, d: number): void => { keep(); const n = Math.max(0, Math.min(MAX_QTY, (cart.get(id) ?? 0) + d)); if (n) cart.set(id, n); else cart.delete(id); const y = window.scrollY; draw(); window.scrollTo(0, y); };
     $$('[data-inc]').forEach((b) => b.addEventListener('click', () => bump(b.dataset.inc!, 1)));
     $$('[data-dec]').forEach((b) => b.addEventListener('click', () => bump(b.dataset.dec!, -1)));
     x.onTabs();
+    $('#opay')?.addEventListener('click', (e) => void busy(e.currentTarget as HTMLButtonElement, async () => {
+      keep();
+      const box = $('#oerr')!; box.classList.add('hidden');
+      try {
+        if (!f.email.trim()) throw new ApiError(400, 'Enter your email address so we can send your payment receipt.');
+        const r = await api<{ authorizationUrl: string }>(`/api/public/${encodeURIComponent(x.slug)}/orders`, { method: 'POST', auth: false, body: { name: f.name, phone: f.phone, email: f.email, address: f.address, notes: f.notes, payOnline: true, items: [...cart].map(([id, qty]) => ({ id, qty })) } });
+        window.location.assign(r.authorizationUrl);
+        await new Promise(() => undefined);   // keep the button busy while the browser leaves
+      } catch (err) {
+        const m = err instanceof ApiError ? err.message : 'Could not start the payment. Please try again.';
+        box.textContent = m; box.classList.remove('hidden'); box.scrollIntoView({ block: 'center' }); toast(m, 'error');
+      }
+    }));
     $('#osend')!.addEventListener('click', (e) => void busy(e.currentTarget as HTMLButtonElement, async () => {
       keep();
       const box = $('#oerr')!; box.classList.add('hidden');

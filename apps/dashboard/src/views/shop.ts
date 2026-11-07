@@ -51,7 +51,7 @@ export function renderShop(view: HTMLElement): void {
     try {
       const { products: rows } = await api<{ products: ProductDto[] }>('/api/shop/products');
       mount(host, html`${canEdit() ? html`<div class="row" style="justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary" data-add>${ic('plus', 'ico-sm')} Add a product</button></div>` : ''}
-        <div class="card">${rows.length === 0 ? emptyState({ icon: 'shopping-bag', title: 'No products yet', text: 'Add what you sell. Customers see it on your booking page and send you an order request. Nothing is charged online: you confirm each order and agree payment with the customer.' })
+        <div class="card">${rows.length === 0 ? emptyState({ icon: 'shopping-bag', title: 'No products yet', text: 'Add what you sell. Customers see it on your booking page and can pay online or send you an order request. Online payment needs a payout account in Settings.' })
           : html`<div class="list">${rows.map((r) => html`<div class="list-item">
             ${thumb(r.imageUrl, 96) ? html`<img src="${thumb(r.imageUrl, 96)!}" alt="" width="48" height="48" style="border-radius:10px;object-fit:cover">` : html`<span class="icon-tile">${ic('shopping-bag')}</span>`}
             <div class="grow"><b>${r.name}</b><div class="muted small">${money(r.priceMinor)} · ${r.active ? (r.inStock ? 'On sale' : 'Out of stock') : 'Hidden'}</div></div>
@@ -72,12 +72,16 @@ export function renderShop(view: HTMLElement): void {
       const card = (o: OrderDto): Raw => html`<div class="card card-pad stack-sm" style="margin-bottom:12px">
         <div class="row between wrap" style="gap:8px"><div><b>${o.customerName}</b> <span class="muted small">${o.ref} · ${o.createdAt ? ago(o.createdAt) : ''}</span></div>${badge(STATUS_LABEL[o.status] ?? o.status, KIND[o.status] ?? '')}</div>
         <div class="small">${o.items.map((i) => html`<div>${i.qty} × ${i.name} <span class="muted">(${money(i.unitMinor)} each)</span></div>`)}</div>
-        <div class="muted small">List total ${money(o.totalMinor)}</div>
+        <div class="muted small">List total ${money(o.totalMinor)}${o.paymentStatus === 'paid' ? html` · <b style="color:var(--success)">Paid online</b>` : o.paymentStatus === 'refunded' ? ' · Refunded' : ''}</div>
         <div class="small"><span class="muted">Deliver to:</span> ${o.address}${o.notes ? html`<br><span class="muted">Notes:</span> ${o.notes}` : ''}</div>
         <div class="small"><a href="tel:${o.customerPhone}">${o.customerPhone}</a> · <a href="https://wa.me/${o.customerPhone.replace(/\D/g, '')}" target="_blank" rel="noopener">WhatsApp</a>${o.customerEmail ? html` · ${o.customerEmail}` : ' · no email given'}</div>
-        <div class="row wrap" style="gap:6px">${ORDER_STATUSES.filter((s) => s !== o.status).map((s) => html`<button class="btn btn-secondary btn-sm" data-st="${o.id}" data-to="${s}" data-mail="${o.customerEmail ? '1' : ''}">${s === 'cancelled' ? 'Cancel order' : `Mark ${STATUS_LABEL[s]!.toLowerCase()}`}</button>`)}</div></div>`;
-      mount(host, rows.length ? html`<p class="muted small" style="margin-bottom:12px">Orders are requests. Nothing is charged online. When you change the status the customer is emailed if they gave an address.</p>${rows.map(card)}`
+        <div class="row wrap" style="gap:6px">${o.paymentStatus === 'paid' ? html`<button class="btn btn-soft-danger btn-sm" data-refund="${o.id}">Refund and cancel</button>` : ''}${ORDER_STATUSES.filter((s) => s !== o.status && !(o.paymentStatus === 'paid' && s === 'cancelled')).map((s) => html`<button class="btn btn-secondary btn-sm" data-st="${o.id}" data-to="${s}" data-mail="${o.customerEmail ? '1' : ''}">${s === 'cancelled' ? 'Cancel order' : `Mark ${STATUS_LABEL[s]!.toLowerCase()}`}</button>`)}</div></div>`;
+      mount(host, rows.length ? html`<p class="muted small" style="margin-bottom:12px">Orders marked Paid online were paid by card through Paystack; the money goes to your payout account. Other orders are requests you settle with the customer. When you change the status the customer is emailed if they gave an address.</p>${rows.map(card)}`
         : html`<div class="card">${emptyState({ icon: 'shopping-bag', title: 'No orders yet', text: 'Order requests from your booking page appear here, and we email you when one arrives.' })}</div>`);
+      host.querySelectorAll<HTMLButtonElement>('[data-refund]').forEach((b) => b.addEventListener('click', async () => {
+        if (!await confirmDialog({ title: 'Refund this order?', message: 'The customer is refunded in full through Paystack, the order is cancelled and they are emailed. This cannot be undone.', confirmLabel: 'Refund and cancel', danger: true })) return;
+        try { await api(`/api/shop/orders/${b.dataset.refund}/refund`, { method: 'POST' }); toast('Refunded. The customer has been emailed.', 'success'); void orders(); } catch (e) { toast(errMsg(e, 'Could not refund the order'), 'error'); }
+      }));
       host.querySelectorAll<HTMLButtonElement>('[data-st]').forEach((b) => b.addEventListener('click', async () => {
         const to = b.dataset.to!;
         if (to === 'cancelled' && !await confirmDialog({ title: 'Cancel this order?', message: 'The customer will be emailed that it was cancelled.', confirmLabel: 'Cancel order', danger: true })) return;

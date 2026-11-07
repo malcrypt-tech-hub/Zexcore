@@ -164,6 +164,26 @@ export async function placeOrder(slug: string, b: Record<string, unknown>): Prom
   return j;
 }
 
+/** Can this shop take payment online? A failed check just means "no": the customer can still send a request. */
+export async function shopPay(slug: string): Promise<{ online: boolean }> {
+  const base = paymentsUrl();
+  if (!base) return { online: false };
+  try { const r = await fetch(`${base}/api/public/shop-pay?${new URLSearchParams({ slug })}`); const j = (await r.json()) as { online?: boolean }; return { online: r.ok && j.online === true }; }
+  catch { return { online: false }; }
+}
+
+/** The customer is back from Paystack: the server verifies the payment itself and reports it. */
+export async function orderPayment(slug: string, ref: string): Promise<unknown> {
+  const base = paymentsUrl();
+  if (!base) throw new ApiError(503, 'Payments are not switched on yet.', 'unavailable');
+  let r: Response;
+  try { r = await fetch(`${base}/api/public/order-status?${new URLSearchParams({ slug, reference: ref })}`); }
+  catch { throw new ApiError(0, 'Cannot reach the payment service.', 'network'); }
+  const j = (await r.json().catch(() => ({}))) as Record<string, unknown> & { error?: string };
+  if (!r.ok) throw new ApiError(r.status, j.error ?? 'Payment not found', r.status === 404 ? 'not_found' : undefined);
+  return j;
+}
+
 export async function payment(slug: string, ref: string): Promise<unknown> {
   const base = paymentsUrl();
   if (!base) throw new ApiError(503, 'Payments are not switched on yet.', 'unavailable');
