@@ -40,7 +40,8 @@ export async function renderBilling(view: HTMLElement): Promise<void> {
     <div id="usage"></div>
     <div id="plans" class="stack" style="grid-template-columns:repeat(auto-fill,minmax(min(100%,230px),1fr))"></div>
     <p class="muted small" style="margin-top:12px">Every plan includes online booking, booking deposits, reminder and thank-you emails, and Security Watch. Prices are in US dollars; card payments are charged in naira at the day's rate. Payments are processed securely via Paystack. Enterprise and Dedicated are set up with our team: press Contact us and we will arrange it with you.</p>
-    <h3 style="margin:28px 0 12px">Payment history</h3><div class="card" id="pay"></div>`);
+    <h3 style="margin:28px 0 12px">Payment history</h3><div class="card" id="pay"></div>
+    <div id="padmin"></div>`);
   let plans: PlanList;
   try { plans = await api<PlanList>('/api/billing/plans', { auth: false }); }
   catch (e) { mount($('#plans', view)!, errorState(e instanceof ApiError ? e.message : 'Could not load plans')); return; }
@@ -69,6 +70,25 @@ export async function renderBilling(view: HTMLElement): Promise<void> {
     $$('[data-buy]', view).forEach((b) => b.addEventListener('click', () => void checkout(b.dataset.buy!, b as HTMLButtonElement)));
   };
   $$('[data-c]', view).forEach((b) => b.addEventListener('click', () => { cycle = b.dataset.c as typeof cycle; draw(); }));
+
+  // Platform admins (an allow-list kept on the server) can give a workspace a plan without payment.
+  void import('../lib/fb/admin').then(async (a) => {
+    if (!(await a.adminMe()).admin) return;
+    mount($('#padmin', view)!, html`<h3 style="margin:28px 0 12px">Platform admin</h3><section class="card card-pad form-grid">
+      <p class="muted small">Give a workspace a plan without payment. It is recorded in that workspace's audit log. This does not give you access to its data.</p>
+      <div class="field"><label for="pw">Workspace ID</label><input class="input" id="pw" value="${me.tenant.id}"></div>
+      <div class="field"><label for="pp2">Plan</label><select class="input" id="pp2">${['starter', 'growth', 'agency', 'enterprise', 'dedicated'].map((t) => html`<option value="${t}" ${t === 'dedicated' ? 'selected' : ''}>${t[0]!.toUpperCase() + t.slice(1)}</option>`)}</select></div>
+      <div class="field"><label for="pd2">Days <span class="faint">(empty for no expiry)</span></label><input class="input" id="pd2" type="number" min="1" max="3650" step="1"></div>
+      <div><button class="btn btn-primary" id="pg">Grant plan</button></div></section>`);
+    $('#pg', view)!.addEventListener('click', (e) => void busy(e.currentTarget as HTMLButtonElement, async () => {
+      const days = ($('#pd2', view) as HTMLInputElement).value.trim();
+      try {
+        const r = await a.grantPlan({ workspaceId: ($('#pw', view) as HTMLInputElement).value.trim(), plan: ($('#pp2', view) as HTMLSelectElement).value, days: days === '' ? null : Number(days) });
+        toast(`Plan set to ${r.plan}${r.expiresAt ? '' : ' with no expiry'}`, 'success');
+        await loadMe(true); void renderBilling(view);
+      } catch (x) { toast(x instanceof ApiError ? x.message : 'Could not set the plan', 'error'); }
+    }));
+  });
 
   // What the workspace has used so far against what its plan includes.
   void api<Usage>('/api/billing/usage').then((u) => {

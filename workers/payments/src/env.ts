@@ -36,6 +36,8 @@ export interface Env {
   FIRESTORE_EMULATOR_HOST?: string;
   /** Secret: Ed25519 private key as a JWK ({kty,crv,d,x}). Signs licence files. Generate with scripts/gen-license-key.mjs. */
   LICENSE_PRIVATE_JWK?: string;
+  /** Secret: comma-separated e-mail addresses of platform admins, who may grant plans without payment. Their e-mail must also be verified. */
+  PLATFORM_ADMIN_EMAILS?: string;
   /** Where dedicated-cluster requests are emailed (our sales inbox). Without it requests are still stored. */
   SALES_EMAIL?: string;
   /** Flat platform fee, in kobo, kept by ZexCore on each booking deposit. Defaults to 0. */

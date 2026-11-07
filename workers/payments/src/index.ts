@@ -8,6 +8,7 @@
 import { deleteAccount } from './routes/account';
 import { assess } from './routes/risk';
 import { joinWaitlist } from './routes/waitlist';
+import { adminMe, grantPlan } from './routes/admin';
 import { clusterRequest, getClusterRequest, issueLicense, licenseKey, verifyLicenseRoute } from './routes/license';
 import { orderStatus, placeOrder, refundOrder, shopPay, signUpload } from './routes/shop';
 import { whatsappConfigured } from './whatsapp';
@@ -66,6 +67,8 @@ const ROUTES: Record<string, Handler> = {
   'GET /api/public/shop-pay': shopPay,
   'GET /api/public/order-status': orderStatus,
   'POST /api/order/refund': refundOrder,
+  'GET /api/admin/me': adminMe,
+  'POST /api/admin/grant-plan': grantPlan,
   'POST /api/license': issueLicense,
   'GET /api/public/license-key': licenseKey,
   'POST /api/public/license-verify': verifyLicenseRoute,
