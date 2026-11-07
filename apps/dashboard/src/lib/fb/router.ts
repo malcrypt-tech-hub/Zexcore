@@ -102,7 +102,7 @@ on('POST', '/api/team/revoke', ({ body }) => team.revokeInvite(String(body.id)))
 on('POST', '/api/team/role', ({ body }) => team.setRole(String(body.uid), String(body.role)));
 on('GET', '/api/insights', ({ query }) => ins.get(Number(query.get('days'))));
 on('GET', '/api/notifications', () => nt.notifications());
-on('POST', '/api/notifications/seen', async () => { await nt.markBookingsSeen(); return { ok: true }; });
+on('POST', '/api/notifications/seen', async ({ body }) => { const k = body?.kind; await nt.markSeen(k === 'orders' || k === 'enquiries' ? k : 'bookings'); return { ok: true }; });
 on('GET', '/api/shop/products', () => shop.listProducts());
 on('POST', '/api/shop/products', ({ body }) => shop.createProduct(body));
 on('PATCH', '/api/shop/products/:id', ({ params, body }) => shop.patchProduct(params[0]!, body));

@@ -306,6 +306,11 @@ describe('team roles', () => {
     await assertSucceeds(getDoc(doc(ad, 'workspaces', W, 'seen', 'admin1')));
     await assertFails(setDoc(doc(ad, 'workspaces', W, 'seen', 'admin1'), { bookingsAt: Timestamp.fromDate(new Date('2020-01-01')) }));
     await assertFails(setDoc(doc(ad, 'workspaces', W, 'seen', 'owner1'), { bookingsAt: serverTimestamp() }));
+    // Orders and enquiries have their own markers; setting one leaves the others as they were, and none can be back-dated or invented.
+    await assertSucceeds(setDoc(doc(ad, 'workspaces', W, 'seen', 'admin1'), { ordersAt: serverTimestamp() }, { merge: true }));
+    await assertSucceeds(setDoc(doc(ad, 'workspaces', W, 'seen', 'admin1'), { enquiriesAt: serverTimestamp() }, { merge: true }));
+    await assertFails(setDoc(doc(ad, 'workspaces', W, 'seen', 'admin1'), { ordersAt: Timestamp.fromDate(new Date('2020-01-01')) }, { merge: true }));
+    await assertFails(setDoc(doc(ad, 'workspaces', W, 'seen', 'admin1'), { somethingElseAt: serverTimestamp() }, { merge: true }));
     await assertFails(getDoc(doc(other(), 'workspaces', W, 'seen', 'admin1')));
     // Waitlist: the team can read and remove entries, nobody creates or edits them from a browser, viewers and strangers see nothing
     await assertSucceeds(getDocs(collection(ad, 'workspaces', W, 'waitlist')));

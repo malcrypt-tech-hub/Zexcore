@@ -21,8 +21,8 @@ const NAV: { label?: string; items: { href?: string; icon: IconName; text: strin
   ] },
   { label: 'Business', items: [
     { href: '/app/services', icon: 'list-checks', text: 'Services' },
-    { href: '/app/shop', icon: 'shopping-bag', text: 'Shop' },
-    { href: '/app/enquiries', icon: 'mail', text: 'Service enquiries' },
+    { href: '/app/shop', icon: 'shopping-bag', text: 'Shop', key: 'shop' },
+    { href: '/app/enquiries', icon: 'mail', text: 'Service enquiries', key: 'enq' },
     { href: '/app/team', icon: 'id-card', text: 'Bookable staff' },
     { href: '/app/access', icon: 'users', text: 'Team access' },
     { href: '/app/booking-page', icon: 'link', text: 'Booking page' },
@@ -58,6 +58,8 @@ export function brand(size = '', logoUrl?: string | null): Raw {
 
 let unread = 0;       // unread customer messages
 let fresh = 0;        // new bookings since this person last opened Bookings
+let freshOrders = 0;  // new shop orders since they last opened Shop
+let freshEnq = 0;     // new enquiries since they last opened Service enquiries
 let prevFresh = -1;
 let pollInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -65,12 +67,14 @@ const onBookings = (): boolean => location.pathname === '/app/bookings' || locat
 const baseTitle = (): string => document.title.replace(/^\(\d+\) /, '');
 
 /** Re-applies the "(3)" in the tab title after a page sets its own title. */
-export function syncTitle(): void { const t = unread + fresh; document.title = t > 0 ? `(${t}) ${baseTitle()}` : baseTitle(); }
+export function syncTitle(): void { const t = unread + fresh + freshOrders + freshEnq; document.title = t > 0 ? `(${t}) ${baseTitle()}` : baseTitle(); }
 
 function paint(): void {
-  const total = unread + fresh;
+  const total = unread + fresh + freshOrders + freshEnq;
   $$('[data-unread]').forEach((el) => { el.textContent = unread > 99 ? '99+' : String(unread); el.classList.toggle('hidden', unread === 0); });
   $$('[data-booking-badge]').forEach((el) => { el.textContent = fresh > 99 ? '99+' : String(fresh); el.classList.toggle('hidden', fresh === 0); });
+  $$('[data-shop-badge]').forEach((el) => { el.textContent = freshOrders > 99 ? '99+' : String(freshOrders); el.classList.toggle('hidden', freshOrders === 0); });
+  $$('[data-enq-badge]').forEach((el) => { el.textContent = freshEnq > 99 ? '99+' : String(freshEnq); el.classList.toggle('hidden', freshEnq === 0); });
   $$('[data-unread-pip]').forEach((el) => { el.textContent = total > 99 ? '99+' : String(total); el.classList.toggle('hidden', total === 0); });
   syncTitle();
 }
@@ -81,11 +85,25 @@ export async function bookingsViewed(): Promise<void> {
   await api('/api/notifications/seen', { method: 'POST' }).catch(() => undefined);
 }
 
+/** Opening Shop or Service enquiries is "looking" too. */
+export async function sectionViewed(kind: 'orders' | 'enquiries'): Promise<void> {
+  if (kind === 'orders') freshOrders = 0; else freshEnq = 0;
+  paint();
+  await api('/api/notifications/seen', { method: 'POST', body: { kind } }).catch(() => undefined);
+}
+const onPath = (p: string): boolean => location.pathname === p || location.pathname.startsWith(`${p}/`);
+
 export async function refreshUnread(): Promise<void> {
+  let prevOrders = freshOrders, prevEnq = freshEnq;
   try {
-    const n = await api<{ bookings: number; messages: number }>('/api/notifications');
-    unread = n.messages; fresh = n.bookings;
+    const n = await api<{ bookings: number; messages: number; orders?: number; enquiries?: number }>('/api/notifications');
+    unread = n.messages; fresh = n.bookings; freshOrders = n.orders ?? 0; freshEnq = n.enquiries ?? 0;
   } catch { return; }   // a failed check must not make the counts vanish or flicker
+  if (onPath('/app/shop') && freshOrders > 0) await sectionViewed('orders');
+  if (onPath('/app/enquiries') && freshEnq > 0) await sectionViewed('enquiries');
+  if (prevFresh >= 0 && freshOrders > prevOrders) { const d = freshOrders - prevOrders; toast(`${d} new order${d > 1 ? 's' : ''}`, 'info'); }
+  if (prevFresh >= 0 && freshEnq > prevEnq) { const d = freshEnq - prevEnq; toast(`${d} new enquir${d > 1 ? 'ies' : 'y'}`, 'info'); }
+  prevOrders = freshOrders; prevEnq = freshEnq;
   if (onBookings() && fresh > 0) { await bookingsViewed(); return; }   // already looking at them: like an open WhatsApp chat
   if (prevFresh >= 0 && fresh > prevFresh) { const d = fresh - prevFresh; toast(`${d} new booking${d > 1 ? 's' : ''}`, 'info'); }
   prevFresh = fresh;
@@ -136,6 +154,8 @@ export async function appLayout(path: string, onNew: () => void): Promise<HTMLEl
                 ${locked ? html`<span class="nav-lock" title="Plan upgrade required" style="margin-left:auto;opacity:0.6;display:inline-flex">${ic('lock', 'ico-xs')}</span>` : ''}
                 ${i.key === 'msg' ? html`<span class="badge-n hidden" data-unread>0</span>` : ''}
                 ${i.key === 'bk' ? html`<span class="badge-n hidden" data-booking-badge>0</span>` : ''}
+                ${i.key === 'shop' ? html`<span class="badge-n hidden" data-shop-badge>0</span>` : ''}
+                ${i.key === 'enq' ? html`<span class="badge-n hidden" data-enq-badge>0</span>` : ''}
               </a>`;
             })}`)}
         </aside>
@@ -224,13 +244,15 @@ export async function appLayout(path: string, onNew: () => void): Promise<HTMLEl
   $$('[data-nav]').forEach((a) => { isActive(a.dataset.nav!, path) ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'); });
   const moreActive = !['/app', '/app/bookings', '/app/calendar', '/app/messages'].some((h) => isActive(h, path));
   $('.bottom-nav [data-nav="/app/more"]')?.[moreActive ? 'setAttribute' : 'removeAttribute']('aria-current', 'page');
-  if (isActive('/app/bookings', path)) void bookingsViewed();   // Messages clear per conversation, as in WhatsApp
+  if (isActive('/app/bookings', path)) void bookingsViewed();
+  if (isActive('/app/shop', path)) void sectionViewed('orders');
+  if (isActive('/app/enquiries', path)) void sectionViewed('enquiries');   // Messages clear per conversation, as in WhatsApp
   return view;
 }
 
 export function leaveApp(): void {
   stopPolling();
-  prevFresh = -1; unread = 0; fresh = 0;
+  prevFresh = -1; unread = 0; fresh = 0; freshOrders = 0; freshEnq = 0;
   if ($('.app')) mount(root(), '');
 }
 
@@ -253,10 +275,12 @@ function openNotifications(): void {
   const row = (href: string, icon: IconName, n: number, one: string, many: string): Raw => html`<a class="list-item" href="${href}" data-link data-close>${ic(icon)}<span class="grow"><b>${n}</b> ${n === 1 ? one : many}</span>${ic('chevron-right', 'ico-sm')}</a>`;
   openModal({
     title: 'Notifications',
-    body: fresh + unread === 0 ? html`<p class="muted" style="padding:8px 0">You are all caught up.</p>`
-      : html`<div class="list">${fresh ? row('/app/bookings', 'calendar-check', fresh, 'new booking request', 'new booking requests') : ''}${unread ? row('/app/messages', 'message-square', unread, 'unread customer message', 'unread customer messages') : ''}</div>`,
+    body: fresh + unread + freshOrders + freshEnq === 0 ? html`<p class="muted" style="padding:8px 0">You are all caught up.</p>`
+      : html`<div class="list">${fresh ? row('/app/bookings', 'calendar-check', fresh, 'new booking request', 'new booking requests') : ''}${freshOrders ? row('/app/shop#orders', 'shopping-bag', freshOrders, 'new shop order', 'new shop orders') : ''}${freshEnq ? row('/app/enquiries', 'mail', freshEnq, 'new service enquiry', 'new service enquiries') : ''}${unread ? row('/app/messages', 'message-square', unread, 'unread customer message', 'unread customer messages') : ''}</div>`,
     footer: html`<button class="btn btn-secondary" data-close>Close</button>`,
     onMount: (el, close) => el.querySelectorAll('a[data-link]').forEach((a) => a.addEventListener('click', () => close())),
   });
   if (fresh) void bookingsViewed();
+  if (freshOrders) void sectionViewed('orders');
+  if (freshEnq) void sectionViewed('enquiries');
 }
